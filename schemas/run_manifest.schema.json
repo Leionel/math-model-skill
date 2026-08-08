@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/run-manifest.schema.json",
+  "title": "Math Modeling Run Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "run_id", "status", "phase", "model_contract", "gates", "commands", "artifacts", "revision", "reviewer"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "project_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["active", "frozen", "released", "blocked"]},
+    "phase": {"type": "string", "enum": ["analysis", "coding", "results", "evidence", "paper", "review", "release"]},
+    "model_contract": {"$ref": "#/$defs/file_ref"},
+    "commands": {"type": "array", "items": {"$ref": "#/$defs/command"}},
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["m1", "p1", "p2", "w1", "w2"],
+      "properties": {
+        "m1": {"$ref": "#/$defs/gate"},
+        "p1": {"$ref": "#/$defs/gate"},
+        "p2": {"$ref": "#/$defs/gate"},
+        "w1": {"$ref": "#/$defs/gate"},
+        "w2": {"$ref": "#/$defs/gate"}
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loop", "cap", "open_issue_ids"],
+      "properties": {
+        "loop": {"type": "integer", "minimum": 0},
+        "cap": {"type": "integer", "minimum": 0, "maximum": 2},
+        "open_issue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "decision_memo": {"type": "string"}
+      }
+    },
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "deterministic_qa", "semantic_critic", "blind_reviewers"],
+      "properties": {
+        "profile": {"type": "string", "enum": ["sprint", "final_submission", "award_max"]},
+        "deterministic_qa": {"$ref": "#/$defs/review_status"},
+        "semantic_critic": {"$ref": "#/$defs/review_status"},
+        "blind_reviewers": {"type": "array", "items": {"$ref": "#/$defs/review_status"}}
+      }
+    }
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_id", "stage", "command", "exit_code"],
+      "properties": {
+        "command_id": {"type": "string", "minLength": 1},
+        "stage": {"type": "string", "enum": ["smoke", "full", "freeze", "evidence", "qa", "review", "release"]},
+        "command": {"type": "string", "minLength": 1},
+        "exit_code": {"type": "integer"},
+        "started_at": {"type": "string"},
+        "finished_at": {"type": "string"},
+        "stdout_artifact": {"type": "string"},
+        "stderr_artifact": {"type": "string"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "role"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "role": {"type": "string", "enum": ["frozen_results", "evidence_registry", "paper_plan", "paper", "figure", "table", "qa_report", "critic_report", "blind_report", "other"]}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checked_at"],
+      "properties": {
+        "status": {"type": "string", "enum": ["pending", "pass", "fail", "blocked"]},
+        "checked_at": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "issue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "review_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"type": "string", "enum": ["pending", "pass", "fail", "blocked"]},
+        "reviewer_id": {"type": "string", "minLength": 1},
+        "report": {"type": "string", "minLength": 1},
+        "report_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "issue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

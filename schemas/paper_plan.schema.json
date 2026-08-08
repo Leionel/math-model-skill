@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/paper-plan.schema.json",
+  "title": "Paper Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "requirements", "claims", "sections", "abstract_result_ids", "terminology", "figures", "tables", "status"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "requirements": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/requirement"}},
+    "claims": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/claim"}},
+    "sections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/section"}},
+    "abstract_result_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "terminology": {"type": "array", "items": {"$ref": "#/$defs/term"}},
+    "figures": {"type": "array", "items": {"$ref": "#/$defs/figure"}},
+    "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}},
+    "canonical_recommendation": {"type": "object", "additionalProperties": false, "required": ["text", "evidence_ids"], "properties": {"text": {"type": "string", "minLength": 1}, "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}},
+    "status": {"type": "string", "enum": ["draft", "ready", "superseded"]}
+  },
+  "$defs": {
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "text", "claim_ids"],
+      "properties": {
+        "requirement_id": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1},
+        "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "text", "question_id", "evidence_ids", "section", "boundary"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "section": {"type": "string", "minLength": 1},
+        "boundary": {"type": "string", "minLength": 1}
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["section_id", "purpose", "claim_ids"],
+      "properties": {
+        "section_id": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string", "minLength": 1},
+        "claim_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "term": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical", "forbidden_variants"],
+      "properties": {
+        "canonical": {"type": "string", "minLength": 1},
+        "forbidden_variants": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "figure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["figure_id", "kind", "claim_ids", "evidence_ids", "purpose", "why_figure", "data_artifacts", "panel_map", "statistical_definition", "paper_location", "caption_claim", "qa_status"],
+      "properties": {
+        "figure_id": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["data", "concept"]},
+        "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "purpose": {"type": "string", "minLength": 1},
+        "why_figure": {"type": "string", "minLength": 1},
+        "data_artifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "panel_map": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}},
+        "statistical_definition": {"type": "string", "minLength": 1},
+        "paper_location": {"type": "string", "minLength": 1},
+        "caption_claim": {"type": "string", "minLength": 1},
+        "qa_status": {"type": "string", "enum": ["pending", "passed", "failed"]}
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table_id", "claim_ids", "evidence_ids", "purpose", "paper_location", "caption_claim"],
+      "properties": {
+        "table_id": {"type": "string", "minLength": 1},
+        "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "purpose": {"type": "string", "minLength": 1},
+        "paper_location": {"type": "string", "minLength": 1},
+        "caption_claim": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

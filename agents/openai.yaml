@@ -1,0 +1,7 @@
+interface:
+  display_name: "Math Modeling Evidence Harness"
+  short_description: "数学建模竞赛的结果冻结、证据链、论文规划与发布 QA"
+  default_prompt: "Use $math-modeling-skill-sion to run an evidence-driven math modeling competition workflow."
+
+policy:
+  allow_implicit_invocation: true
