@@ -4,9 +4,10 @@
 
 ## 建立顺序
 
-1. 先从 `frozen_results.json` 生成 `evidence_registry.json`。
-2. 再检查 registry 中实际存在且 `verification_status=verified` 的 `evidence_id`。
-3. 最后建立 requirement → claim → evidence 与 section/figure/table 规划。
+1. M1 前可先登记经全文核验的文献 evidence。
+2. P2 后把 `frozen_results.json` 合并到同一个 `evidence_registry.json`。
+3. 检查 registry 中实际存在且 `verification_status=verified` 的 `evidence_id`。
+4. 最后建立 requirement → claim → evidence 与 section/figure/table 规划。
 
 结果证据 ID 由注册脚本稳定生成：结果 `R-Q1-01` 对应证据 `E-R-Q1-01`；不要手工创建重复结果证据。
 
@@ -48,6 +49,7 @@
 - 只让 `ready` 计划进入 W1。
 - 为每个赛题子问题至少建立一个 claim；每个 requirement 和 claim 都必须非空。
 - 只引用已验证 evidence；不得用 `pending` evidence 支撑论文主张。
+- 文献 evidence 必须同时通过 metadata、全文内容和出版状态检查；优秀论文机制卡不属于 evidence。
 - 为“最优、显著、稳健、提升”等表述登记 baseline、指标、统计口径和适用边界。
 - 仅把摘要需要出现的权威结果加入 `abstract_result_ids`。
 - 将同一推荐方案的唯一文字版本放入 `canonical_recommendation`；若题型不需要推荐，可省略该字段。

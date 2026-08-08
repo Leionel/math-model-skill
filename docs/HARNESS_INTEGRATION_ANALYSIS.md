@@ -1,47 +1,39 @@
 # Harness Integration Analysis
 
-> 审计日期：2026-08-08。本文只做架构审计与整合方案，不代表当前目录已经实现这些机制。
+> 审计日期：2026-08-08；P0 落地复核：2026-08-08。第 2～3 节保留最初的逐仓机制裁决，第 1、4～9 节已同步到当前实现。
 
 ## 1. 当前架构概览
 
-### 1.1 先澄清“当前”状态
+### 1.1 当前实现状态
 
-当前工作区并没有已搭建的主 Skill/Harness，只有两份补充 reference：
+当前目录已从“两份 reference”发展为可运行的 P0 Harness：6 个 schema、结果与提交冻结工具、增量 Evidence Registry、安全/合同/一致性/引用/Gate/S1 检查，以及正负例回归测试。仍未实现的主要是 Nature Figure 的最终尺寸深度 QA、自动 Gate 失效、多 run 选择审计和平台/API。
 
-- [`abstract_guidelines.md`](../references/writing/abstract_guidelines.md)：摘要结构、数字、单位、有效数字与自检规则。
-- [`figure_design.md`](../references/visualization/figure_design.md)：图表应服务论证、按任务选图、避免硬凑数量和模板化图表。
+逐仓表中的“当前是否已有”保留审计发生时的基线判断；“建议”是否已落地以本节和第 8 节为准。
 
-因此，下文的“当前是否已有”分成三种状态：
-
-1. **本地已有**：当前两份 reference 已明确写出该原则；
-2. **设计基线已有**：主骨架参考仓库已经设计，但当前工作区尚未内化；
-3. **未有**：两边都没有可直接复用的机制。
-
-主骨架参考仓库已经形成“建模手—编程手—论文手”三角色、`M1/P1/P2/W1/W2` 五个检查点、复现清单和若干确定性校验，但它同时带有固定图数、默认双格式论文、每个 Gate 都要求独立 Subagent 等较重约束。相关依据见其 [`SKILL.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/SKILL.md)、[`Subagent调度.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/references/Subagent%E8%B0%83%E5%BA%A6.md) 与三个角色 Skill。
-
-### 1.2 设计基线流程（尚未在本地实现）
+### 1.2 当前流程
 
 ```mermaid
 flowchart TD
-    A["Problem Analysis"] --> B{"M1 Modeling Gate"}
+    S["Competition Profile + Rule Snapshots"] --> A["Problem Analysis + Data/Literature Evidence"]
+    A --> B{"M1"}
     B --> C["Coding"]
-    C --> D{"P1 Smoke Gate"}
-    D --> E["Full Experiments"]
-    E --> F{"P2 Result Gate"}
-    F --> G["Results Freeze"]
-    G --> H["Evidence Registry"]
-    H --> I["Figure Contracts / Figure QA"]
-    I --> J["Claim-Evidence Map"]
-    J --> K{"Paper Strategy Gate / W1"}
-    K --> L["Paper Writer"]
-    L --> M["Consistency Sweep"]
-    M --> N["Deterministic QA"]
-    N --> O{"W2"}
-    O --> P["Critic / Blind Judges"]
-    P --> Q["Targeted Revision"]
+    C --> D{"P1 Smoke"}
+    D --> E["Full Experiments + Validation Obligations"]
+    E --> F{"P2 + Results Freeze"}
+    F --> G["Incremental Evidence Registry"]
+    G --> H{"W1 Paper Strategy"}
+    H --> I["Figure Contracts + One Paper Writer"]
+    I --> J["Consistency + Deterministic QA + Critic"]
+    J --> K{"W2 Content Ready"}
+    K --> L{"S1 Submission QA"}
+    L --> M["F1 Immutable Submission Manifest"]
+    CS["Continuous Contest Safety / AI Registry / Human Checkpoints"] -. constrains .-> A
+    CS -. constrains .-> E
+    CS -. constrains .-> J
+    CS -. constrains .-> L
 ```
 
-这个方向是对的，但顺序和职责仍需收束：最终图表需求应由论文主张和证据缺口推出，所以 **Paper Strategy 应先于正式 Figure Contract 冻结**；探索性图可在实验阶段产生，但不能因为已有图就倒推论文必须使用它。
+W2 只回答“内容是否就绪”；S1 才回答“当届比赛能否提交”；F1 用不可覆盖 manifest 固定最终文件。正式 Figure Contract 位于 Paper Strategy 之后，探索图不能反向决定论文叙事。
 
 ### 1.3 审计快照
 
@@ -63,7 +55,7 @@ flowchart TD
 
 | 来源 | 机制 | 当前是否已有 | 建议 | 放置位置 | 成本 | 收益 |
 |---|---|---|---|---|---|---|
-| [math-modeling-skill / `SKILL.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/SKILL.md)、[`Subagent调度.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/references/Subagent%E8%B0%83%E5%BA%A6.md) | 三角色串行主链 + 阶段 Gate | 设计基线已有，本地未实现 | **增强，不照搬。现在实现。** 保留 M1/P1/P2；W1 并入 Paper Strategy Gate；W2 改为最终 Release Gate 的汇总决定。不要让五个 Gate 等于五个独立 Agent。与 Mathodology 九阶段逐阶段 Critic 冲突时，采用较短链路。 | A Workflow | 中 | 高 |
+| [math-modeling-skill / `SKILL.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/SKILL.md)、[`Subagent调度.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/references/Subagent%E8%B0%83%E5%BA%A6.md) | 三角色串行主链 + 阶段 Gate | 设计基线已有，本地未实现 | **增强，不照搬。已实现。** 保留 M1/P1/P2；W1 并入 Paper Strategy；W2 只判内容就绪，S1/F1 另判提交。不要让 Gate 等于独立 Agent。与 Mathodology 九阶段逐阶段 Critic 冲突时采用短链。 | A Workflow | 中 | 高 |
 | [math-modeling-skill / `前置合同.md`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/references/roles/%E5%BB%BA%E6%A8%A1%E6%89%8B/references/%E5%89%8D%E7%BD%AE%E5%90%88%E5%90%8C.md)、[`repro_manifest.py`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/references/roles/%E7%BC%96%E7%A8%8B%E6%89%8B/scripts/repro_manifest.py) | Model Contract + 输入哈希/种子/参数/复现命令 | 设计基线部分已有，本地未实现 | **增强。P0 实现。** 把自然语言合同升级为可校验 schema；复现清单进一步记录代码版本、输出哈希和结果 ID，形成 raw data → code → result 的主链。 | B Artifact Contract | 中 | 高 |
 | [math-modeling-skill / `figure_audit.py`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/references/roles/%E7%BC%96%E7%A8%8B%E6%89%8B/scripts/figure_audit.py)、[`test_figure_tools.py`](https://github.com/XiaoMaColtAI/math-modeling-skill/blob/6ff5fd31c19af97e13babb0dd2a8cef81e3b822d/tests/test_figure_tools.py) | 图文件格式、DPI、SVG 文本、子问题覆盖的确定性检查 | 本地可视化指南只有原则；设计基线有脚本 | **替换其中的数量规则，保留机械检查。P0 做轻量版，深度 QA 放 P1。** 删除“三类各 3 张、正式图至少 8 张”；检查应围绕 `claim_id/evidence_id` 覆盖、可读性、来源和导出质量。 | D Reviewer/QA + C Figure reference | 中 | 高 |
 | [MathModelAgent / `2analysis-modeling`](https://github.com/jihe520/MathModelAgent/blob/11f38624cd9128bc2ce22d7b3254106e624490cd/skills/2analysis-modeling/SKILL.md) | 赛题分析与模型设计合并；末尾给出代码实现接口表 | 设计基线的题目分析报告已有相似思想 | **增强。现在实现。** 不额外拆“分析 Agent”和“模型 Agent”；把任务、输入、输出、方法、校验写进 `model_contract`。 | A Workflow + B Contract | 低 | 高 |
@@ -131,30 +123,37 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Problem Analysis + Model Contract"] --> B{"M1 Model Readiness"}
+    S["Competition Profile + Official Rule Snapshots"] --> A["Problem Analysis + Model/Data/Literature Contracts"]
+    A --> B{"M1 Model Readiness"}
     B -->|PASS| C["Coding: minimal vertical slice"]
     B -->|FAIL| A
     C --> D{"P1 Smoke"}
-    D -->|PASS| E["Full Experiments + validation/sensitivity as needed"]
+    D -->|PASS| E["Full Experiments + triggered validation obligations"]
     D -->|FAIL| C
-    E --> F{"P2 Result Freeze Gate"}
-    F -->|PASS| G["Freeze results + update Run Manifest"]
+    E --> F{"P2 Result Gate + human checkpoint"}
+    F -->|PASS| G["Immutable Results Freeze"]
     F -->|FAIL| E
-    G --> H["Evidence Registry"]
-    H --> I{"Paper Strategy Gate (W1 merged)"}
+    G --> H["Incremental Evidence Registry"]
+    H --> I{"W1 Paper Strategy"}
     I -->|evidence gap| E
     I -->|PASS| J["Formal Figure Contracts + Figure QA"]
     J --> K["One Paper Writer + on-demand references"]
     K --> L["Consistency Sweep + Deterministic QA"]
     L --> M["Semantic Critic"]
-    M -->|normal pass| R{"Release Gate (W2)"}
+    M -->|normal pass| R{"W2 Content Ready"}
     M -->|targeted issues| N["Bounded Targeted Revision"]
     N --> O["Re-run affected checks only"]
     O --> M
     M -->|award-max profile| P["Optional blind panel"]
     P -->|ranked gaps| N
     P -->|pass| R
-    R --> S["Final package"]
+    R --> T{"S1 Competition-specific Submission QA"}
+    T -->|FAIL| K
+    T -->|PASS| U["F1 Immutable submission_manifest"]
+    CS["Continuous Safety / AI Registry / Human Checkpoints"] -. constrains .-> A
+    CS -. constrains .-> E
+    CS -. constrains .-> K
+    CS -. constrains .-> T
 ```
 
 ### 4.1 Gate 取舍
@@ -165,9 +164,11 @@ flowchart TD
 | P1 | 保留 | 最小真实/等价输入不能贯通、退出码非零、范围/单位/约束明显错误 | 代码执行与断言，必要时独立复现 |
 | P2 | 保留并与 Results Freeze 合并 | 全量结果不稳定、无法复现、关键约束失败、来源/哈希缺失 | 确定性检查通过即写 freeze，不再单独做“Freeze 阶段” |
 | W1 | 与 Paper Strategy Gate 合并 | 题目要求没有 claim，claim 没有 evidence，关键结论没有图/表/推导计划，摘要候选数字未注册 | `paper_plan` schema + 一次语义检查 |
-| W2 | 保留为 Release Gate，不设独立写作 Agent | 确定性 QA、semantic critic、所选 review profile 任一未通过，或 Gate 后 artifact 改变 | 聚合已有检查结果，不重复审稿 |
+| W2 | 保留为 Content Ready，不设独立写作 Agent | 确定性 QA、semantic critic、所选 review profile 或 W2 人审未通过 | 聚合内容检查，不判断比赛包格式 |
+| S1 | 新增但只负责提交合规 | 页数/大小/格式/匿名/渲染/附件/AI 声明与 pinned profile 不符 | 程序检查 + 明确的人工 checklist |
+| F1 | 不是可变 Gate | W2/S1 未通过，最终文件或规则哈希不一致 | 生成不可覆盖 `submission_manifest.json` |
 
-所以答案不是简单“删掉哪个字母 Gate”，而是：**保留五个状态名以便恢复和追责，但只让 M1/P1/P2 成为前期硬停点；W1 是 Paper Strategy 的一次合并检查；W2 只是最终发布汇总，不再新增一轮重复审稿。**
+Gate 没有过多：M1/P1/P2/W1/W2/S1 分别只有一个决策问题，F1 是不可变产物。Contest Safety 作为持续约束层，不再增加一个每阶段重复的 Gate 或 Agent。
 
 ### 4.2 Abstract Gate 的位置
 
@@ -187,21 +188,26 @@ Abstract Gate 不应成为第六个 Agent 或第六个顶层 Gate。它是 Paper
 paper_plan.claims[].evidence_ids
   → evidence_registry[evidence_id]
   → frozen_results[result_id / artifact_path / value / unit / precision]
-  → run_manifest[command / code hash / input hashes / environment / seed]
+  → run_manifest[competition profile / command / code hash / input hashes / seed]
   → raw data
 ```
 
 论文中的关键数字必须引用 `evidence_id` 或 `result_id`，Writer 只能从 Registry 取值和格式化，不能从聊天上下文重新估算。
 
-### 5.2 真正需要长期保存的五个核心 contract
+文献证据另走 `claim → citation evidence → full-text locator → canonical source`；metadata 检索结果不能直接成为语义证据。比赛行为则走 `action → effective safety policy → official rule snapshot`。
+
+### 5.2 五个解题 contract + 一个最终提交 manifest
 
 | Artifact | 最小内容 | 为什么必须存在 | 权威写入者 |
 |---|---|---|---|
-| `model_contract.json` | 题目要求 ID、子问题、输入数据及单位、变量/参数、假设与依据、目标/约束、候选与选定模型、输入输出、验证指标、回退条件 | 阻止 Coder 为填空而发明数学定义；是 M1 和 P1 的共同基线 | Modeling 阶段；后续只能带变更理由修订 |
-| `run_manifest.json` | run ID、当前 phase、输入/代码/输出哈希、环境、唯一命令、随机种子、Gate 状态、issue ID、artifact 路径、冻结时间 | 支持恢复、复现、Gate 失效判定和有界修订；替代散落的 plan/todo/gate YAML | Harness 主控 |
-| `frozen_results.json` | `result_id`、精确值、单位、显示精度、统计定义、子问题、来源文件/行列或 key、生成命令、哈希、验证状态 | 提供唯一“关键数字事实表”；CSV/XLSX/图片仍作为被引用的实际 artifact 保存 | Coder/Freeze 工具；P2 后只读 |
-| `evidence_registry.json` | `evidence_id`、类型（result/table/figure/derivation/citation）、支持与不支持的边界、`result_id`/路径/DOI、来源核验状态、适用 claim | 把结果、图表、推导和文献统一成可被 Writer 使用的证据对象 | Freeze 后由主控汇总，各角色补充但需校验 |
+| `model_contract.json` | 题目要求、数据来源/许可/变换/质量、变量/单位、目标/约束、题型、验证义务、回退 | 阻止 Coder 发明数学口径；把验证从“有文件”升级为“逐项责任” | Modeling；口径改变则新 run |
+| `run_manifest.json` | Competition Profile、规则快照、安全策略、AI 使用、人审、命令、artifact、Gate、Reviewer | 可变控制面；支持允许性检查、恢复、Gate 失效和有界修订 | Harness 主控 |
+| `frozen_results.json` | 结果、单位、精度、统计定义、边界、模型/代码/输入/验证快照、义务回执 | 唯一关键数字事实表，拒绝弱验证和原地覆盖 | Freeze 工具；P2 后只读 |
+| `evidence_registry.json` | 结果/图表/推导/文献证据、支持边界、artifact、文献三状态与全文 locator | 一个增量账本覆盖 M1 文献和 P2 结果，不再另建 Literature Registry | 主控增量合并并校验 |
 | `paper_plan.json` | requirement→claim、claim→evidence、章节落点、摘要候选结果 ID、`figures[]` 合同、表格需求、局限、canonical recommendation | 同时承担 Claim-Evidence Map、W1 证据大纲、Figure Contract 集和论文 outline，避免四份同义文件 | Paper Strategy 阶段；Writer 只按计划展开 |
+| `submission_manifest.json` | Competition Profile/规则哈希、最终论文/附件/AI 声明、S1 report、截止时间/时区、包哈希 | F1 独立于可变 run manifest，证明真正提交的是哪组文件 | F1 工具；禁止覆盖 |
+
+Competition Profile 与 AI Usage Registry 嵌入 `run_manifest`，不新增第七、第八个顶层 JSON。规则原文和 AI 关键交互是被哈希引用的 artifact，不把长内容塞进 manifest。
 
 `paper_plan.figures[]` 推荐字段：
 
@@ -227,7 +233,7 @@ paper_plan.claims[].evidence_ids
 - 候选模型脑暴、未入选路线的长篇草稿；只保留选型理由和关键 rejection reason 到 `model_contract`。
 - Writer 的逐段思维、Draft 0 引言、措辞候选、同义句列表。
 - 每次 Critic 的自由文本长评；只把稳定 issue ID、严重度、证据、owner、状态写入 `run_manifest`。
-- 图表试色、布局草图、未被选中的低价值候选图；可在临时目录保留到 Release Gate，最终包不带。
+- 图表试色、布局草图、未被选中的低价值候选图；可在临时目录保留到 W2，最终包不带。
 - 重复的 `RESULTS_REPORT.md`、Claim Map、Evidence Map、Figure Map。需要人读视图时从核心 contract 生成，不反向手工维护。
 
 ## 6. Micro-Skill / Reference 设计
@@ -238,61 +244,58 @@ paper_plan.claims[].evidence_ids
 math-modeling/
 ├── SKILL.md
 ├── references/
-│   ├── workflow/
-│   │   ├── competition_workflow.md
-│   │   ├── gate_policy.md
-│   │   └── revision_policy.md
+│   ├── safety/contest_safety.md
+│   ├── workflow/gate_policy.md
 │   ├── contracts/
+│   │   ├── artifact_contracts.md
 │   │   ├── model_contract.md
-│   │   ├── result_freeze.md
-│   │   ├── evidence_registry.md
-│   │   └── paper_plan.md
-│   ├── modeling/
-│   │   ├── problem_analysis.md
-│   │   ├── model_selection.md
-│   │   └── validation_patterns.md
-│   ├── coding/
-│   │   ├── reproducibility.md
-│   │   ├── experiment_design.md
-│   │   └── sensitivity_and_robustness.md
+│   │   ├── paper_plan.md
+│   │   └── figure_contract.md
+│   ├── validation/validation_obligations.md
+│   ├── research/
+│   │   ├── literature_evidence.md
+│   │   └── precedent_policy.md
+│   ├── precedents/
+│   │   ├── cumcm/index.json
+│   │   ├── mcm-icm/index.json
+│   │   └── pattern-cards/
 │   ├── writing/
 │   │   ├── abstract_guidelines.md
-│   │   ├── results_and_takeaways.md
-│   │   ├── section_moves.md
-│   │   └── consistency_sweep.md
-│   ├── visualization/
-│   │   ├── figure_contract.md
-│   │   ├── chart_selection.md
-│   │   └── figure_qa.md
-│   └── review/
+│   │   └── consistency_guidelines.md
+│   ├── visualization/figure_design.md
+│   ├── review/
 │       ├── semantic_critic_rubric.md
-│       ├── blind_reviewer_rubric.md
-│       └── issue_severity.md
+│       └── revision_policy.md
+│   └── submission/submission_freeze.md
 ├── schemas/
 │   ├── model_contract.schema.json
 │   ├── run_manifest.schema.json
 │   ├── frozen_results.schema.json
 │   ├── evidence_registry.schema.json
-│   └── paper_plan.schema.json
+│   ├── paper_plan.schema.json
+│   └── submission_manifest.schema.json
 └── scripts/
-    ├── freeze_results.py
+    ├── freeze_results.py / register_evidence.py / freeze_submission.py
     └── qa/
+        ├── check_contest_safety.py
         ├── validate_contracts.py
         ├── check_consistency.py
         ├── check_citations.py
-        ├── check_figures.py
-        └── check_paper.py
+        ├── check_gates.py
+        ├── check_submission.py
+        └── run_deterministic_qa.py
 ```
 
 ### 6.1 加载规则
 
-- **Modeler**：固定读 `model_contract` 说明；只有匹配题型时才加载对应模型/验证 reference。
+- **Harness/所有角色**：先读 Competition Profile 的有效策略；live contest 中 Safety 规则持续生效。
+- **Modeler**：固定读 `model_contract`；按题型加载 validation obligations，需要外部事实时加载 literature evidence。
 - **Coder**：固定读 contract 和 reproducibility；需要随机实验、优化、预测或敏感性时再加载相应 reference。
 - **Paper Writer**：固定读 `paper_plan`；写摘要时加载 `abstract_guidelines`，写结果时加载 `results_and_takeaways`，全文结束后加载 `consistency_sweep`。
 - **Figure 工作**：不是独立 Writer Agent。Coder 负责数据型图，Writer 负责论文位置与 caption；两者共用一个 Figure Contract。概念流程图可以调用专门绘图工具，但它仍消费同一个合同。
 - **Reviewer**：只加载其 rubric。Critic 看完整 evidence；Blind Reviewer 只看冻结 PDF 与 manifest，避免上下文污染。
 
-现有两份本地文件可以分别迁入 `references/writing/abstract_guidelines.md` 与 `references/visualization/chart_selection.md`，但迁移时要去掉任何固定图数暗示，并为摘要补上 `evidence_id` 强制来源规则。
+摘要和绘图规则已经迁入对应 reference：前者强制冻结结果来源，后者使用 evidence coverage 决定图表，不含固定图数。
 
 ## 7. Reviewer 架构
 
@@ -300,7 +303,7 @@ math-modeling/
 
 | 层 | 负责什么 | 不负责什么 | 典型输入 | 典型输出 |
 |---|---|---|---|---|
-| Deterministic QA | schema、哈希、复现命令退出码、数值/单位/精度一致性、引用 key、图路径/DPI/字体/裁切线索、页数、占位符、匿名性 | 不判断模型是否聪明、论证是否有说服力 | 全部源 artifact 与编译产物 | 可复跑的 PASS/FAIL + 命令证据 |
+| Deterministic QA | schema、哈希、命令、validation obligations、数字/单位/术语、引用 key、图路径、Safety 与可编码的 S1 限制 | 不判断模型是否合理、claim 是否充分、最终渲染是否好看；当前也不假装自动判定匿名/裁切 | 全部源 artifact 与编译产物 | 可复跑的 PASS/FAIL + 明确人工检查边界 |
 | Semantic Critic | 题意覆盖、假设合理性、模型—代码一致、claim—evidence 充分性、基线与比较口径、结论边界、图是否真正证明 claim | 不重复检查文件存在、hash、cite key 等机械事项；不负责奖项打分 | model contract、registry、结果、代码摘要、成稿和 QA 报告 | 带稳定 ID 的 blocker/high/medium/low 问题 |
 | Blind Reviewer | 模拟真实阅卷：只根据最终 PDF 和精简 artifact manifest 判断清晰度、完整性、可信度、创新性和奖项上限 | 不参与修复，不读取过程日志，不知道目标阈值，不验证所有内部细节 | 冻结 PDF + manifest + 当届 rubric | scorecard、最大短板、不可回退优点 |
 
@@ -318,7 +321,7 @@ math-modeling/
 
 1. 每个问题有稳定 ID、严重度、证据位置、owner 和 required fix。
 2. 默认最多两轮定向修订；一轮只处理 blocker/high 和少量会影响结论的 medium。
-3. 修订后只重跑受影响的 contract/计算/图/论文 QA，但最终 Release Gate 必须重新汇总所有状态。
+3. 修订后只重跑受影响的 contract/计算/图/论文 QA，但 W2 与 S1 必须重新汇总；F1 后发生变化则生成新 manifest。
 4. 若 blocker+high 数量不下降，或新修订破坏已冻结结果，立即停止自动循环，输出 decision memo。
 5. Blind Reviewer 不边审边改；它只返回排序后的问题。修改由原责任角色执行，避免 reviewer 同时成为作者。
 
@@ -326,19 +329,21 @@ math-modeling/
 
 ### P0：下一次比赛前必须完成
 
-1. **最小可用证据链**：定义 `model_contract`、`run_manifest`、`frozen_results`、`evidence_registry`、`paper_plan` 五个 schema；先允许手工填充，但字段和权威来源必须唯一。
-2. **收束 Gate**：落地 M1、P1、P2 三个前期硬 Gate；W1 合并为 Paper Strategy Gate，W2 只做 Release 汇总；写清 Gate 失效条件。
-3. **Claim-driven Paper/Figure Planning**：把 Claim-Evidence Map 和 Figure Contracts 放入 `paper_plan`；删除固定图数，按题目要求与证据覆盖生成图表需求。
-4. **摘要与一致性底线**：让现有摘要规则只从 Evidence Registry 取关键结果；加入数字、单位、有效数字、术语、摘要/正文/结论、图表/正文的最小一致性检查。
-5. **轻量 Reviewer 机制**：默认一个 Semantic Critic、稳定 issue ID、最多两轮 targeted revision；三盲席只保留设计开关。
+当前已完成以下 P0：
+
+1. **规则与比赛安全**：Competition Profile、官方规则快照、保守策略、live contest 外写保护、AI Usage Registry 与 M1/P2/W2/S1 人审。
+2. **可信结果与文献链**：Model/Data Contract、题型验证义务、拒绝占位验证、不可覆盖结果冻结、文献三状态与单一增量 Evidence Registry。
+3. **Claim-driven Paper/Figure**：`paper_plan` 承载 Claim-Evidence Map 与 Figure Contracts；摘要关键数字只取冻结结果，不设图数。
+4. **轻量 QA/Reviewer**：Safety、schema/哈希、数字/单位/术语、引用、Gate 的确定性检查；一个 Semantic Critic、可选 Blind Reviewer、最多两轮定向修订。
+5. **提交边界**：W2 内容就绪、S1 当届提交 QA、F1 不可变 `submission_manifest`；国赛/美赛优秀论文隔离区只保留索引与机制卡进 Git。
 
 ### P1：实战验证后加入
 
-- 把 schema 验证、freeze、引用检查、全文一致性检查做成脚本，并用一场完整赛题验证误报/漏报。
-- 增强 Figure QA：源码预检、最终尺寸渲染、PDF 字体/裁切/重复 caption、图数据来源检查；数值阈值配置化。
-- 为预测、优化、评价、仿真等题型增加 experiment/validation reference；规则由题型触发，不统一要求固定 seeds、数据集或消融数量。
+- 用一套往届完整赛题做 golden run，验证从 rule snapshot 到 F1 的误报、漏报与比赛耗时。
+- 自动根据 artifact 哈希变化计算下游 Gate 失效范围，减少手工把状态改回 `pending` 的遗漏。
+- 增强 Figure/PDF QA：源码预检、最终尺寸渲染、字体/裁切/重复 caption；阈值按输出载体配置。
+- 增加候选 run 与选择规则记录，防止只保留最好一次结果；补环境/solver/lockfile 快照。
 - 在一次真实比赛中试用单 Blind Reviewer，评估它是否发现 Semantic Critic 未发现的“阅卷体验”问题。
-- 生成核心 contract 的人读摘要视图，确认团队成员不需要直接编辑多份 Markdown。
 
 ### P2：未来平台化 / API Harness 再做
 
@@ -352,12 +357,12 @@ math-modeling/
 
 如果下一次比赛马上开始，应该只改五件事：
 
-1. 把“关键数字从聊天里复制”改成 `frozen_results + evidence_registry`；
-2. 把建模结论写进一个可执行的 `model_contract`，并用 P1 smoke 证明代码能兑现；
-3. 在写正文前生成一个 `paper_plan`，其中直接包含 claim→evidence 和 figure requirements；
-4. 把现有摘要与可视化指南改成 Writer/Coder 的按需 reference，并增加 Abstract Evidence Gate 与 Consistency Sweep；
-5. 使用一个 Semantic Critic 和两轮以内的 targeted revision，最终由 Release Gate 汇总机械 QA 与语义审查。
+1. 在赛前真实保存当届国赛/美赛规则快照，完成两个 Competition Profile，不要把参考链接当作已经固定的规则文件；
+2. 用一套往届题跑通 M1→P2→W2→S1→F1，特别检查 validation obligations 与提交包步骤是否拖慢团队；
+3. 为团队准备最小 `run_manifest`/`model_contract` 示例，而不是比赛时从空 JSON 手填；
+4. 把合法获得的往届论文只登记到预留 index，并提炼少量 pattern cards，不建立大规模全文 RAG；
+5. 保持默认 Reviewer 为一个 Critic；只有最终版仍有返修时间时才启用一个 Blind Reviewer。
 
 坚决不要继续折腾的部分：默认三 Blind Judge、九阶段 Agent 流水线、Abstract/Results/Conclusion 等章节 Agent、固定 8/9 张图、每阶段一份 Markdown/JSON、逐数字 PDF 超链接、默认 Word+LaTeX 双份、平台/API/UI 和复杂奖项评分器。
 
-最重要的判断是：**下一场比赛的质量瓶颈不是 Agent 数量，而是“结果没有冻结、主张没有绑定证据、图没有明确证明对象、修改后没有全局一致性复验”。** 先把这四条链路做实，现有三角色骨架已经足够；其余机制只有在真实赛题暴露重复痛点后，才值得平台化。
+最重要的判断是：**下一场比赛不要继续增加 Agent、Gate 或 Markdown；先证明当前行为被规则允许，再证明验证、结果、主张、图与最终文件属于同一条可追溯链。** 当前 P0 已足够进入 golden run；在真实赛题暴露重复痛点前，坚决不做平台/API、多 Writer、大规模优秀论文库和默认三盲席。

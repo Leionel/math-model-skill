@@ -31,7 +31,7 @@ def load_structured(path: Path) -> Any:
     text = path.read_text(encoding="utf-8")
     try:
         return json.loads(text)
-    except json.JSONDecodeError as json_error:
+    except json.JSONDecodeError:
         try:
             import yaml  # type: ignore
         except ImportError as exc:  # pragma: no cover - depends on environment

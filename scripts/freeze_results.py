@@ -65,12 +65,76 @@ def normalize_result(row: dict[str, Any], source_path: Path, root: Path, index: 
     return result
 
 
+def required_obligations(model_contract: dict[str, Any]) -> set[str]:
+    if model_contract.get("status") != "ready":
+        raise ValueError("model contract must have status=ready before result freeze")
+    obligations: set[str] = set()
+    for model_index, model in enumerate(model_contract.get("models", [])):
+        if not isinstance(model, dict):
+            raise ValueError(f"model_contract.models[{model_index}] must be an object")
+        rows = model.get("validation_obligations")
+        if not isinstance(rows, list) or not rows:
+            raise ValueError(f"model {model.get('model_id', model_index)} has no validation_obligations")
+        for row_index, row in enumerate(rows):
+            obligation_id = row.get("obligation_id") if isinstance(row, dict) else None
+            if not isinstance(obligation_id, str) or not obligation_id:
+                raise ValueError(
+                    f"model_contract.models[{model_index}].validation_obligations[{row_index}] has no obligation_id"
+                )
+            if obligation_id in obligations:
+                raise ValueError(f"duplicate validation obligation_id: {obligation_id}")
+            obligations.add(obligation_id)
+    return obligations
+
+
+def inspect_validation_reports(raw_paths: list[str], root: Path, required: set[str]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    snapshots: list[dict[str, str]] = []
+    passed: dict[str, dict[str, Any]] = {}
+    for raw_path in raw_paths:
+        path = resolve_path(raw_path, root).resolve()
+        if not path.is_file():
+            raise ValueError(f"validation artifact does not exist: {path}")
+        report = load_structured(path)
+        if not isinstance(report, dict) or report.get("ok") is not True:
+            raise ValueError(f"validation report must be an object with ok=true: {raw_path}")
+        rows = report.get("obligations")
+        if not isinstance(rows, list) or not rows:
+            raise ValueError(f"validation report must contain non-empty obligations: {raw_path}")
+        report_ref = {"path": rel_path(path, root), "sha256": sha256_file(path)}
+        snapshots.append(report_ref)
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                raise ValueError(f"{raw_path}.obligations[{index}] must be an object")
+            obligation_id = row.get("obligation_id")
+            if not isinstance(obligation_id, str) or not obligation_id:
+                raise ValueError(f"{raw_path}.obligations[{index}] has no obligation_id")
+            if row.get("status") != "pass":
+                raise ValueError(f"validation obligation {obligation_id} does not have status=pass")
+            if not isinstance(row.get("observed"), str) or not row["observed"].strip():
+                raise ValueError(f"validation obligation {obligation_id} must record observed evidence")
+            if obligation_id in passed:
+                raise ValueError(f"validation obligation appears in more than one report: {obligation_id}")
+            passed[obligation_id] = {
+                "obligation_id": obligation_id,
+                "status": "pass",
+                "report": report_ref,
+            }
+    missing = sorted(required - set(passed))
+    extra = sorted(set(passed) - required)
+    if missing:
+        raise ValueError(f"validation reports do not cover required obligation(s): {', '.join(missing)}")
+    if extra:
+        raise ValueError(f"validation reports contain undeclared obligation(s): {', '.join(extra)}")
+    return snapshots, [passed[key] for key in sorted(passed)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, help="JSON result file with a top-level results array")
     parser.add_argument("--output", required=True, help="frozen_results.json output path")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--model-contract", required=True)
     parser.add_argument("--command", required=True)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--input", action="append", default=[], help="input artifact; repeatable")
@@ -81,6 +145,7 @@ def main() -> int:
     root = Path(args.project_root).resolve()
     source = resolve_path(args.source, root).resolve()
     output = resolve_path(args.output, root).resolve()
+    model_contract_path = resolve_path(args.model_contract, root).resolve()
     if not source.is_file():
         print(f"ERROR: source result file does not exist: {source}", file=sys.stderr)
         return 2
@@ -89,6 +154,12 @@ def main() -> int:
         return 2
     try:
         raw = load_structured(source)
+        model_contract = load_structured(model_contract_path)
+        if not isinstance(model_contract, dict):
+            raise ValueError("model contract must be an object")
+        if model_contract.get("run_id") != args.run_id:
+            raise ValueError("model contract run_id does not match --run-id")
+        obligation_ids = required_obligations(model_contract)
         rows = raw.get("results") if isinstance(raw, dict) else raw
         if not isinstance(rows, list) or not rows:
             raise ValueError("source must be a non-empty list or an object with a non-empty results list")
@@ -106,15 +177,23 @@ def main() -> int:
                 output_refs.append({"path": rel_path(path, root), "sha256": sha256_file(path)})
             return output_refs
 
+        validation_snapshot, validation_obligations = inspect_validation_reports(
+            args.validation, root, obligation_ids
+        )
         frozen = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "run_id": args.run_id,
             "status": "frozen",
             "frozen_at": datetime.now(timezone.utc).isoformat(),
+            "model_contract_snapshot": {
+                "path": rel_path(model_contract_path, root),
+                "sha256": sha256_file(model_contract_path),
+            },
             "source_snapshot": {"path": rel_path(source, root), "sha256": sha256_file(source)},
             "input_snapshot": refs(args.input),
             "code_snapshot": refs(args.code),
-            "validation_snapshot": refs(args.validation),
+            "validation_snapshot": validation_snapshot,
+            "validation_obligations": validation_obligations,
             "command": args.command,
             "seed": args.seed,
             "results_sha256": sha256_json(results),

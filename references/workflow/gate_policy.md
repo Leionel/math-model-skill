@@ -1,32 +1,34 @@
 # P0 Gate Policy
 
-## 状态
-
-每个 Gate 使用 `pending | pass | fail | blocked`。`pass` 只表示当前输入快照通过；输入、代码、冻结结果或论文发生实质变化后，状态必须回到 `pending`。
-
-## 前置关系
+Contest Safety 持续执行，不计为额外 Gate。主链保留六个有限决策点：
 
 ```text
-M1 → P1 → P2 → W1(Paper Strategy) → W2(Release)
+M1 → P1 → P2 → W1 → W2 → S1 → F1 manifest
 ```
 
-- M1 需要 `model_contract.status=ready`，且文件哈希与 manifest 一致。
-- P1 需要 M1 通过，并且恰有一个成功的 `stage=smoke` command。
-- P2 需要 P1 通过，`stage=full` 与 `stage=freeze` 分别成功，并且冻结文件含代码与验证日志快照。
-- W1 需要 P2 通过、`paper_plan.status=ready`，且每个必要 claim 只引用已验证 evidence。
-- W2 需要已哈希的论文、Deterministic QA 报告和 Semantic Critic 报告；若启用 Blind Reviewer，还需要独立 reviewer ID 与报告哈希。
+| Gate | 唯一职责 | 通过条件摘要 |
+|---|---|---|
+| M1 | 数学与验证方案可编码 | ready model contract、规则/数据边界明确、M1 人审 |
+| P1 | 最小执行路径可运行 | 恰一个成功 smoke，结构/单位/基本约束通过 |
+| P2 | 全量结果可信且可冻结 | full + freeze 成功、全部 validation obligations pass、P2 人审 |
+| W1 | 论证可写 | ready paper plan、必要 claim 均有 verified evidence |
+| W2 | 内容就绪 | 论文、确定性 QA、Semantic Critic、W2 人审；盲审按 profile |
+| S1 | 当届提交包合规 | Competition Profile 专属 QA、全部人工检查、S1 report |
+| F1 | 最终不可变交付 | 生成不可覆盖的 `submission_manifest.json`，不是 run manifest 中的新可变 Gate |
 
-## 失败处理
+每个 Gate 使用 `pending | pass | fail | blocked`。`pass` 只对当前哈希有效；上游 artifact 变化后受影响 Gate 必须回到 `pending`。
 
-- M1 失败：返回 Modeling，不能由 Coder 猜测修复数学合同。
-- P1/P2 失败：返回 Coding；禁止先写论文再补结果。
-- W1 失败：返回 Evidence/Results 或重新规划 claim；不能用空泛句子绕过缺口。
-- W2 失败：只处理 issue 指向的 artifact，最多两轮；问题未减少时输出 decision memo。
+## 回退
 
-每个 `pass` Gate 必须在 `evidence` 中登记本次检查使用的 artifact/report；不能只手工改状态字符串。
+- M1 → Modeling；Coder 不猜数学合同。
+- P1/P2 → Coding/Validation；禁止先写论文后补结果。
+- W1 → Evidence/Results 或重做 paper strategy；不靠空话覆盖缺口。
+- W2 → issue 指向的 Writer/Coder artifact；最多两轮。
+- S1 → Submission Builder；内容变化时同时退回 W2。
+- F1 后任何文件变化 → 重新 S1，生成新的 F1 manifest，旧文件保留审计。
 
 ## Reviewer 分档
 
-- 默认：确定性 QA + 1 个 Semantic Critic。
-- Final Submission：再加 1 个 Blind Reviewer。
-- Award-Max：冻结成稿后才启用 3 个隔离盲席；不把竞赛阈值写死在通用 Harness。
+- `sprint`：Deterministic QA + 1 Semantic Critic。
+- `final_submission`：再加 1 个独立 Blind Reviewer。
+- `award_max`：只在成稿冻结、明确冲奖且有返修时间时使用 3 席；不把通用分数阈值写死。

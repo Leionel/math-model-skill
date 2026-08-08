@@ -77,6 +77,16 @@ def main() -> int:
     ]
     checks = [
         run_check("contracts", [sys.executable, str(SCRIPT_DIR / "validate_contracts.py"), *contract_args]),
+        run_check(
+            "contest_safety",
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "check_contest_safety.py"),
+                "--project-root", str(root),
+                "--manifest", args.run_manifest,
+                "--strict",
+            ],
+        ),
         run_check("consistency", [sys.executable, str(SCRIPT_DIR / "check_consistency.py"), *consistency_args]),
     ]
     if args.tex and args.bib:

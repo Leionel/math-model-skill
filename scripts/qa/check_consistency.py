@@ -131,10 +131,15 @@ def main() -> int:
             elif artifact.get("sha256") != sha256_file(artifact_file):
                 errors.append(f"evidence {evidence_id} artifact hash drift: {artifact_path}")
 
-    generated_from = registry.get("generated_from", {})
-    if isinstance(generated_from, dict) and frozen_path.is_file() and generated_from.get("frozen_results_sha256"):
-        if generated_from["frozen_results_sha256"] != sha256_file(frozen_path):
-            errors.append("evidence_registry is not generated from the supplied frozen_results file")
+    matching_frozen_snapshot = False
+    for snapshot in registry.get("source_snapshots", []):
+        if not isinstance(snapshot, dict) or snapshot.get("kind") != "frozen_results":
+            continue
+        snapshot_path = resolve_path(str(snapshot.get("path", "")), root).resolve()
+        if snapshot_path == frozen_path and snapshot.get("sha256") == sha256_file(frozen_path):
+            matching_frozen_snapshot = True
+    if not matching_frozen_snapshot:
+        errors.append("evidence_registry has no current snapshot of the supplied frozen_results file")
 
     claims = plan.get("claims", [])
     claim_by_id = {claim.get("claim_id"): claim for claim in claims if isinstance(claim, dict)}

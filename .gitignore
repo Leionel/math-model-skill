@@ -5,6 +5,13 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+
+# Keep only precedent indexes/pattern cards in Git. Store paper files locally.
+references/precedents/**/*.pdf
+references/precedents/**/*.doc
+references/precedents/**/*.docx
+references/precedents/**/*.zip
+references/precedents/**/*.rar
 *.egg-info/
 .env
 .DS_Store

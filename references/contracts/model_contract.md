@@ -6,7 +6,7 @@
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "project_id": "contest-a",
   "run_id": "run-001",
   "unit_system": "SI",
@@ -20,7 +20,16 @@
     }
   ],
   "data_sources": [
-    {"data_id": "demand", "path": "data/input.csv", "read_only": true, "sha256": "<64-hex>"}
+    {
+      "data_id": "demand",
+      "path": "data/input.csv",
+      "read_only": true,
+      "sha256": "<64-hex>",
+      "origin": "竞赛附件",
+      "license_or_terms": "限本次竞赛使用",
+      "transformations": [],
+      "quality_checks": ["列类型、缺失值、重复、范围和单位检查"]
+    }
   ],
   "assumptions": [
     {"assumption_id": "A1", "text": "规划期内需求固定", "basis": "题目给定", "sensitivity_plan": "需求上下浮动 10% 重跑"}
@@ -30,6 +39,7 @@
       "model_id": "M-Q1",
       "question_id": "q1",
       "name": "成本最小化模型",
+      "problem_type": "optimization",
       "rationale": "直接对应题目目标与约束",
       "variables": [
         {"symbol": "x", "meaning": "生产数量", "unit": "item", "domain": "x >= 0", "role": "decision"}
@@ -43,6 +53,15 @@
       "outputs": ["optimal_cost"],
       "validation": [
         {"check_id": "V1", "stage": "both", "method": "检查全部约束", "acceptance": "零违反"}
+      ],
+      "validation_obligations": [
+        {
+          "obligation_id": "VAL-FEASIBILITY",
+          "category": "feasibility",
+          "method": "独立重算全部约束",
+          "acceptance": "最大约束违反为 0",
+          "required_stage": "both"
+        }
       ],
       "risks": ["需求固定假设"],
       "fallback": "求解超时则使用已验证的可行启发式方案"
@@ -61,4 +80,6 @@
 - 为变量填写含义、单位、定义域和角色；无量纲量显式写 `dimensionless`。
 - 把约束写成可定位的 `constraint_id + expression + meaning`。
 - 为 smoke/full 指定可判断成败的 acceptance；“结果合理”不是验收标准。
+- 按题型声明会改变结论可信度的 `validation_obligations`；P2 必须逐项回执，不接受空 `ok=true` 报告。
+- 数据源必须记录 origin、许可/条款、变换和质量检查；外部数据的来源页面也应固定快照。
 - 写明风险和回退方案；模型变化后创建新 run，不能沿用旧 P1/P2 状态。

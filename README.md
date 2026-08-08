@@ -1,84 +1,104 @@
 # Math Modeling Evidence Harness
 
-一个面向数学建模竞赛（CUMCM、MCM/ICM 等）的证据驱动 Harness。它不替代建模者、程序员或论文作者，而是把“模型—代码—结果—证据—论文—审查”连接成可复核的交付链，降低关键数字漂移、结果被覆盖和论文超出证据边界的风险。
+面向 CUMCM、MCM/ICM 等数学建模竞赛的本地 Skill/Harness。它把“当届规则—模型—代码—验证—结果—证据—论文—提交”连接成可复核链路，重点降低四类风险：比赛违规、验证占位、关键数字漂移、最终文件与规则不符。
 
-> 当前状态：P0 基础链路已实现并有回归测试。项目仍是可组合的本地 Harness，不是开箱即用的自动建模 Agent，也不承诺替用户选择模型或生成完整论文。
+> 当前状态：P0 链路已实现并有回归测试。它是可组合 Harness，不是全自动解题 Agent；模型选择、结论负责和最终提交仍由参赛队完成。
 
-## 核心流程
-
-```text
-Problem Analysis
-      |
-      v
-model_contract.json ---- M1 Modeling Gate
-      |
-      v
-Coding ---- P1 Smoke Gate ---- Full Experiments ---- P2 Result Gate
-                                                     |
-                                                     v
-                                             frozen_results.json
-                                                     |
-                                                     v
-                                           evidence_registry.json
-                                                     |
-                                                     v
-                                      paper_plan.json / Figure Contracts
-                                                     |
-                                                     v
-                                           Paper Writer (one writer)
-                                                     |
-                                                     v
-                           Deterministic QA ---- Semantic Critic
-                                                     |
-                              optional Blind Reviewer(s) ---- W2 Release
-```
-
-核心原则是单向追溯：
+## 架构
 
 ```text
-paper claim -> evidence -> frozen result -> code/input artifact -> raw data
+Competition Profile / Official Rule Snapshot
+╔══════════════ Contest Safety + AI Registry + Human Review ══════════════╗
+║ Problem → M1 → Coding → P1 → Full/Validation → P2 → Results Freeze     ║
+║ → Evidence Registry → Paper Plan/Figures → W1 → Writer → QA/Critic → W2║
+╚═════════════════════════════════════════════════════════════════════════╝
+→ S1 Competition-specific Submission QA
+→ F1 Immutable submission_manifest.json
 ```
 
-关键数字不应只存在于 LLM 上下文或自由文本报告中。
+两条追溯链并行存在：
 
-## 主要能力
+```text
+paper claim → evidence → frozen result → code/input → raw data
+contest action → effective policy → official rule snapshot
+```
 
-- **Model Contract**：在 M1 前明确问题、变量、单位、约束、输入输出、验证标准和风险。
-- **Result Freeze**：把经过 full experiment 的结果冻结为不可原地覆盖的 `frozen_results.json`，记录单位、适用边界、精度、代码/输入/验证快照。
-- **Evidence Registry**：从冻结结果生成可追溯 evidence，避免论文先写数字、事后补证据。
-- **Paper Plan**：在 W1 阶段承载 claim-evidence map、章节顺序、摘要候选结果、图表需求和术语约束。
-- **Figure Contract**：吸收 [nature-skills 的 claim-first figure 机制](https://github.com/Yuan1z0825/nature-skills)，先写清图要证明什么、使用哪条证据、为什么不可删，再决定图的形式和数量；不硬编码“至少几张图”。
-- **Deterministic QA**：程序化检查 contract、数字/单位/术语一致性、摘要 Gate、引用和图表引用等可机械验证内容。
-- **Semantic Review**：把语义支持、边界外推、结论风险交给 Critic；Blind Reviewer 只在最终投稿或冲奖模式按需启用。
+## P0 能力
+
+- **Contest Safety**：固定当届官方规则快照；区分官方规则与本地保守策略；检查 live contest 的队外求助、赛题讨论、公开发布、外部写入与 AI 使用。
+- **AI Usage + Human Checkpoints**：在 `run_manifest` 中登记影响交付物的 AI 使用；M1/P2/W2/S1 绑定当前 artifact 哈希做人工确认。
+- **Model/Data Contract**：记录题意、变量、单位、约束、数据来源/许可/变换/质量和题型触发的验证义务。
+- **Validation Obligations**：P2 不再只看验证文件是否存在；`{"ok": true}` 没有逐项 obligation 回执时无法冻结。
+- **Result Freeze**：禁止覆盖已有冻结文件，绑定模型合同、输入、代码、验证报告与结果哈希。
+- **Evidence Registry**：一个可增量账本同时承载文献与结果证据；文献身份、全文支持和出版状态分开核验。
+- **Paper Plan / Figure Contract**：requirement → claim → evidence 驱动章节与图表；不硬编码图数。
+- **Deterministic QA + Semantic Critic**：机械一致性交给脚本，边界外推和论证强度交给 Critic。
+- **Submission Freeze**：W2 与 S1 分离，最终由不可覆盖的 `submission_manifest.json` 固定比赛 profile、规则、文件、截止时间和包哈希。
+
+## 核心 artifact
+
+解题阶段只维护五个核心 JSON；最终提交再增加一个：
+
+| 文件 | 作用 |
+|---|---|
+| `model_contract.json` | M1 数学、数据与验证合同 |
+| `run_manifest.json` | 可变控制面：规则、安全、AI、人审、命令、Gate、Reviewer |
+| `frozen_results.json` | P2 可信结果与上游快照 |
+| `evidence_registry.json` | 唯一增量证据账本 |
+| `paper_plan.json` | W1 claim-evidence、章节、摘要和图表计划 |
+| `submission_manifest.json` | F1 最终不可变提交快照 |
+
+临时推理、阶段摘要和重复结果报告不需要长期保存。
 
 ## 目录
 
 ```text
-SKILL.md                         Codex skill 入口与执行规则
-agents/openai.yaml               Agent 元数据
-schemas/                         长期 artifact 的 JSON Schema
-scripts/freeze_results.py        结果冻结（禁止覆盖已有输出）
-scripts/register_evidence.py     从冻结结果生成 Evidence Registry
-scripts/qa/                      contract、consistency、citation、Gate、汇总 QA
-references/contracts/             artifact 与 Figure Contract 说明
-references/writing/               摘要、全文一致性等按需加载的写作规则
-references/visualization/         图设计 reference
-references/review/                Critic rubric 与有界修订策略
-references/workflow/              Gate 与失败回退规则
+SKILL.md                         Skill 入口与阶段路由
+agents/openai.yaml               UI 元数据
+schemas/                         6 个 JSON Schema
+scripts/freeze_results.py        逐项验证后冻结结果
+scripts/register_evidence.py     初始化/合并唯一 Evidence Registry
+scripts/freeze_submission.py     生成 F1 不可变提交 manifest
+scripts/qa/                      Safety、合同、一致性、引用、Gate、S1 QA
+references/safety/               规则快照、网络/外写、AI 与人审政策
+references/validation/           题型触发的验证义务
+references/research/             文献真实性与优秀论文隔离规则
+references/precedents/cumcm/     国赛优秀论文本地预留区 + index
+references/precedents/mcm-icm/   美赛优秀论文本地预留区 + index
+references/precedents/pattern-cards/
+                                  可提交到 Git 的机制卡
+references/contracts/            核心 artifact 与 Figure Contract
+references/writing/              Writer 按需加载的摘要/一致性规则
+references/visualization/        evidence-driven 科研绘图规则
+references/review/               Critic 与有界修订
+references/submission/           S1/F1 规则
 docs/HARNESS_INTEGRATION_ANALYSIS.md
-                                 外部开源机制的架构审计与整合方案
-tests/test_p0_harness.py          P0 回归测试和负例
+                                  开源机制审计与整合决策
+tests/test_p0_harness.py          P0 正/负例回归测试
 ```
 
 ## 快速开始
 
-默认使用 JSON，因此不依赖 PyYAML。先在项目目录准备模型合同、运行输入、代码和验证日志，再冻结结果：
+### 1. 建立规则快照与运行清单
+
+赛前从赛事官网保存当届规则、格式规范、AI 政策和提交说明，登记 URL、抓取时间和 SHA-256。不要把往届规则写成当前规则。
+
+```powershell
+python scripts/qa/check_contest_safety.py `
+  --manifest run_manifest.json `
+  --strict
+```
+
+### 2. 完整验证后冻结结果
+
+验证报告必须包含与 `model_contract.models[].validation_obligations[]` 一一对应的通过记录及 `observed` 证据。
 
 ```powershell
 python scripts/freeze_results.py `
   --source results/raw_results.json `
   --output results/frozen_results.json `
   --run-id run-001 `
+  --model-contract model_contract.json `
   --command "python code/run_all.py --seed 42" `
   --seed 42 `
   --input data/input.csv `
@@ -86,29 +106,22 @@ python scripts/freeze_results.py `
   --validation reports/full_validation.json
 ```
 
-然后注册证据：
+### 3. 合并证据
+
+M1 前可以先用 seed 建立文献 evidence；P2 后合并冻结结果。输出已存在时应写新文件，确认后再使用 `--force` 替换。
 
 ```powershell
 python scripts/register_evidence.py `
+  --seed evidence_registry.seed.json `
   --frozen-results results/frozen_results.json `
   --output evidence_registry.json
 ```
 
-`paper_plan.json` 只能引用已验证的 evidence 和冻结结果。摘要中的关键数字也必须来自冻结结果；不要在摘要、正文或结论中手写一个未登记的新数字。
+`type=citation` 且要标为 verified 时，必须满足：metadata 已核验、读过全文并记录 locator、检查过撤稿/勘误状态。Crossref/OpenAlex metadata 本身不能证明 claim。
 
-## QA 与 Gate
-
-单项检查可独立运行，也可以用统一入口汇总成带输入哈希的报告：
+### 4. W2 确定性 QA
 
 ```powershell
-python scripts/qa/validate_contracts.py `
-  --model-contract model_contract.json `
-  --run-manifest run_manifest.json `
-  --frozen-results results/frozen_results.json `
-  --evidence-registry evidence_registry.json `
-  --paper-plan paper_plan.json `
-  --strict
-
 python scripts/qa/run_deterministic_qa.py `
   --model-contract model_contract.json `
   --run-manifest run_manifest.json `
@@ -123,41 +136,83 @@ python scripts/qa/run_deterministic_qa.py `
 python scripts/qa/check_gates.py --manifest run_manifest.json --strict
 ```
 
-正式释放前应确认 M1、P1、P2、W1、W2 的状态和各自 evidence 均为当前快照。输入、代码、结果、论文或 Reviewer 报告发生实质变化后，受影响 Gate 应回到 `pending`，而不是手工保留旧的 `pass`。
+LaTeX 项目可再传 `--tex`、`--bib` 和 `--check-figures`。
 
-运行回归测试：
+### 5. S1/F1
+
+S1 前由人完成 Competition Profile 中列出的匿名性、最终渲染、页数、附件内容等人工检查。
+
+```powershell
+python scripts/qa/check_submission.py `
+  --run-manifest run_manifest.json `
+  --paper submission/solution.pdf `
+  --paper-pages 25 `
+  --page-count-method pdfinfo `
+  --support submission/support.zip `
+  --ai-disclosure submission/AI_use_report.pdf `
+  --output reports/submission_qa.json
+```
+
+将 S1 report 登记回 manifest 并把状态设为 `submission_ready` 后：
+
+```powershell
+python scripts/freeze_submission.py `
+  --run-manifest run_manifest.json `
+  --s1-report reports/submission_qa.json `
+  --paper submission/solution.pdf `
+  --support submission/support.zip `
+  --ai-disclosure submission/AI_use_report.pdf `
+  --deadline "2026-09-01T20:00:00+08:00" `
+  --timezone "Asia/Hong_Kong" `
+  --output submission_manifest.json
+```
+
+F1 文件不可覆盖。最终文件发生变化时，重新执行 S1/F1。
+
+冻结后可随时复验最终文件未漂移：
+
+```powershell
+python scripts/qa/check_submission_manifest.py `
+  --submission-manifest submission_manifest.json
+```
+
+## 优秀论文预留区
+
+国赛与美赛目录已经预留，但论文文件不会提交到 Git：
+
+- `references/precedents/cumcm/`
+- `references/precedents/mcm-icm/`
+
+把合法获得的论文放到本地，并在各自 `index.json` 记录赛事、年份、题号、奖项、官方来源、哈希和用途。先提炼成 `pattern-cards/` 机制卡，再供 Writer 赛前参考；不要复制原文，也不要把优秀论文当成科学 evidence。详见 [Outstanding Paper Quarantine](references/research/precedent_policy.md)。
+
+## Figure / Reviewer 边界
+
+Figure Contract 吸收了 nature-skills 的 claim-first、panel map、统计定义和最终尺寸人工检查思想。P0 已检查 claim/evidence/data artifact/引用关系；源码预检、导出 PDF 字体/裁切和逐 panel 渲染审查仍是 P1，不冒充已实现能力。
+
+Reviewer 默认不堆 Agent：
+
+| 模式 | 组成 |
+|---|---|
+| `sprint` | Deterministic QA + 1 Semantic Critic |
+| `final_submission` | 上述检查 + 1 Blind Reviewer |
+| `award_max` | 冻结成稿后按需使用 3 个隔离盲席 |
+
+修订最多两轮，只处理稳定 issue ID 指向的问题；blocker/high 不下降时停止并写 decision memo。
+
+## 验证
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-### 图像 QA 的当前边界
-
-P0 已实现图表合同和轻量确定性检查：图必须绑定 claim/evidence，登记数据或源文件，声明 panel、统计定义、正文位置和 caption；`check_consistency.py` 会检查图表引用、数据 artifact 和相关证据关系。`check_citations.py` 可检查 LaTeX 图片文件引用。
-
-Nature Figure 中更重的三层检查——源码预检、导出 PDF 字体/裁切检查、按论文实际尺寸逐 panel 渲染审查——已记录为 P1 方向，尚未伪装成当前自动能力。最终图仍需要在目标论文尺寸下人工阅读；自动脚本不能替代可读性和论证判断。
-
-## Reviewer 模式
-
-| 模式 | 组成 | 适用场景 |
-|---|---|---|
-| `sprint` | Deterministic QA + 1 个 Semantic Critic | 普通比赛和快速迭代 |
-| `final_submission` | 上述检查 + 1 个 Blind Reviewer | 最终提交前 |
-| `award_max` | 冻结成稿后再启用 3 个相互隔离的 Blind Reviewer | 明确冲奖、且仍有返修时间 |
-
-修订默认最多两轮，并且只改动 issue 指向的 artifact；问题没有减少时应停止并记录 decision memo，而不是无限润色。
-
-## 设计边界
-
-- 结果的权威来源是 `frozen_results.json`，不是另一个手工维护的 Markdown 结果报告。
-- 长期保存少量高价值 contract；阶段性自由文本、临时推理和重复摘要不应继续膨胀成独立 artifact。
-- Writer 保持为一个 Agent，摘要、结果分析、图设计、一致性等内容通过 `references/` 按需加载。
-- 图的数量由 claim/evidence coverage 决定，而不是固定张数。
-- 程序能可靠验证的内容交给脚本；模型合理性、外推边界和论证强度交给 Semantic Critic。
+当前测试覆盖：规则/安全策略、人工 checkpoint、验证占位拒绝、文献全文核验、摘要未登记数字、S1 人工检查、最终包冻结和不可覆盖行为。
 
 ## 进一步阅读
 
-- [Harness Integration Analysis](docs/HARNESS_INTEGRATION_ANALYSIS.md)：逐仓库分析可抽取机制、重复与冲突、P0/P1/P2 改造优先级。
-- [Artifact Contracts](references/contracts/artifact_contracts.md)：长期 artifact、单向依赖和结果字段约定。
-- [Gate Policy](references/workflow/gate_policy.md)：Gate 前置关系、失败回退和 Reviewer 强度。
-- [Figure Contract](references/contracts/figure_contract.md)：claim-first 的图表契约。
+- [Harness Integration Analysis](docs/HARNESS_INTEGRATION_ANALYSIS.md)
+- [Artifact Contracts](references/contracts/artifact_contracts.md)
+- [Contest Safety](references/safety/contest_safety.md)
+- [Validation Obligations](references/validation/validation_obligations.md)
+- [Literature Evidence](references/research/literature_evidence.md)
+- [Figure Contract](references/contracts/figure_contract.md)
+- [Submission Freeze](references/submission/submission_freeze.md)

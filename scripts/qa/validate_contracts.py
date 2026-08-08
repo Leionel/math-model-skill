@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the five durable P0 contracts and their cross-references."""
+"""Validate the five solve-stage contracts and their cross-references."""
 
 from __future__ import annotations
 
@@ -14,6 +14,18 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
+
+
+REQUIRED_VALIDATION_CATEGORIES = {
+    "optimization": {"feasibility", "objective_recomputation"},
+    "prediction": {"out_of_sample", "leakage", "baseline"},
+    "classification": {"out_of_sample", "leakage", "baseline"},
+    "time_series": {"out_of_sample", "leakage", "baseline"},
+    "evaluation": {"sensitivity", "stability"},
+    "simulation": {"uncertainty", "convergence"},
+    "differential_equation": {"numerical_error", "sensitivity"},
+    "statistical_inference": {"uncertainty"},
+}
 
 
 def _type_matches(value: Any, expected: str) -> bool:
@@ -196,6 +208,15 @@ def _cross_references(
         errors.append("run_manifest.model_contract.path is not the supplied model contract")
     for index, artifact in enumerate(manifest.get("artifacts", [])):
         verify_file_ref(f"run_manifest.artifacts[{index}]", artifact)
+    for index, rule in enumerate(manifest.get("competition_profile", {}).get("official_rules", [])):
+        verify_file_ref(f"run_manifest.competition_profile.official_rules[{index}].snapshot", rule["snapshot"])
+    for index, usage in enumerate(manifest.get("ai_usage", [])):
+        verify_file_ref(f"run_manifest.ai_usage[{index}].interaction_record", usage["interaction_record"])
+    for checkpoint_index, checkpoint in enumerate(manifest.get("human_checkpoints", [])):
+        for artifact_index, ref in enumerate(checkpoint.get("artifacts", [])):
+            verify_file_ref(
+                f"run_manifest.human_checkpoints[{checkpoint_index}].artifacts[{artifact_index}]", ref
+            )
 
     question_ids = [row["question_id"] for row in model["questions"]]
     question_set = unique("model_contract question_id", question_ids)
@@ -216,6 +237,7 @@ def _cross_references(
                 errors.append(f"question {question['question_id']} depends on unknown question_id {dependency}")
             if dependency == question["question_id"]:
                 errors.append(f"question {question['question_id']} cannot depend on itself")
+    obligation_ids: list[str] = []
     for row in model.get("models", []):
         if row.get("question_id") not in question_set:
             errors.append(f"model {row.get('model_id')} references unknown question_id {row.get('question_id')}")
@@ -223,9 +245,19 @@ def _cross_references(
         unique(f"model {row['model_id']} variable symbol", [item["symbol"] for item in row["variables"]])
         unique(f"model {row['model_id']} constraint_id", [item["constraint_id"] for item in row["constraints"]])
         unique(f"model {row['model_id']} validation check_id", [item["check_id"] for item in row["validation"]])
+        model_obligations = [item["obligation_id"] for item in row["validation_obligations"]]
+        unique(f"model {row['model_id']} validation obligation_id", model_obligations)
+        obligation_ids.extend(model_obligations)
+        categories = {item["category"] for item in row["validation_obligations"]}
+        missing_categories = sorted(REQUIRED_VALIDATION_CATEGORIES.get(row.get("problem_type"), set()) - categories)
+        if missing_categories:
+            errors.append(
+                f"model {row['model_id']} problem_type={row.get('problem_type')} is missing validation category/categories: {missing_categories}"
+            )
         unknown_outputs = set(row["outputs"]) - set(question_by_id[row["question_id"]]["outputs"])
         if unknown_outputs:
             errors.append(f"model {row['model_id']} outputs are not declared by its question: {sorted(unknown_outputs)}")
+    obligation_set = unique("model_contract validation obligation_id", obligation_ids)
 
     frozen_results = frozen.get("results", [])
     result_ids = [row["result_id"] for row in frozen_results]
@@ -235,18 +267,45 @@ def _cross_references(
             errors.append(f"result {result['result_id']} references unknown question_id {result['question_id']}")
     if frozen.get("results_sha256") and frozen["results_sha256"] != sha256_json(frozen_results):
         errors.append("frozen_results.results_sha256 does not match the canonical results array")
-    for field in ("source_snapshot",):
+    for field in ("model_contract_snapshot", "source_snapshot"):
         verify_file_ref(f"frozen_results.{field}", frozen[field])
+    frozen_model_path = resolve_path(frozen["model_contract_snapshot"]["path"], root).resolve()
+    if frozen_model_path != paths["model_contract"].resolve():
+        errors.append("frozen_results.model_contract_snapshot is not the supplied model contract")
     for field in ("input_snapshot", "code_snapshot", "validation_snapshot"):
         for index, ref in enumerate(frozen[field]):
             verify_file_ref(f"frozen_results.{field}[{index}]", ref)
-    if paths["frozen_results"].is_file() and registry.get("generated_from", {}).get("frozen_results_sha256"):
-        actual_hash = sha256_file(paths["frozen_results"])
-        if registry["generated_from"]["frozen_results_sha256"] != actual_hash:
-            errors.append("evidence_registry generated_from hash does not match frozen_results file")
-    generated_path = resolve_path(registry["generated_from"]["frozen_results_path"], root).resolve()
-    if generated_path != paths["frozen_results"].resolve():
-        errors.append("evidence_registry generated_from path is not the supplied frozen_results file")
+    frozen_obligations = frozen.get("validation_obligations", [])
+    frozen_obligation_ids = [row.get("obligation_id") for row in frozen_obligations]
+    unique("frozen_results validation obligation_id", frozen_obligation_ids)
+    if set(frozen_obligation_ids) != obligation_set:
+        errors.append("frozen_results validation obligations do not match model_contract")
+    validation_refs = {
+        (ref.get("path"), ref.get("sha256"))
+        for ref in frozen.get("validation_snapshot", [])
+        if isinstance(ref, dict)
+    }
+    for row in frozen_obligations:
+        ref = row.get("report", {})
+        if (ref.get("path"), ref.get("sha256")) not in validation_refs:
+            errors.append(f"validation obligation {row.get('obligation_id')} report is not in validation_snapshot")
+
+    frozen_registry_snapshots = [
+        row for row in registry.get("source_snapshots", [])
+        if isinstance(row, dict) and row.get("kind") == "frozen_results"
+    ]
+    supplied_frozen = paths["frozen_results"].resolve()
+    matching_snapshot = False
+    for index, snapshot in enumerate(registry.get("source_snapshots", [])):
+        snapshot_path = verify_file_ref(f"evidence_registry.source_snapshots[{index}]", snapshot)
+        if (
+            snapshot.get("kind") == "frozen_results"
+            and snapshot_path == supplied_frozen
+            and snapshot.get("sha256") == sha256_file(supplied_frozen)
+        ):
+            matching_snapshot = True
+    if not frozen_registry_snapshots or not matching_snapshot:
+        errors.append("evidence_registry has no current frozen_results source snapshot")
 
     evidence_rows = registry.get("evidence", [])
     evidence_ids = [row["evidence_id"] for row in evidence_rows]
@@ -258,6 +317,20 @@ def _cross_references(
                 errors.append(f"evidence {evidence['evidence_id']} references unknown result_id {result_id}")
         if evidence["type"] == "result" and not evidence["result_ids"]:
             errors.append(f"result evidence {evidence['evidence_id']} must reference at least one result_id")
+        if evidence["type"] == "citation":
+            citation = evidence.get("citation")
+            if not isinstance(citation, dict):
+                errors.append(f"citation evidence {evidence['evidence_id']} has no citation contract")
+            elif evidence["verification_status"] == "verified":
+                for field in ("metadata_verified", "content_verified", "publication_status_checked"):
+                    if citation.get(field) is not True:
+                        errors.append(
+                            f"verified citation evidence {evidence['evidence_id']} requires citation.{field}=true"
+                        )
+                if citation.get("access_level") != "full_text":
+                    errors.append(f"verified citation evidence {evidence['evidence_id']} requires full_text access")
+        elif "citation" in evidence:
+            errors.append(f"non-citation evidence {evidence['evidence_id']} must not contain citation metadata")
         for index, ref in enumerate(evidence["artifacts"]):
             verify_file_ref(f"evidence {evidence['evidence_id']}.artifacts[{index}]", ref)
 

@@ -4,19 +4,11 @@
   "title": "Evidence Registry",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "generated_from", "evidence"],
+  "required": ["schema_version", "run_id", "source_snapshots", "evidence"],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.0"},
+    "schema_version": {"type": "string", "const": "1.1"},
     "run_id": {"type": "string", "minLength": 1},
-    "generated_from": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["frozen_results_path", "frozen_results_sha256"],
-      "properties": {
-        "frozen_results_path": {"type": "string", "minLength": 1},
-        "frozen_results_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
-      }
-    },
+    "source_snapshots": {"type": "array", "items": {"$ref": "#/$defs/source_snapshot"}},
     "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
   },
   "$defs": {
@@ -29,6 +21,39 @@
         "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
       }
     },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "sha256"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["frozen_results", "manual_seed"]},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bib_key", "title", "authors", "year", "canonical_url", "source_tier", "metadata_sources", "access_level", "locator", "metadata_verified", "content_verified", "publication_status_checked", "verified_at"],
+      "properties": {
+        "bib_key": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "authors": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "year": {"type": ["integer", "string"]},
+        "doi": {"type": "string"},
+        "canonical_url": {"type": "string", "pattern": "^https://"},
+        "venue": {"type": "string"},
+        "source_tier": {"type": "string", "enum": ["publisher", "official_repository", "trusted_index", "other"]},
+        "metadata_sources": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^https://"}},
+        "access_level": {"type": "string", "enum": ["full_text", "abstract_only", "metadata_only"]},
+        "locator": {"type": "string", "minLength": 1},
+        "metadata_verified": {"type": "boolean"},
+        "content_verified": {"type": "boolean"},
+        "publication_status_checked": {"type": "boolean"},
+        "verified_at": {"type": "string", "minLength": 1},
+        "notes": {"type": "string"}
+      }
+    },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
@@ -38,10 +63,10 @@
         "type": {"type": "string", "enum": ["result", "table", "figure", "derivation", "citation"]},
         "result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "artifacts": {"type": "array", "items": {"$ref": "#/$defs/file_ref"}},
-        "citation": {"type": "object", "additionalProperties": true},
+        "citation": {"$ref": "#/$defs/citation"},
         "supports": {"type": "string", "minLength": 1},
         "boundary": {"type": "string", "minLength": 1},
-        "verification_status": {"type": "string", "enum": ["pending", "verified", "not_applicable"]}
+        "verification_status": {"type": "string", "enum": ["pending", "verified", "rejected", "not_applicable"]}
       }
     }
   }

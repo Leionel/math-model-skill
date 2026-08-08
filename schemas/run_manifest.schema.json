@@ -4,26 +4,31 @@
   "title": "Math Modeling Run Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "run_id", "status", "phase", "model_contract", "gates", "commands", "artifacts", "revision", "reviewer"],
+  "required": ["schema_version", "project_id", "run_id", "status", "phase", "competition_profile", "safety", "ai_usage", "human_checkpoints", "model_contract", "gates", "commands", "artifacts", "revision", "reviewer"],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.0"},
+    "schema_version": {"type": "string", "const": "1.1"},
     "project_id": {"type": "string", "minLength": 1},
     "run_id": {"type": "string", "minLength": 1},
-    "status": {"type": "string", "enum": ["active", "frozen", "released", "blocked"]},
-    "phase": {"type": "string", "enum": ["analysis", "coding", "results", "evidence", "paper", "review", "release"]},
+    "status": {"type": "string", "enum": ["active", "frozen", "content_ready", "submission_ready", "blocked"]},
+    "phase": {"type": "string", "enum": ["analysis", "coding", "results", "evidence", "paper", "review", "submission"]},
+    "competition_profile": {"$ref": "#/$defs/competition_profile"},
+    "safety": {"$ref": "#/$defs/safety"},
+    "ai_usage": {"type": "array", "items": {"$ref": "#/$defs/ai_usage"}},
+    "human_checkpoints": {"type": "array", "items": {"$ref": "#/$defs/human_checkpoint"}},
     "model_contract": {"$ref": "#/$defs/file_ref"},
     "commands": {"type": "array", "items": {"$ref": "#/$defs/command"}},
     "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
     "gates": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["m1", "p1", "p2", "w1", "w2"],
+      "required": ["m1", "p1", "p2", "w1", "w2", "s1"],
       "properties": {
         "m1": {"$ref": "#/$defs/gate"},
         "p1": {"$ref": "#/$defs/gate"},
         "p2": {"$ref": "#/$defs/gate"},
         "w1": {"$ref": "#/$defs/gate"},
-        "w2": {"$ref": "#/$defs/gate"}
+        "w2": {"$ref": "#/$defs/gate"},
+        "s1": {"$ref": "#/$defs/gate"}
       }
     },
     "revision": {
@@ -59,13 +64,143 @@
         "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
       }
     },
+    "rule_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "title", "url", "retrieved_at", "snapshot"],
+      "properties": {
+        "rule_id": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "pattern": "^https://"},
+        "retrieved_at": {"type": "string", "minLength": 1},
+        "effective_from": {"type": "string"},
+        "snapshot": {"$ref": "#/$defs/file_ref"}
+      }
+    },
+    "submission_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paper_extensions", "max_paper_bytes", "page_count_scope", "support_policy", "ai_disclosure_policy", "required_manual_checks"],
+      "properties": {
+        "paper_extensions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^\\.[A-Za-z0-9]+$"}},
+        "max_paper_bytes": {"type": "integer", "minimum": 1},
+        "max_pages": {"type": ["integer", "null"], "minimum": 1},
+        "page_count_scope": {"type": "string", "minLength": 1},
+        "support_policy": {"type": "string", "enum": ["prohibited", "optional", "required"]},
+        "max_support_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "ai_disclosure_policy": {"type": "string", "enum": ["prohibited", "optional", "required_when_used", "required_always"]},
+        "required_manual_checks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "competition_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "competition", "season", "mode", "retrieved_at", "official_rules", "official_submission_endpoints", "submission"],
+      "properties": {
+        "profile_id": {"type": "string", "minLength": 1},
+        "competition": {"type": "string", "enum": ["cumcm", "comap_mcm_icm", "other"]},
+        "season": {"type": "string", "minLength": 1},
+        "mode": {"type": "string", "enum": ["pre_contest", "live_contest", "post_contest"]},
+        "retrieved_at": {"type": "string", "minLength": 1},
+        "official_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule_snapshot"}},
+        "official_submission_endpoints": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^https://"}},
+        "submission": {"$ref": "#/$defs/submission_rules"}
+      }
+    },
+    "policy_value": {"type": "string", "enum": ["allow", "competition_specific", "ask", "deny"]},
+    "network_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interactive_human_help", "current_problem_discussion", "public_posting", "external_write", "static_reference_search", "ai_tool_use"],
+      "properties": {
+        "interactive_human_help": {"$ref": "#/$defs/policy_value"},
+        "current_problem_discussion": {"$ref": "#/$defs/policy_value"},
+        "public_posting": {"$ref": "#/$defs/policy_value"},
+        "external_write": {"$ref": "#/$defs/policy_value"},
+        "static_reference_search": {"$ref": "#/$defs/policy_value"},
+        "ai_tool_use": {"$ref": "#/$defs/policy_value"}
+      }
+    },
+    "safety_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "action", "direction", "channel", "target", "decision", "recorded_at", "reason"],
+      "properties": {
+        "event_id": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "enum": ["interactive_human_help", "current_problem_discussion", "public_posting", "external_write", "static_reference_search", "ai_tool_use"]},
+        "direction": {"type": "string", "enum": ["read", "write", "interactive"]},
+        "channel": {"type": "string", "minLength": 1},
+        "target": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string"},
+        "decision": {"type": "string", "enum": ["blocked", "executed"]},
+        "human_confirmed": {"type": "boolean"},
+        "recorded_at": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["official_rule", "local_conservative_policy", "events"],
+      "properties": {
+        "official_rule": {"$ref": "#/$defs/network_policy"},
+        "local_conservative_policy": {"$ref": "#/$defs/network_policy"},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/safety_event"}}
+      }
+    },
+    "ai_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checked_by_role", "method", "checked_at"],
+      "properties": {
+        "status": {"type": "string", "enum": ["pending", "verified", "rejected"]},
+        "checked_by_role": {"type": "string", "minLength": 1},
+        "method": {"type": "string", "minLength": 1},
+        "checked_at": {"type": "string", "minLength": 1}
+      }
+    },
+    "ai_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["usage_id", "tool_name", "model", "provider", "used_at", "stage", "purpose", "prompt_summary", "output_use", "human_changes", "interaction_record", "verification"],
+      "properties": {
+        "usage_id": {"type": "string", "minLength": 1},
+        "tool_name": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "used_at": {"type": "string", "minLength": 1},
+        "stage": {"type": "string", "enum": ["analysis", "research", "modeling", "coding", "validation", "visualization", "writing", "review", "submission"]},
+        "purpose": {"type": "string", "minLength": 1},
+        "prompt_summary": {"type": "string", "minLength": 1},
+        "output_use": {"type": "string", "minLength": 1},
+        "human_changes": {"type": "string", "minLength": 1},
+        "interaction_record": {"$ref": "#/$defs/file_ref"},
+        "verification": {"$ref": "#/$defs/ai_verification"}
+      }
+    },
+    "human_checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint_id", "stage", "scope", "artifacts", "manual_checks", "reviewed_by_role", "decision", "checked_at"],
+      "properties": {
+        "checkpoint_id": {"type": "string", "minLength": 1},
+        "stage": {"type": "string", "enum": ["m1", "p2", "w2", "s1"]},
+        "scope": {"type": "string", "minLength": 1},
+        "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/file_ref"}},
+        "manual_checks": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "reviewed_by_role": {"type": "string", "minLength": 1},
+        "decision": {"type": "string", "enum": ["pass", "fail"]},
+        "checked_at": {"type": "string", "minLength": 1},
+        "notes": {"type": "string"}
+      }
+    },
     "command": {
       "type": "object",
       "additionalProperties": false,
       "required": ["command_id", "stage", "command", "exit_code"],
       "properties": {
         "command_id": {"type": "string", "minLength": 1},
-        "stage": {"type": "string", "enum": ["smoke", "full", "freeze", "evidence", "qa", "review", "release"]},
+        "stage": {"type": "string", "enum": ["safety", "smoke", "full", "freeze", "evidence", "qa", "review", "submission"]},
         "command": {"type": "string", "minLength": 1},
         "exit_code": {"type": "integer"},
         "started_at": {"type": "string"},
@@ -81,7 +216,7 @@
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
-        "role": {"type": "string", "enum": ["frozen_results", "evidence_registry", "paper_plan", "paper", "figure", "table", "qa_report", "critic_report", "blind_report", "other"]}
+        "role": {"type": "string", "enum": ["rule_snapshot", "ai_interaction", "frozen_results", "evidence_registry", "paper_plan", "paper", "figure", "table", "qa_report", "critic_report", "blind_report", "ai_disclosure", "support_package", "submission_qa", "other"]}
       }
     },
     "gate": {
