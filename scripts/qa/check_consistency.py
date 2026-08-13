@@ -43,7 +43,7 @@ def main() -> int:
     parser.add_argument("--abstract")
     parser.add_argument("--paper")
     parser.add_argument("--conclusion")
-    parser.add_argument("--figure-dir")
+    parser.add_argument("--figures-dir")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
@@ -70,6 +70,8 @@ def main() -> int:
 
     if frozen.get("status") != "frozen":
         errors.append("frozen_results.status must be frozen")
+    if frozen.get("claimable") is not True or frozen.get("validation_verdict") != "PASS":
+        errors.append("frozen_results must be claimable with validation_verdict=PASS before consistency/W1")
     results = frozen.get("results", [])
     if not isinstance(results, list) or not results:
         errors.append("frozen_results.results must be a non-empty array")
@@ -86,7 +88,7 @@ def main() -> int:
         if result_id in result_by_id:
             errors.append(f"duplicate result_id: {result_id}")
         result_by_id[result_id] = result
-        if result.get("validation_status") not in {"passed", "verified"}:
+        if result.get("validation_status") != "passed" or result.get("claimable") is not True:
             errors.append(f"result {result_id} is not validated")
         precision = result.get("precision")
         if isinstance(precision, int) and precision >= 0:
@@ -158,9 +160,24 @@ def main() -> int:
             for claim_id in requirement.get("claim_ids", []):
                 if claim_id not in claim_by_id:
                     errors.append(f"requirement {requirement.get('requirement_id')} references unknown claim_id {claim_id}")
-    for result_id in plan.get("abstract_result_ids", []):
+    abstract_results = [row for row in plan.get("abstract_results", []) if isinstance(row, dict)]
+    abstract_result_ids = [row.get("result_id") for row in abstract_results]
+    if len(abstract_result_ids) != len(set(abstract_result_ids)):
+        errors.append("abstract_results result_id values must be unique")
+    for row in abstract_results:
+        result_id = row.get("result_id")
         if result_id not in result_by_id:
-            errors.append(f"abstract_result_ids references unknown result_id {result_id}")
+            errors.append(f"abstract_results references unknown result_id {result_id}")
+        for claim_id in row.get("claim_ids", []):
+            if claim_id not in claim_by_id:
+                errors.append(f"abstract result {result_id} references unknown claim_id {claim_id}")
+        if not str(row.get("selection_reason", "")).strip():
+            errors.append(f"abstract result {result_id} has no selection_reason")
+    maximum_abstract_results = plan.get("precision_policy", {}).get("abstract_max_numeric_claims")
+    if isinstance(maximum_abstract_results, int) and len(abstract_results) > maximum_abstract_results:
+        errors.append(
+            f"abstract_results has {len(abstract_results)} entries; precision_policy allows {maximum_abstract_results}"
+        )
     section_by_id = {section.get("section_id"): section for section in plan.get("sections", []) if isinstance(section, dict)}
     for claim in claims:
         if isinstance(claim, dict) and claim.get("section") not in section_by_id:
@@ -188,7 +205,7 @@ def main() -> int:
             content = read_text(path, label, errors)
             if content is not None:
                 text_sources[label] = content
-    if args.abstract is None and plan.get("abstract_result_ids"):
+    if args.abstract is None and abstract_results:
         warnings.append("abstract was not supplied; Abstract Gate numeric coverage was not checked")
 
     terminology = plan.get("terminology", [])
@@ -206,7 +223,8 @@ def main() -> int:
 
     if "abstract" in text_sources:
         abstract = text_sources["abstract"]
-        for result_id in plan.get("abstract_result_ids", []):
+        for row in abstract_results:
+            result_id = row.get("result_id")
             result = result_by_id.get(result_id)
             if result is None:
                 continue
@@ -241,7 +259,7 @@ def main() -> int:
             if table_id and table_id not in paper_text:
                 warnings.append(f"paper does not reference planned table_id {table_id}")
 
-    figure_dir = resolve_path(args.figure_dir, root).resolve() if args.figure_dir else None
+    figure_dir = resolve_path(args.figures_dir, root).resolve() if args.figures_dir else None
     for figure in plan.get("figures", []):
         if not isinstance(figure, dict):
             continue
@@ -255,6 +273,20 @@ def main() -> int:
             if not any(candidate.is_file() for candidate in candidates):
                 message = f"figure {figure_id} data artifact does not exist: {artifact}"
                 if figure.get("qa_status") == "passed":
+                    errors.append(message)
+                else:
+                    warnings.append(message)
+
+    for table in plan.get("tables", []):
+        if not isinstance(table, dict):
+            continue
+        table_id = table.get("table_id", "table")
+        for artifact in table.get("data_artifacts", []):
+            if not isinstance(artifact, str) or artifact.startswith(("http://", "https://", "s3://", "artifact://")):
+                continue
+            if not resolve_path(artifact, root).resolve().is_file():
+                message = f"table {table_id} data artifact does not exist: {artifact}"
+                if table.get("qa_status") == "passed":
                     errors.append(message)
                 else:
                     warnings.append(message)

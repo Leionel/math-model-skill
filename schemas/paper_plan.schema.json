@@ -4,21 +4,64 @@
   "title": "Paper Plan",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "requirements", "claims", "sections", "abstract_result_ids", "terminology", "figures", "tables", "status"],
+  "required": ["schema_version", "run_id", "central_thesis", "requirements", "claims", "sections", "argument_units", "depth_budget", "precision_policy", "abstract_results", "terminology", "figures", "tables", "status"],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.0"},
+    "schema_version": {"type": "string", "const": "1.2"},
     "run_id": {"type": "string", "minLength": 1},
+    "central_thesis": {"$ref": "#/$defs/central_thesis"},
     "requirements": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/requirement"}},
     "claims": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/claim"}},
     "sections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/section"}},
-    "abstract_result_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "argument_units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/argument_unit"}},
+    "depth_budget": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/depth_budget"}},
+    "precision_policy": {"$ref": "#/$defs/precision_policy"},
+    "abstract_results": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/abstract_result"}},
+    "nonresearch_numeric_literals": {"type": "array", "items": {"$ref": "#/$defs/nonresearch_numeric_literal"}},
     "terminology": {"type": "array", "items": {"$ref": "#/$defs/term"}},
     "figures": {"type": "array", "items": {"$ref": "#/$defs/figure"}},
     "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}},
+    "readiness": {"$ref": "#/$defs/readiness"},
     "canonical_recommendation": {"type": "object", "additionalProperties": false, "required": ["text", "evidence_ids"], "properties": {"text": {"type": "string", "minLength": 1}, "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}},
     "status": {"type": "string", "enum": ["draft", "ready", "superseded"]}
   },
   "$defs": {
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "question_coverage"],
+      "properties": {
+        "stage": {"type": "string", "enum": ["outline", "technical_draft", "content_ready"]},
+        "question_coverage": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/question_coverage"}}
+      }
+    },
+    "question_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question_id", "formulation_unit_ids", "result_unit_ids", "validation_unit_ids", "interpretation_unit_ids", "display_ids"],
+      "properties": {
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "formulation_unit_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "result_unit_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "validation_unit_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "interpretation_unit_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "display_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "display_waiver": {"type": "string", "minLength": 1}
+      },
+      "anyOf": [
+        {"properties": {"display_ids": {"minItems": 1}}},
+        {"required": ["display_waiver"]}
+      ]
+    },
+    "central_thesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "claim_ids", "boundary"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1},
+        "claim_ids": {"type": "array", "minItems": 1, "maxItems": 5, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "boundary": {"type": "string", "minLength": 1}
+      }
+    },
     "requirement": {
       "type": "object",
       "additionalProperties": false,
@@ -32,14 +75,32 @@
     "claim": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["claim_id", "text", "question_id", "evidence_ids", "section", "boundary"],
+      "required": ["claim_id", "claim_type", "text", "question_id", "evidence_ids", "section", "boundary", "support_level"],
       "properties": {
         "claim_id": {"type": "string", "minLength": 1},
+        "claim_type": {"type": "string", "enum": ["observation", "inference", "recommendation"]},
         "text": {"type": "string", "minLength": 1},
         "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "section": {"type": "string", "minLength": 1},
-        "boundary": {"type": "string", "minLength": 1}
+        "boundary": {"type": "string", "minLength": 1},
+        "support_level": {"type": "string", "enum": ["direct", "qualified", "tentative"]},
+        "comparison": {"$ref": "#/$defs/comparison"},
+        "contradicting_evidence_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "alternative_explanations": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "precondition_claim_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparator", "metric", "direction", "scenario"],
+      "properties": {
+        "comparator": {"type": "string", "minLength": 1},
+        "metric": {"type": "string", "minLength": 1},
+        "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better", "noninferior", "different"]},
+        "scenario": {"type": "string", "minLength": 1}
       }
     },
     "section": {
@@ -50,6 +111,64 @@
         "section_id": {"type": "string", "minLength": 1},
         "purpose": {"type": "string", "minLength": 1},
         "claim_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "argument_unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "section_id", "rhetorical_role", "claim_ids", "evidence_ids", "prerequisite_unit_ids", "expected_reader_judgment", "boundary", "target_words"],
+      "properties": {
+        "unit_id": {"type": "string", "minLength": 1},
+        "section_id": {"type": "string", "minLength": 1},
+        "rhetorical_role": {"type": "string", "enum": ["problem_tension", "model_choice", "mechanism_derivation", "parameter_evidence", "result_observation", "comparison", "validation", "interpretation", "boundary", "recommendation"]},
+        "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "prerequisite_unit_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "expected_reader_judgment": {"type": "string", "minLength": 1},
+        "boundary": {"type": "string", "minLength": 1},
+        "target_words": {"type": "integer", "minimum": 40}
+      }
+    },
+    "depth_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question_id", "target_words", "rationale"],
+      "properties": {
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "target_words": {"type": "integer", "minimum": 80},
+        "rationale": {"type": "string", "minLength": 1}
+      }
+    },
+    "precision_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audit_source", "prose_source", "table_source", "abstract_max_numeric_claims"],
+      "properties": {
+        "audit_source": {"type": "string", "const": "frozen_display_value"},
+        "prose_source": {"type": "string", "const": "frozen_display_value"},
+        "table_source": {"type": "string", "const": "frozen_display_value"},
+        "abstract_max_numeric_claims": {"type": "integer", "minimum": 1, "maximum": 6}
+      }
+    },
+    "abstract_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_id", "priority", "selection_reason", "claim_ids", "word_budget"],
+      "properties": {
+        "result_id": {"type": "string", "minLength": 1},
+        "priority": {"type": "string", "enum": ["primary", "secondary"]},
+        "selection_reason": {"type": "string", "minLength": 1},
+        "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "word_budget": {"type": "integer", "minimum": 8, "maximum": 100}
+      }
+    },
+    "nonresearch_numeric_literal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "reason"],
+      "properties": {
+        "token": {"type": "string", "pattern": "^[-+]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][-+]?[0-9]+)?$"},
+        "reason": {"type": "string", "minLength": 1}
       }
     },
     "term": {
@@ -64,7 +183,7 @@
     "figure": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["figure_id", "kind", "claim_ids", "evidence_ids", "purpose", "why_figure", "data_artifacts", "panel_map", "statistical_definition", "paper_location", "caption_claim", "qa_status"],
+      "required": ["figure_id", "kind", "claim_ids", "evidence_ids", "purpose", "why_figure", "message", "comparison", "visual_encoding", "selection_rule", "data_artifacts", "panel_map", "statistical_definition", "paper_location", "caption_claim", "accessibility", "qa_status"],
       "properties": {
         "figure_id": {"type": "string", "minLength": 1},
         "kind": {"type": "string", "enum": ["data", "concept"]},
@@ -72,25 +191,56 @@
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "purpose": {"type": "string", "minLength": 1},
         "why_figure": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "comparison": {"type": "string", "minLength": 1},
+        "visual_encoding": {"type": "string", "minLength": 1},
+        "selection_rule": {"type": "string", "minLength": 1},
         "data_artifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "panel_map": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}},
         "statistical_definition": {"type": "string", "minLength": 1},
         "paper_location": {"type": "string", "minLength": 1},
         "caption_claim": {"type": "string", "minLength": 1},
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["grayscale_safe", "colorblind_safe", "dual_axis", "dual_axis_justification"],
+          "properties": {
+            "grayscale_safe": {"type": "boolean"},
+            "colorblind_safe": {"type": "boolean"},
+            "dual_axis": {"type": "boolean"},
+            "dual_axis_justification": {"type": ["string", "null"]}
+          }
+        },
         "qa_status": {"type": "string", "enum": ["pending", "passed", "failed"]}
       }
     },
     "table": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["table_id", "claim_ids", "evidence_ids", "purpose", "paper_location", "caption_claim"],
+      "required": ["table_id", "claim_ids", "evidence_ids", "purpose", "why_table", "data_artifacts", "columns", "statistical_definition", "paper_location", "caption_claim", "qa_status"],
       "properties": {
         "table_id": {"type": "string", "minLength": 1},
         "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "purpose": {"type": "string", "minLength": 1},
+        "why_table": {"type": "string", "minLength": 1},
+        "data_artifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "columns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/table_column"}},
+        "statistical_definition": {"type": "string", "minLength": 1},
         "paper_location": {"type": "string", "minLength": 1},
-        "caption_claim": {"type": "string", "minLength": 1}
+        "caption_claim": {"type": "string", "minLength": 1},
+        "qa_status": {"type": "string", "enum": ["pending", "passed", "failed"]}
+      }
+    },
+    "table_column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "meaning", "unit", "source_result_ids"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "meaning": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "source_result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     }
   }

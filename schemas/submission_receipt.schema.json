@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/submission-receipt.schema.json",
+  "title": "Human Submission Portal Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "submission_manifest", "submitted_file", "portal", "control_id", "submitted_at", "portal_status", "evidence", "confirmed_by_role", "confirmed_at"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "submission_manifest": {"$ref": "#/$defs/file_ref"},
+    "submitted_file": {"$ref": "#/$defs/file_ref"},
+    "portal": {"type": "string", "pattern": "^https://"},
+    "control_id": {"type": "string", "minLength": 1},
+    "submitted_at": {"type": "string", "minLength": 1},
+    "portal_status": {"type": "string", "enum": ["accepted", "pending", "rejected"]},
+    "portal_message": {"type": "string"},
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/file_ref"}},
+    "confirmed_by_role": {"type": "string", "minLength": 1},
+    "confirmed_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+tmp/
 .venv/
 venv/
 
@@ -16,3 +17,7 @@ references/precedents/**/*.rar
 .env
 .DS_Store
 Thumbs.db
+
+# Local shallow clones used for template compatibility and license audits.
+# They are upstream working copies, not distributable Skill payload.
+vendor/upstream/

@@ -14,6 +14,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
+from validation.obligations import file_ref, verify_validation_report  # noqa: E402
 
 
 REQUIRED_VALIDATION_CATEGORIES = {
@@ -170,6 +171,7 @@ def _cross_references(
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    require_hashes = manifest.get("integrity_mode", "dev") == "submission"
 
     def unique(label: str, values: list[Any]) -> set[Any]:
         if len(values) != len(set(values)):
@@ -188,8 +190,13 @@ def _cross_references(
         if not path.is_file():
             errors.append(f"{owner} path does not exist: {raw_path}")
             return None
+        expected = ref.get("sha256")
+        if expected is None:
+            if require_hashes:
+                errors.append(f"{owner}.sha256 is required in submission integrity mode")
+            return path
         actual = sha256_file(path)
-        if ref.get("sha256") != actual:
+        if expected != actual:
             errors.append(f"{owner} sha256 does not match {raw_path}")
         return path
 
@@ -267,6 +274,20 @@ def _cross_references(
             errors.append(f"result {result['result_id']} references unknown question_id {result['question_id']}")
     if frozen.get("results_sha256") and frozen["results_sha256"] != sha256_json(frozen_results):
         errors.append("frozen_results.results_sha256 does not match the canonical results array")
+    frozen_verdict = frozen.get("validation_verdict")
+    frozen_claimable = frozen.get("claimable")
+    frozen_statuses = [row.get("status") for row in frozen.get("validation_obligations", []) if isinstance(row, dict)]
+    if frozen_verdict not in {"PASS", "FAIL", "ERROR"}:
+        errors.append("frozen_results.validation_verdict must be PASS, FAIL, or ERROR")
+    elif frozen_verdict == "PASS" and any(status != "PASS" for status in frozen_statuses):
+        errors.append("frozen_results.validation_verdict=PASS conflicts with obligation verdicts")
+    elif frozen_verdict == "FAIL" and "FAIL" not in frozen_statuses:
+        errors.append("frozen_results.validation_verdict=FAIL requires at least one FAIL obligation")
+    elif frozen_verdict == "ERROR" and "ERROR" not in frozen_statuses:
+        errors.append("frozen_results.validation_verdict=ERROR requires at least one ERROR obligation")
+    expected_claimable = frozen_verdict == "PASS"
+    if frozen_claimable is not expected_claimable:
+        errors.append("frozen_results.claimable must be derived from validation_verdict")
     for field in ("model_contract_snapshot", "source_snapshot"):
         verify_file_ref(f"frozen_results.{field}", frozen[field])
     frozen_model_path = resolve_path(frozen["model_contract_snapshot"]["path"], root).resolve()
@@ -289,6 +310,57 @@ def _cross_references(
         ref = row.get("report", {})
         if (ref.get("path"), ref.get("sha256")) not in validation_refs:
             errors.append(f"validation obligation {row.get('obligation_id')} report is not in validation_snapshot")
+    derived_obligations: dict[str, dict[str, Any]] = {}
+    for index, ref in enumerate(frozen.get("validation_snapshot", [])):
+        report_path = verify_file_ref(f"frozen_results.validation_snapshot[{index}]", ref)
+        if report_path is None:
+            continue
+        try:
+            report = load_structured(report_path)
+            if not isinstance(report, dict):
+                raise ValueError("validation report must be an object")
+            measurement_ref = report.get("measurement_snapshot")
+            if not isinstance(measurement_ref, dict):
+                raise ValueError("validation report has no measurement_snapshot")
+            measurements_path = verify_file_ref(
+                f"validation report {rel_path(report_path, root)}.measurement_snapshot", measurement_ref
+            )
+            if measurements_path is None:
+                continue
+            measurements = load_structured(measurements_path)
+            if not isinstance(measurements, dict):
+                raise ValueError("measurement snapshot must be an object")
+            expected_report = verify_validation_report(
+                report,
+                model,
+                measurements,
+                file_ref(paths["model_contract"], root),
+                file_ref(measurements_path, root),
+            )
+            for expected_row in expected_report["obligations"]:
+                obligation_id = expected_row["obligation_id"]
+                if obligation_id in derived_obligations:
+                    errors.append(f"validation obligation {obligation_id} is derived by more than one report")
+                derived_obligations[obligation_id] = {
+                    "obligation_id": obligation_id,
+                    "status": expected_row["status"],
+                    "report": ref,
+                }
+        except (OSError, ValueError, TypeError) as exc:
+            errors.append(f"cannot independently verify validation report {ref.get('path')}: {exc}")
+    frozen_by_id = {
+        row.get("obligation_id"): row
+        for row in frozen_obligations
+        if isinstance(row, dict) and isinstance(row.get("obligation_id"), str)
+    }
+    if derived_obligations and frozen_by_id != derived_obligations:
+        errors.append("frozen_results.validation_obligations do not equal independently recomputed validation report rows")
+    for result in frozen_results:
+        expected_result_status = {"PASS": "passed", "FAIL": "failed", "ERROR": "error"}.get(frozen_verdict)
+        if expected_result_status is not None and result.get("validation_status") != expected_result_status:
+            errors.append(f"result {result.get('result_id')} validation_status conflicts with frozen validation_verdict")
+        if result.get("claimable") is not expected_claimable:
+            errors.append(f"result {result.get('result_id')} claimable must match frozen_results.claimable")
 
     frozen_registry_snapshots = [
         row for row in registry.get("source_snapshots", [])
@@ -333,13 +405,24 @@ def _cross_references(
             errors.append(f"non-citation evidence {evidence['evidence_id']} must not contain citation metadata")
         for index, ref in enumerate(evidence["artifacts"]):
             verify_file_ref(f"evidence {evidence['evidence_id']}.artifacts[{index}]", ref)
+    if not expected_claimable:
+        result_evidence = [row for row in evidence_rows if isinstance(row, dict) and row.get("type") == "result"]
+        if result_evidence:
+            errors.append("non-claimable frozen results cannot generate result evidence")
 
     requirement_ids = [row["requirement_id"] for row in plan["requirements"]]
     unique("paper_plan requirement_id", requirement_ids)
     claim_ids = [row["claim_id"] for row in plan["claims"]]
     claim_set = unique("paper_plan claim_id", claim_ids)
+    claim_by_id = {row["claim_id"]: row for row in plan["claims"]}
     section_ids = [row["section_id"] for row in plan["sections"]]
     section_set = unique("paper_plan section_id", section_ids)
+    argument_units = plan.get("argument_units", [])
+    argument_unit_ids = [row["unit_id"] for row in argument_units]
+    argument_unit_set = unique("paper_plan argument unit_id", argument_unit_ids)
+    depth_budget = plan.get("depth_budget", [])
+    depth_question_ids = [row["question_id"] for row in depth_budget]
+    unique("paper_plan depth_budget question_id", depth_question_ids)
     figure_ids = [row["figure_id"] for row in plan["figures"]]
     unique("paper_plan figure_id", figure_ids)
     table_ids = [row["table_id"] for row in plan["tables"]]
@@ -372,6 +455,45 @@ def _cross_references(
             if claim["claim_id"] not in section["claim_ids"]:
                 errors.append(f"claim {claim['claim_id']} is not listed by section {claim['section']}")
         check_evidence_refs(f"claim {claim.get('claim_id')}", claim)
+        for result_id in claim.get("result_ids", []):
+            if result_id not in result_set:
+                errors.append(f"claim {claim['claim_id']} references unknown result_id {result_id}")
+        for claim_id in claim.get("precondition_claim_ids", []):
+            if claim_id not in claim_set:
+                errors.append(f"claim {claim['claim_id']} references unknown precondition_claim_id {claim_id}")
+        claim_type = claim.get("claim_type")
+        if claim_type == "observation" and not claim.get("result_ids"):
+            errors.append(f"observation claim {claim['claim_id']} requires result_ids")
+        if claim_type in {"inference", "recommendation"}:
+            if claim.get("support_level") == "direct":
+                errors.append(f"{claim_type} claim {claim['claim_id']} cannot claim direct support")
+            if not claim.get("precondition_claim_ids"):
+                errors.append(f"{claim_type} claim {claim['claim_id']} requires precondition_claim_ids")
+        if any(token in claim.get("text", "") for token in ("最优", "显著", "稳健", "提升")) and "comparison" not in claim:
+            errors.append(f"claim {claim['claim_id']} uses a comparative-strength term but has no comparison contract")
+    thesis = plan.get("central_thesis", {})
+    for claim_id in thesis.get("claim_ids", []):
+        if claim_id not in claim_set:
+            errors.append(f"central_thesis references unknown claim_id {claim_id}")
+    for question_id in depth_question_ids:
+        if question_id not in question_set:
+            errors.append(f"depth_budget references unknown question_id {question_id}")
+    claimed_questions = {claim["question_id"] for claim in plan.get("claims", [])}
+    if not claimed_questions.issubset(set(depth_question_ids)):
+        errors.append("depth_budget must cover every question used by a claim")
+    for unit in argument_units:
+        if unit["section_id"] not in section_set:
+            errors.append(f"argument unit {unit['unit_id']} references unknown section_id {unit['section_id']}")
+        check_claim_refs(f"argument unit {unit.get('unit_id')}", unit)
+        check_evidence_refs(f"argument unit {unit.get('unit_id')}", unit)
+        for prerequisite_id in unit.get("prerequisite_unit_ids", []):
+            if prerequisite_id not in argument_unit_set:
+                errors.append(f"argument unit {unit['unit_id']} references unknown prerequisite_unit_id {prerequisite_id}")
+            if prerequisite_id == unit["unit_id"]:
+                errors.append(f"argument unit {unit['unit_id']} cannot depend on itself")
+        if unit.get("rhetorical_role") == "interpretation":
+            if any(claim_by_id.get(claim_id, {}).get("claim_type") == "observation" for claim_id in unit.get("claim_ids", [])):
+                errors.append(f"interpretation unit {unit['unit_id']} cannot realize an observation claim directly")
     for section in plan["sections"]:
         check_claim_refs(f"section {section['section_id']}", section)
     for figure in plan.get("figures", []):
@@ -382,9 +504,21 @@ def _cross_references(
         check_evidence_refs(f"table {table.get('table_id')}", table)
     recommendation = plan.get("canonical_recommendation") or {}
     check_evidence_refs("canonical_recommendation", recommendation)
-    for result_id in plan.get("abstract_result_ids", []):
+    abstract_rows = [row for row in plan.get("abstract_results", []) if isinstance(row, dict)]
+    abstract_result_ids = [row.get("result_id") for row in abstract_rows]
+    unique("paper_plan abstract result_id", abstract_result_ids)
+    for row in abstract_rows:
+        result_id = row.get("result_id")
         if result_id not in result_set:
-            errors.append(f"abstract_result_ids references unknown result_id {result_id}")
+            errors.append(f"abstract_results references unknown result_id {result_id}")
+        check_claim_refs(f"abstract result {result_id}", row)
+    maximum_abstract_results = plan.get("precision_policy", {}).get("abstract_max_numeric_claims")
+    if isinstance(maximum_abstract_results, int) and len(abstract_rows) > maximum_abstract_results:
+        errors.append("abstract_results exceeds precision_policy.abstract_max_numeric_claims")
+    nonresearch_tokens = [
+        row.get("token") for row in plan.get("nonresearch_numeric_literals", []) if isinstance(row, dict)
+    ]
+    unique("paper_plan nonresearch numeric token", nonresearch_tokens)
     if plan["status"] == "ready":
         covered_questions = {claim["question_id"] for claim in plan["claims"]}
         uncovered = sorted(question_set - covered_questions)

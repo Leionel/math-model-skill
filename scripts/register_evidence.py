@@ -75,6 +75,10 @@ def main() -> int:
             frozen = load_structured(frozen_path)
             if not isinstance(frozen, dict) or frozen.get("status") != "frozen":
                 raise ValueError("frozen-results must have status=frozen")
+            if frozen.get("claimable") is not True or frozen.get("validation_verdict") != "PASS":
+                raise ValueError(
+                    "frozen-results is not claimable; FAIL/ERROR runs are retained for audit but cannot enter evidence_registry"
+                )
             frozen_run_id = frozen.get("run_id")
             if not isinstance(frozen_run_id, str) or not frozen_run_id:
                 raise ValueError("frozen-results must declare run_id")
@@ -97,6 +101,8 @@ def main() -> int:
             for index, result in enumerate(results):
                 if not isinstance(result, dict) or not isinstance(result.get("result_id"), str):
                     raise ValueError(f"results[{index}] must contain result_id")
+                if result.get("claimable") is not True or result.get("validation_status") != "passed":
+                    raise ValueError(f"frozen result {result.get('result_id')} is not claimable")
                 result_id = result["result_id"]
                 if result_id in result_ids:
                     raise ValueError(f"duplicate frozen result_id: {result_id}")

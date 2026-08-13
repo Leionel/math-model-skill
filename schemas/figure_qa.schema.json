@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/figure-qa.schema.json",
+  "title": "Figure QA Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "figure_id", "artifact", "profile", "generated_at", "automated", "manual_review_required", "ok"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "figure_id": {"type": "string", "minLength": 1},
+    "artifact": {"$ref": "#/$defs/file_ref"},
+    "profile": {"$ref": "#/$defs/file_ref"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "automated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "width_px", "height_px", "effective_dpi", "page_box_ok", "font_scan_status", "warnings", "errors"],
+      "properties": {
+        "format": {"type": "string", "minLength": 1},
+        "width_px": {"type": ["integer", "null"], "minimum": 1},
+        "height_px": {"type": ["integer", "null"], "minimum": 1},
+        "effective_dpi": {"type": ["number", "null"], "minimum": 0},
+        "page_box_ok": {"type": ["boolean", "null"]},
+        "font_scan_status": {"type": "string", "enum": ["pass", "fail", "not_applicable", "not_available"]},
+        "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "errors": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "manual_review_required": {"type": "boolean", "const": true},
+    "ok": {"type": "boolean"}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@
 
 ## Evidence Gate
 
-摘要中的关键数字必须列入 `paper_plan.abstract_result_ids`，并能沿 `evidence_registry → frozen_results → code/input` 回溯。不要从聊天、草稿或截图复制数字。
+摘要中的关键数字必须列入 `paper_plan.abstract_results[]`，说明选择原因、关联 claim 与词数预算，并能沿 `evidence_registry → frozen_results → code/input` 回溯。不要从聊天、草稿或截图复制数字。
 
 - 使用冻结的 `display_value`、单位和统计口径，不重新舍入。
 - 没有注册的数字不得进入摘要；年份、题号等非结果数字由一致性检查单独解释。
@@ -50,7 +50,7 @@
 
 - [ ] 首句是否进入问题和方法，而非泛泛背景？
 - [ ] 每个必要子问题是否有明确回答？
-- [ ] 所有关键数字是否来自 `abstract_result_ids`，单位与精度一致？
+- [ ] 所有关键数字是否来自 `abstract_results[]`，单位与精度一致，且确实是决定结论的高优先级结果？
 - [ ] 是否说明关键结果的比较口径或适用边界？
 - [ ] 是否删除未来时、空泛评价和未完成工作？
 - [ ] 是否符合当届页数、语言和摘要页要求？

@@ -11,6 +11,8 @@ Semantic Critic 是证据-aware 的二元审查者，不负责奖项打分，也
 5. Figure Contract 是否真正支撑 claim，是否存在装饰性或重复图。
 6. 摘要、正文、结论和推荐方案是否引用同一批冻结结果。
 7. 结论是否承认敏感性、稳健性、数据范围和其他限制。
+8. central thesis 是否只综合少量 decisive claim，而不是按题号堆数字；argument units 是否区分 model choice、结果观察、比较、验证、解释与边界。
+9. Observation 是否被误写为因果解释；Inference/Recommendation 是否有支持、替代解释和前置 claim；强评价词是否与 comparison contract 一致。
 
 ## 回执格式
 

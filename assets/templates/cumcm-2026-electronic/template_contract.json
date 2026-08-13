@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "template_id": "cumcm-2026-electronic-community-base",
+  "competition_profile_id": "cumcm-2026-electronic",
+  "source_kind": "community",
+  "source_locator": "https://github.com/latexstudio/CUMCMThesis/tree/90d3e854534ae7dc605dfe9296785f8c17e56e22",
+  "status": "verified",
+  "document_class": "cumcmthesis",
+  "entrypoint": "main.tex",
+  "required_files": [
+    "main.tex",
+    "metadata.tex",
+    "sections/abstract.tex",
+    "sections/body.tex",
+    "cumcmthesis.cls"
+  ],
+  "required_commands": [
+    "\\documentclass[withoutpreface,bwprint]{cumcmthesis}",
+    "\\maketitle",
+    "\\begin{abstract}",
+    "\\keywords{\\PaperKeywords}"
+  ],
+  "forbidden_document_classes": ["article", "ctexart", "report", "book"],
+  "allowed_engines": ["xelatex"],
+  "notes": "Community class plus a sanitized electronic-submission skeleton. The competition profile and final PDF QA remain the authority for current official rules."
+}

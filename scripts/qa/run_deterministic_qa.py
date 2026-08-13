@@ -46,6 +46,13 @@ def main() -> int:
     parser.add_argument("--bib")
     parser.add_argument("--check-figures", action="store_true")
     parser.add_argument("--figures-dir")
+    parser.add_argument("--problem-snapshot")
+    parser.add_argument("--data-contract", action="append", default=[])
+    parser.add_argument("--implementation-map")
+    parser.add_argument("--artifact-dag")
+    parser.add_argument("--writer-package")
+    parser.add_argument("--claim-inventory-output")
+    parser.add_argument("--style-check", action="store_true")
     parser.add_argument("--output", required=True)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--force", action="store_true")
@@ -75,6 +82,8 @@ def main() -> int:
         "--conclusion", args.conclusion,
         "--strict",
     ]
+    if args.figures_dir:
+        consistency_args.extend(["--figures-dir", args.figures_dir])
     checks = [
         run_check("contracts", [sys.executable, str(SCRIPT_DIR / "validate_contracts.py"), *contract_args]),
         run_check(
@@ -89,6 +98,87 @@ def main() -> int:
         ),
         run_check("consistency", [sys.executable, str(SCRIPT_DIR / "check_consistency.py"), *consistency_args]),
     ]
+    if args.problem_snapshot:
+        checks.append(run_check(
+            "problem_coverage",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_problem_coverage.py"),
+                "--project-root", str(root),
+                "--problem-snapshot", args.problem_snapshot,
+                "--model-contract", args.model_contract,
+                "--paper-plan", args.paper_plan,
+                "--strict",
+            ],
+        ))
+    for index, data_contract in enumerate(args.data_contract, start=1):
+        checks.append(run_check(
+            f"data_contract_{index}",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_data_contract.py"),
+                "--project-root", str(root),
+                "--data-contract", data_contract,
+                "--model-contract", args.model_contract,
+                "--strict",
+            ],
+        ))
+    if args.implementation_map:
+        checks.append(run_check(
+            "implementation_map",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_implementation_map.py"),
+                "--project-root", str(root),
+                "--implementation-map", args.implementation_map,
+                "--model-contract", args.model_contract,
+                "--strict",
+            ],
+        ))
+    if args.artifact_dag:
+        checks.append(run_check(
+            "artifact_dag",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_artifact_dag.py"),
+                "--project-root", str(root),
+                "--dag", args.artifact_dag,
+                "--strict",
+            ],
+        ))
+    if args.writer_package:
+        checks.append(run_check(
+            "writer_package",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_writer_package.py"),
+                "--project-root", str(root),
+                "--writer-package", args.writer_package,
+                "--draft", args.paper,
+                "--strict",
+            ],
+        ))
+    if args.claim_inventory_output:
+        checks.append(run_check(
+            "claim_inventory",
+            [
+                sys.executable, str(SCRIPT_DIR.parent / "claims" / "inventory_claims.py"),
+                "--project-root", str(root),
+                "--paper-plan", args.paper_plan,
+                "--frozen-results", args.frozen_results,
+                "--draft", args.paper,
+                "--output", args.claim_inventory_output,
+                "--strict",
+                *( ["--force"] if args.force else [] ),
+            ],
+        ))
+    if args.style_check:
+        checks.append(run_check(
+            "paper_style",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_paper_style.py"),
+                "--project-root", str(root),
+                "--paper-plan", args.paper_plan,
+                "--draft", args.paper,
+                "--abstract", args.abstract,
+                "--conclusion", args.conclusion,
+            ],
+        ))
     if args.tex and args.bib:
         citation_args = ["--project-root", str(root), "--tex", args.tex, "--bib", args.bib]
         if args.check_figures:
@@ -108,6 +198,16 @@ def main() -> int:
         "paper": args.paper,
         "conclusion": args.conclusion,
     }
+    if args.problem_snapshot:
+        input_paths["problem_snapshot"] = args.problem_snapshot
+    for index, data_contract in enumerate(args.data_contract, start=1):
+        input_paths[f"data_contract_{index}"] = data_contract
+    if args.implementation_map:
+        input_paths["implementation_map"] = args.implementation_map
+    if args.artifact_dag:
+        input_paths["artifact_dag"] = args.artifact_dag
+    if args.writer_package:
+        input_paths["writer_package"] = args.writer_package
     inputs: list[dict[str, str]] = []
     try:
         for role, raw_path in input_paths.items():

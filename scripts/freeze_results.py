@@ -15,6 +15,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from validation.obligations import (  # noqa: E402
+    declared_obligations,
+    file_ref,
+    validation_verdict,
+    verify_validation_report,
+)
 
 
 def numeric_display(value: Any, precision: int) -> str:
@@ -30,13 +36,29 @@ def numeric_display(value: Any, precision: int) -> str:
     return f"{rounded:.{precision}f}"
 
 
-def normalize_result(row: dict[str, Any], source_path: Path, root: Path, index: int) -> dict[str, Any]:
+def normalize_result(
+    row: dict[str, Any],
+    source_path: Path,
+    root: Path,
+    index: int,
+    *,
+    claimable: bool,
+    validation_verdict: str,
+) -> dict[str, Any]:
     required = ("result_id", "question_id", "name", "value", "unit", "precision", "statistical_definition", "boundary", "validation_status")
     missing = [key for key in required if key not in row]
     if missing:
         raise ValueError(f"results[{index}] missing required fields: {', '.join(missing)}")
-    if row["validation_status"] not in {"passed", "verified"}:
-        raise ValueError(f"results[{index}] must have validation_status=passed|verified before freezing")
+    allowed_statuses = {"passed", "failed", "error"}
+    if row["validation_status"] not in allowed_statuses:
+        raise ValueError(
+            f"results[{index}] must have validation_status in {sorted(allowed_statuses)} before freezing"
+        )
+    expected_status = {"PASS": "passed", "FAIL": "failed", "ERROR": "error"}[validation_verdict]
+    if row["validation_status"] != expected_status:
+        raise ValueError(
+            f"results[{index}].validation_status must be {expected_status!r} because validation verdict is {validation_verdict}"
+        )
     precision = row["precision"]
     if not isinstance(precision, int) or precision < 0:
         raise ValueError(f"results[{index}].precision must be a non-negative integer")
@@ -59,73 +81,73 @@ def normalize_result(row: dict[str, Any], source_path: Path, root: Path, index: 
         )
     result.setdefault("source_artifact", rel_path(source_path, root))
     result.setdefault("source_key", str(result["result_id"]))
+    supplied_claimable = result.get("claimable")
+    if supplied_claimable is not None and supplied_claimable is not claimable:
+        raise ValueError(
+            f"results[{index}].claimable is derived from validation verdict and cannot be supplied as {supplied_claimable!r}"
+        )
+    result["claimable"] = claimable
     for key in ("result_id", "question_id", "name", "statistical_definition", "boundary", "source_artifact", "source_key"):
         if not isinstance(result[key], str) or not result[key].strip():
             raise ValueError(f"results[{index}].{key} must be a non-empty string")
     return result
 
 
-def required_obligations(model_contract: dict[str, Any]) -> set[str]:
-    if model_contract.get("status") != "ready":
-        raise ValueError("model contract must have status=ready before result freeze")
-    obligations: set[str] = set()
-    for model_index, model in enumerate(model_contract.get("models", [])):
-        if not isinstance(model, dict):
-            raise ValueError(f"model_contract.models[{model_index}] must be an object")
-        rows = model.get("validation_obligations")
-        if not isinstance(rows, list) or not rows:
-            raise ValueError(f"model {model.get('model_id', model_index)} has no validation_obligations")
-        for row_index, row in enumerate(rows):
-            obligation_id = row.get("obligation_id") if isinstance(row, dict) else None
-            if not isinstance(obligation_id, str) or not obligation_id:
-                raise ValueError(
-                    f"model_contract.models[{model_index}].validation_obligations[{row_index}] has no obligation_id"
-                )
-            if obligation_id in obligations:
-                raise ValueError(f"duplicate validation obligation_id: {obligation_id}")
-            obligations.add(obligation_id)
-    return obligations
-
-
-def inspect_validation_reports(raw_paths: list[str], root: Path, required: set[str]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+def inspect_validation_reports(
+    raw_paths: list[str],
+    root: Path,
+    model_contract: dict[str, Any],
+    model_contract_path: Path,
+) -> tuple[list[dict[str, str]], list[dict[str, Any]], str]:
+    required = set(declared_obligations(model_contract))
     snapshots: list[dict[str, str]] = []
-    passed: dict[str, dict[str, Any]] = {}
+    verdicts: dict[str, dict[str, Any]] = {}
     for raw_path in raw_paths:
         path = resolve_path(raw_path, root).resolve()
         if not path.is_file():
             raise ValueError(f"validation artifact does not exist: {path}")
         report = load_structured(path)
-        if not isinstance(report, dict) or report.get("ok") is not True:
-            raise ValueError(f"validation report must be an object with ok=true: {raw_path}")
-        rows = report.get("obligations")
-        if not isinstance(rows, list) or not rows:
-            raise ValueError(f"validation report must contain non-empty obligations: {raw_path}")
+        if not isinstance(report, dict):
+            raise ValueError(f"validation report must be an object: {raw_path}")
+        measurement_ref = report.get("measurement_snapshot")
+        if not isinstance(measurement_ref, dict) or not isinstance(measurement_ref.get("path"), str):
+            raise ValueError(f"validation report must contain measurement_snapshot.path: {raw_path}")
+        measurements_path = resolve_path(measurement_ref["path"], root).resolve()
+        if not measurements_path.is_file():
+            raise ValueError(f"measurement snapshot does not exist: {measurement_ref['path']}")
+        actual_measurement_ref = file_ref(measurements_path, root)
+        if measurement_ref != actual_measurement_ref:
+            raise ValueError(f"validation report measurement_snapshot does not match current file: {raw_path}")
+        measurements = load_structured(measurements_path)
+        if not isinstance(measurements, dict):
+            raise ValueError(f"measurement snapshot must be an object: {measurement_ref['path']}")
+        expected = verify_validation_report(
+            report,
+            model_contract,
+            measurements,
+            file_ref(model_contract_path, root),
+            actual_measurement_ref,
+        )
+        rows = expected["obligations"]
         report_ref = {"path": rel_path(path, root), "sha256": sha256_file(path)}
         snapshots.append(report_ref)
         for index, row in enumerate(rows):
-            if not isinstance(row, dict):
-                raise ValueError(f"{raw_path}.obligations[{index}] must be an object")
             obligation_id = row.get("obligation_id")
-            if not isinstance(obligation_id, str) or not obligation_id:
-                raise ValueError(f"{raw_path}.obligations[{index}] has no obligation_id")
-            if row.get("status") != "pass":
-                raise ValueError(f"validation obligation {obligation_id} does not have status=pass")
-            if not isinstance(row.get("observed"), str) or not row["observed"].strip():
-                raise ValueError(f"validation obligation {obligation_id} must record observed evidence")
-            if obligation_id in passed:
+            if obligation_id in verdicts:
                 raise ValueError(f"validation obligation appears in more than one report: {obligation_id}")
-            passed[obligation_id] = {
+            verdicts[obligation_id] = {
                 "obligation_id": obligation_id,
-                "status": "pass",
+                "status": row["status"],
                 "report": report_ref,
             }
-    missing = sorted(required - set(passed))
-    extra = sorted(set(passed) - required)
+    missing = sorted(required - set(verdicts))
+    extra = sorted(set(verdicts) - required)
     if missing:
         raise ValueError(f"validation reports do not cover required obligation(s): {', '.join(missing)}")
     if extra:
         raise ValueError(f"validation reports contain undeclared obligation(s): {', '.join(extra)}")
-    return snapshots, [passed[key] for key in sorted(passed)]
+    frozen_obligations = [verdicts[key] for key in sorted(verdicts)]
+    return snapshots, frozen_obligations, validation_verdict([row["status"] for row in frozen_obligations])
 
 
 def main() -> int:
@@ -159,14 +181,9 @@ def main() -> int:
             raise ValueError("model contract must be an object")
         if model_contract.get("run_id") != args.run_id:
             raise ValueError("model contract run_id does not match --run-id")
-        obligation_ids = required_obligations(model_contract)
         rows = raw.get("results") if isinstance(raw, dict) else raw
         if not isinstance(rows, list) or not rows:
             raise ValueError("source must be a non-empty list or an object with a non-empty results list")
-        results = [normalize_result(row, source, root, index) for index, row in enumerate(rows)]
-        ids = [row["result_id"] for row in results]
-        if len(ids) != len(set(ids)):
-            raise ValueError("result_id values must be unique")
 
         def refs(raw_paths: list[str]) -> list[dict[str, str]]:
             output_refs: list[dict[str, str]] = []
@@ -177,11 +194,26 @@ def main() -> int:
                 output_refs.append({"path": rel_path(path, root), "sha256": sha256_file(path)})
             return output_refs
 
-        validation_snapshot, validation_obligations = inspect_validation_reports(
-            args.validation, root, obligation_ids
+        validation_snapshot, validation_obligations, overall_verdict = inspect_validation_reports(
+            args.validation, root, model_contract, model_contract_path
         )
+        claimable = overall_verdict == "PASS"
+        results = [
+            normalize_result(
+                row,
+                source,
+                root,
+                index,
+                claimable=claimable,
+                validation_verdict=overall_verdict,
+            )
+            for index, row in enumerate(rows)
+        ]
+        ids = [row["result_id"] for row in results]
+        if len(ids) != len(set(ids)):
+            raise ValueError("result_id values must be unique")
         frozen = {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "run_id": args.run_id,
             "status": "frozen",
             "frozen_at": datetime.now(timezone.utc).isoformat(),
@@ -194,6 +226,8 @@ def main() -> int:
             "code_snapshot": refs(args.code),
             "validation_snapshot": validation_snapshot,
             "validation_obligations": validation_obligations,
+            "validation_verdict": overall_verdict,
+            "claimable": claimable,
             "command": args.command,
             "seed": args.seed,
             "results_sha256": sha256_json(results),
@@ -203,7 +237,18 @@ def main() -> int:
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps({"status": "frozen", "output": rel_path(output, root), "results": len(results)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "status": "frozen",
+                "output": rel_path(output, root),
+                "results": len(results),
+                "validation_verdict": overall_verdict,
+                "claimable": claimable,
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

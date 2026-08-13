@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "audited_at": "2026-08-13",
+  "profile": "local A4 compatibility check; not an official competition rule",
+  "templates": [
+    {
+      "source_id": "cumcmthesis-community",
+      "commit": "90d3e854534ae7dc605dfe9296785f8c17e56e22",
+      "build": {
+        "engine": "xelatex",
+        "shell_escape": false,
+        "exit_code": 0,
+        "source_unchanged": true,
+        "pdf_sha256": "0013d32951757d57c2eaec85a8c0241ae9c7be34d88d204f2d236266ff4129b4"
+      },
+      "pdf_qa": {
+        "pages": 12,
+        "pages_rendered": 12,
+        "observed_page_mm": [210.0016, 297.0001],
+        "font_count": 21,
+        "unembedded_fonts": ["Times-Roman"],
+        "formal_ok": false
+      },
+      "decision": "compatibility source only; patch font embedding and rerun against the current official profile before production"
+    },
+    {
+      "source_id": "mcmthesis-community",
+      "commit": "8ac05e2c3a9ef5880a15e3a3a18762a546c10b69",
+      "build": {
+        "engine": "xelatex",
+        "shell_escape": false,
+        "exit_code": 0,
+        "source_unchanged": true,
+        "pdf_sha256": "9bcb43fb31caafba33bda048fb8e1f958540c81a696a6670fdacf8e21de00a72"
+      },
+      "pdf_qa": {
+        "pages": 11,
+        "pages_rendered": 11,
+        "observed_page_mm": [215.9, 279.4],
+        "font_count": 14,
+        "unembedded_fonts": [],
+        "formal_ok": false
+      },
+      "decision": "compatibility source only; default demo is US Letter and must be patched to the current competition profile before production"
+    }
+  ]
+}

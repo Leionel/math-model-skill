@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/claim-inventory.schema.json",
+  "title": "Draft Claim Inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "draft", "paper_plan", "generated_at", "findings", "summary", "ok"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "draft": {"$ref": "#/$defs/file_ref"},
+    "paper_plan": {"$ref": "#/$defs/file_ref"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registered_claim_markers", "numeric_tokens", "comparative_markers", "causal_markers", "external_fact_markers", "unresolved_findings"],
+      "properties": {
+        "registered_claim_markers": {"type": "integer", "minimum": 0},
+        "numeric_tokens": {"type": "integer", "minimum": 0},
+        "comparative_markers": {"type": "integer", "minimum": 0},
+        "causal_markers": {"type": "integer", "minimum": 0},
+        "external_fact_markers": {"type": "integer", "minimum": 0},
+        "unresolved_findings": {"type": "integer", "minimum": 0}
+      }
+    },
+    "ok": {"type": "boolean"}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "line", "category", "text", "token", "status", "reason"],
+      "properties": {
+        "finding_id": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1},
+        "category": {"type": "string", "enum": ["unregistered_number", "comparative", "causal", "optimality", "significance", "generalization", "external_fact", "missing_claim_marker"]},
+        "text": {"type": "string", "minLength": 1},
+        "token": {"type": "string", "minLength": 1},
+        "claim_id": {"type": ["string", "null"]},
+        "status": {"type": "string", "enum": ["resolved", "review_required", "rejected"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

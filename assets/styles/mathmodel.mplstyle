@@ -1,0 +1,21 @@
+# Conservative paper defaults. Competition profile and final-size QA remain authoritative.
+figure.dpi: 120
+savefig.dpi: 300
+savefig.bbox: tight
+savefig.pad_inches: 0.05
+font.size: 9
+axes.titlesize: 9
+axes.labelsize: 9
+xtick.labelsize: 8
+ytick.labelsize: 8
+legend.fontsize: 8
+lines.linewidth: 1.4
+lines.markersize: 4
+axes.spines.top: False
+axes.spines.right: False
+axes.grid: False
+legend.frameon: False
+pdf.fonttype: 42
+ps.fonttype: 42
+svg.fonttype: none
+axes.prop_cycle: cycler('color', ['0072B2', 'E69F00', '009E73', 'D55E00', 'CC79A7', '56B4E9'])

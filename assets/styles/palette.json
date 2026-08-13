@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "name": "mathmodel-accessible",
+  "colors": {
+    "blue": "#0072B2",
+    "orange": "#E69F00",
+    "green": "#009E73",
+    "vermillion": "#D55E00",
+    "purple": "#CC79A7",
+    "sky": "#56B4E9",
+    "yellow": "#F0E442",
+    "black": "#222222",
+    "gray": "#777777"
+  },
+  "semantics": {
+    "baseline": "black",
+    "proposed": "blue",
+    "warning": "orange",
+    "failure": "vermillion",
+    "uncertainty": "gray"
+  },
+  "constraints": [
+    "Color must not be the only encoding for a decision-critical comparison.",
+    "Reuse the same semantic color across all figures in one paper.",
+    "Verify final-size grayscale and color-vision distinguishability visually."
+  ]
+}

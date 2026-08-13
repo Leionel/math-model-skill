@@ -4,9 +4,9 @@
   "title": "Final Submission Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "run_id", "status", "frozen_at", "competition", "deadline", "paper", "support_files", "ai_disclosure", "s1_report", "human_checkpoint", "package_sha256", "builder"],
+  "required": ["schema_version", "project_id", "run_id", "status", "frozen_at", "competition", "deadline", "paper", "support_files", "ai_disclosure", "s1_report", "run_manifest", "package_sha256", "builder"],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.0"},
+    "schema_version": {"type": "string", "const": "1.1"},
     "project_id": {"type": "string", "minLength": 1},
     "run_id": {"type": "string", "minLength": 1},
     "status": {"type": "string", "const": "final_frozen"},
@@ -32,11 +32,11 @@
         "timezone": {"type": "string", "minLength": 1}
       }
     },
-    "paper": {"$ref": "#/$defs/submission_file"},
+    "paper": {"$ref": "#/$defs/paper_file"},
     "support_files": {"type": "array", "items": {"$ref": "#/$defs/submission_file"}},
     "ai_disclosure": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/submission_file"}]},
     "s1_report": {"$ref": "#/$defs/file_ref"},
-    "human_checkpoint": {"$ref": "#/$defs/file_ref"},
+    "run_manifest": {"$ref": "#/$defs/file_ref"},
     "package_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
     "builder": {
       "type": "object",
@@ -68,6 +68,20 @@
         "bytes": {"type": "integer", "minimum": 1},
         "pages": {"type": ["integer", "null"], "minimum": 1},
         "page_count_method": {"type": ["string", "null"]}
+      }
+    },
+    "paper_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "pages", "page_count_method", "limited_pages", "ai_report_pages"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "pages": {"type": "integer", "minimum": 1},
+        "page_count_method": {"type": "string", "enum": ["pdfinfo", "pypdf", "manual_verified"]},
+        "limited_pages": {"type": "integer", "minimum": 1},
+        "ai_report_pages": {"type": "integer", "minimum": 0}
       }
     }
   }

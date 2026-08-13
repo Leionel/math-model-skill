@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/visual-review-receipt.schema.json",
+  "title": "Human or Multimodal Visual Review Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pdf", "pdf_visual_qa", "reviewed_at", "reviewer_type", "reviewer_id", "checks", "issues", "verdict"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "pdf": {"$ref": "#/$defs/file_ref"},
+    "pdf_visual_qa": {"$ref": "#/$defs/file_ref"},
+    "reviewed_at": {"type": "string", "minLength": 1},
+    "reviewer_type": {"type": "string", "enum": ["human", "multimodal_assisted"]},
+    "reviewer_id": {"type": "string", "minLength": 1},
+    "checks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/check"}},
+    "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+    "verdict": {"type": "string", "enum": ["pass", "fail"]}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "status", "notes"],
+      "properties": {
+        "check_id": {"type": "string", "enum": ["no_overlap", "no_clipping", "no_blank_or_duplicate_pages", "legible_body", "legible_figures", "cjk_visible", "figure_table_balance", "caption_alignment", "anonymity"]},
+        "status": {"type": "string", "enum": ["pass", "fail", "not_applicable"]},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue_id", "severity", "page", "description", "status"],
+      "properties": {
+        "issue_id": {"type": "string", "minLength": 1},
+        "severity": {"type": "string", "enum": ["blocker", "high", "medium", "low"]},
+        "page": {"type": "integer", "minimum": 1},
+        "description": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["open", "resolved", "accepted_with_reason"]}
+      }
+    }
+  }
+}

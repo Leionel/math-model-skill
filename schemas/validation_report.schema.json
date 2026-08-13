@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/validation-report.schema.json",
+  "title": "Independent Validation Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "evaluator_version", "model_contract_snapshot", "measurement_snapshot", "ok", "verdict", "obligations"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "evaluator_version": {"type": "string", "minLength": 1},
+    "model_contract_snapshot": {"$ref": "#/$defs/file_ref"},
+    "measurement_snapshot": {"$ref": "#/$defs/file_ref"},
+    "ok": {"type": "boolean"},
+    "verdict": {"type": "string", "enum": ["PASS", "FAIL", "ERROR"]},
+    "obligations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/obligation"}}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_id", "value", "unit", "locator"],
+      "properties": {
+        "metric_id": {"type": "string", "minLength": 1},
+        "value": {"type": "number"},
+        "unit": {"type": "string", "minLength": 1},
+        "locator": {"type": "string", "minLength": 1}
+      }
+    },
+    "threshold": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {"kind": {"type": "string", "const": "literal"}, "value": {"type": "number"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "metric_id", "value", "unit", "locator"],
+          "properties": {
+            "kind": {"type": "string", "const": "metric"},
+            "metric_id": {"type": "string", "minLength": 1},
+            "value": {"type": "number"},
+            "unit": {"type": "string", "minLength": 1},
+            "locator": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation_id", "status", "operator", "observed", "threshold", "unit", "locator", "message"],
+      "properties": {
+        "obligation_id": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["PASS", "FAIL", "ERROR"]},
+        "operator": {"type": "string", "minLength": 1},
+        "observed": {"oneOf": [{"$ref": "#/$defs/metric"}, {"type": "null"}]},
+        "threshold": {"oneOf": [{"$ref": "#/$defs/threshold"}, {"type": "null"}]},
+        "unit": {"type": ["string", "null"]},
+        "locator": {"type": ["string", "null"]},
+        "message": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

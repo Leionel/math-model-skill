@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/data-contract.schema.json",
+  "title": "Dataset Semantic Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "data_id", "source", "layer", "table", "columns", "invariants", "leakage_policy", "profile", "status"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "data_id": {"type": "string", "minLength": 1},
+    "source": {"$ref": "#/$defs/file_ref"},
+    "layer": {"type": "string", "enum": ["raw", "interim", "processed", "external"]},
+    "table": {"$ref": "#/$defs/table"},
+    "columns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/column"}},
+    "invariants": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/invariant"}},
+    "leakage_policy": {"$ref": "#/$defs/leakage_policy"},
+    "profile": {"$ref": "#/$defs/profile"},
+    "status": {"type": "string", "enum": ["draft", "validated", "failed", "superseded"]}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "row_count", "column_count", "primary_key", "duplicate_key_count", "encoding", "timezone"],
+      "properties": {
+        "format": {"type": "string", "minLength": 1},
+        "row_count": {"type": "integer", "minimum": 0},
+        "column_count": {"type": "integer", "minimum": 1},
+        "primary_key": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "duplicate_key_count": {"type": "integer", "minimum": 0},
+        "encoding": {"type": "string", "minLength": 1},
+        "timezone": {"type": ["string", "null"]}
+      }
+    },
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dtype", "semantic_type", "unit", "nullable", "missing_count", "unique", "role", "allowed"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "dtype": {"type": "string", "enum": ["integer", "number", "boolean", "string", "datetime", "category"]},
+        "semantic_type": {"type": "string", "minLength": 1},
+        "unit": {"type": ["string", "null"]},
+        "nullable": {"type": "boolean"},
+        "missing_count": {"type": "integer", "minimum": 0},
+        "unique": {"type": "boolean"},
+        "role": {"type": "string", "enum": ["identifier", "feature", "target", "time", "group", "weight", "output", "metadata"]},
+        "allowed": {"$ref": "#/$defs/allowed"}
+      }
+    },
+    "allowed": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "values": {"type": "array", "items": {"type": ["string", "number", "boolean"]}},
+        "pattern": {"type": "string"}
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invariant_id", "description", "check", "status"],
+      "properties": {
+        "invariant_id": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "check": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["pass", "fail", "not_run"]},
+        "observed": {"type": ["string", "number", "boolean", "null"]}
+      }
+    },
+    "leakage_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_columns", "split_keys", "time_boundary", "forbidden_features", "status"],
+      "properties": {
+        "target_columns": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "split_keys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "time_boundary": {"type": ["string", "null"]},
+        "forbidden_features": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "status": {"type": "string", "enum": ["pass", "fail", "not_applicable", "not_run"]}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_count", "missing_cells", "duplicate_rows", "time_min", "time_max"],
+      "properties": {
+        "row_count": {"type": "integer", "minimum": 0},
+        "missing_cells": {"type": "integer", "minimum": 0},
+        "duplicate_rows": {"type": "integer", "minimum": 0},
+        "time_min": {"type": ["string", "null"]},
+        "time_max": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

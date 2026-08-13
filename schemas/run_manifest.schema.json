@@ -4,9 +4,9 @@
   "title": "Math Modeling Run Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "run_id", "status", "phase", "competition_profile", "safety", "ai_usage", "human_checkpoints", "model_contract", "gates", "commands", "artifacts", "revision", "reviewer"],
+  "required": ["schema_version", "project_id", "run_id", "status", "phase", "competition_profile", "safety", "ai_usage", "human_checkpoints", "model_contract", "enhanced_integrity_profile", "integrity_mode", "gates", "commands", "artifacts", "revision", "reviewer"],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.1"},
+    "schema_version": {"type": "string", "const": "1.2"},
     "project_id": {"type": "string", "minLength": 1},
     "run_id": {"type": "string", "minLength": 1},
     "status": {"type": "string", "enum": ["active", "frozen", "content_ready", "submission_ready", "blocked"]},
@@ -16,6 +16,8 @@
     "ai_usage": {"type": "array", "items": {"$ref": "#/$defs/ai_usage"}},
     "human_checkpoints": {"type": "array", "items": {"$ref": "#/$defs/human_checkpoint"}},
     "model_contract": {"$ref": "#/$defs/file_ref"},
+    "enhanced_integrity_profile": {"type": "boolean", "default": false},
+    "integrity_mode": {"type": "string", "enum": ["dev", "research", "submission"], "default": "dev"},
     "commands": {"type": "array", "items": {"$ref": "#/$defs/command"}},
     "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
     "gates": {
@@ -58,7 +60,7 @@
     "file_ref": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256"],
+      "required": ["path"],
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
@@ -85,11 +87,23 @@
         "paper_extensions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^\\.[A-Za-z0-9]+$"}},
         "max_paper_bytes": {"type": "integer", "minimum": 1},
         "max_pages": {"type": ["integer", "null"], "minimum": 1},
+        "max_pages_excludes_ai_report": {"type": "boolean"},
         "page_count_scope": {"type": "string", "minLength": 1},
         "support_policy": {"type": "string", "enum": ["prohibited", "optional", "required"]},
         "max_support_bytes": {"type": ["integer", "null"], "minimum": 1},
         "ai_disclosure_policy": {"type": "string", "enum": ["prohibited", "optional", "required_when_used", "required_always"]},
+        "ai_disclosure_format": {"type": "string", "enum": ["separate_file", "in_paper_section", "both", "none"]},
+        "ai_manual_checks": {"$ref": "#/$defs/ai_manual_checks"},
         "required_manual_checks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "ai_manual_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when_used", "when_not_used"],
+      "properties": {
+        "when_used": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "when_not_used": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     },
     "competition_profile": {
@@ -101,6 +115,7 @@
         "competition": {"type": "string", "enum": ["cumcm", "comap_mcm_icm", "other"]},
         "season": {"type": "string", "minLength": 1},
         "mode": {"type": "string", "enum": ["pre_contest", "live_contest", "post_contest"]},
+        "problem_choice": {"type": "string", "minLength": 1},
         "retrieved_at": {"type": "string", "minLength": 1},
         "official_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule_snapshot"}},
         "official_submission_endpoints": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^https://"}},
@@ -184,12 +199,12 @@
       "required": ["checkpoint_id", "stage", "scope", "artifacts", "manual_checks", "reviewed_by_role", "decision", "checked_at"],
       "properties": {
         "checkpoint_id": {"type": "string", "minLength": 1},
-        "stage": {"type": "string", "enum": ["m1", "p2", "w2", "s1"]},
+        "stage": {"type": "string", "enum": ["m1", "p2", "w1", "w2", "s1", "f1"]},
         "scope": {"type": "string", "minLength": 1},
         "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/file_ref"}},
         "manual_checks": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "reviewed_by_role": {"type": "string", "minLength": 1},
-        "decision": {"type": "string", "enum": ["pass", "fail"]},
+        "decision": {"type": "string", "enum": ["confirm", "edit", "regenerate", "ask", "skip_with_reason", "abort", "pass", "fail"]},
         "checked_at": {"type": "string", "minLength": 1},
         "notes": {"type": "string"}
       }
@@ -212,11 +227,11 @@
     "artifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256", "role"],
+      "required": ["path", "role"],
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
-        "role": {"type": "string", "enum": ["rule_snapshot", "ai_interaction", "frozen_results", "evidence_registry", "paper_plan", "paper", "figure", "table", "qa_report", "critic_report", "blind_report", "ai_disclosure", "support_package", "submission_qa", "other"]}
+        "role": {"type": "string", "enum": ["rule_snapshot", "problem_snapshot", "data_contract", "implementation_map", "artifact_dag", "presentation_contract", "template_contract", "claim_inventory", "ai_interaction", "frozen_results", "evidence_registry", "paper_plan", "paper", "figure", "figure_qa", "table", "build_receipt", "pdf_visual_qa", "visual_review_receipt", "qa_report", "critic_report", "blind_report", "ai_disclosure", "support_package", "submission_qa", "submission_receipt", "other"]}
       }
     },
     "gate": {

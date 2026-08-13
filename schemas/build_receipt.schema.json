@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/build-receipt.schema.json",
+  "title": "Safe LaTeX Build Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "integrity_mode", "engine", "source_root", "entrypoint", "template", "source_tree_sha256_before", "source_tree_sha256_after", "command", "shell_escape", "output", "log", "exit_code", "source_unchanged", "ok"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.1"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "integrity_mode": {"type": "string", "enum": ["dev", "research", "submission"]},
+    "engine": {"type": "string", "enum": ["xelatex", "lualatex", "pdflatex"]},
+    "source_root": {"type": "string", "minLength": 1},
+    "entrypoint": {"type": "string", "minLength": 1},
+    "template": {"$ref": "#/$defs/template_or_null"},
+    "source_tree_sha256_before": {"type": ["string", "null"], "pattern": "^[A-Fa-f0-9]{64}$"},
+    "source_tree_sha256_after": {"type": ["string", "null"], "pattern": "^[A-Fa-f0-9]{64}$"},
+    "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "shell_escape": {"type": "boolean", "const": false},
+    "output": {"$ref": "#/$defs/file_ref_or_null"},
+    "log": {"$ref": "#/$defs/file_ref_or_null"},
+    "exit_code": {"type": "integer"},
+    "source_unchanged": {"type": "boolean"},
+    "ok": {"type": "boolean"}
+  },
+  "$defs": {
+    "template_or_null": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contract", "template_id", "document_class", "verified"],
+          "properties": {
+            "contract": {"type": "string", "minLength": 1},
+            "template_id": {"type": "string", "minLength": 1},
+            "document_class": {"type": "string", "minLength": 1},
+            "verified": {"type": "boolean"},
+            "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+          }
+        }
+      ]
+    },
+    "file_ref_or_null": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+          }
+        }
+      ]
+    }
+  }
+}

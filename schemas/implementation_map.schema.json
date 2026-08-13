@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/implementation-map.schema.json",
+  "title": "Equation, Symbol, and Implementation Map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "model_contract", "symbols", "equations", "status"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "model_contract": {"$ref": "#/$defs/file_ref"},
+    "symbols": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/symbol"}},
+    "equations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/equation"}},
+    "status": {"type": "string", "enum": ["draft", "verified", "failed", "superseded"]}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "code_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "symbol"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "symbol": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1}
+      }
+    },
+    "test_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["test_id", "path", "sha256", "purpose", "status"],
+      "properties": {
+        "test_id": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "purpose": {"type": "string", "enum": ["oracle", "unit", "metamorphic", "feasibility", "dimension", "regression"]},
+        "status": {"type": "string", "enum": ["pass", "fail", "not_run"]}
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol_id", "latex", "meaning", "unit", "scope", "model_id"],
+      "properties": {
+        "symbol_id": {"type": "string", "minLength": 1},
+        "latex": {"type": "string", "minLength": 1},
+        "meaning": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "equation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["equation_id", "model_id", "question_id", "kind", "latex", "symbol_ids", "contract_item_ids", "code_refs", "tests", "status"],
+      "properties": {
+        "equation_id": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "kind": {"type": "string", "enum": ["objective", "constraint", "transition", "estimator", "metric", "identity", "other"]},
+        "latex": {"type": "string", "minLength": 1},
+        "symbol_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "contract_item_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "code_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/code_ref"}},
+        "tests": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/test_ref"}},
+        "status": {"type": "string", "enum": ["verified", "failed", "not_run"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/visual-profile.schema.json",
+  "title": "Competition Visual Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "competition_profile_id", "sources", "page", "typography", "figures", "tables", "severity_policy"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "profile_id": {"type": "string", "minLength": 1},
+    "competition_profile_id": {"type": "string", "minLength": 1},
+    "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+    "page": {"$ref": "#/$defs/page"},
+    "typography": {"$ref": "#/$defs/typography"},
+    "figures": {"$ref": "#/$defs/figures"},
+    "tables": {"$ref": "#/$defs/tables"},
+    "severity_policy": {"$ref": "#/$defs/severity_policy"}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "title", "url", "retrieved_at", "snapshot"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["official_rule", "official_template", "community_template", "local_policy"]},
+        "title": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "pattern": "^https://"},
+        "retrieved_at": {"type": "string", "minLength": 1},
+        "snapshot": {"$ref": "#/$defs/file_ref"}
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_mm", "height_mm", "size_tolerance_mm", "min_margin_mm", "max_body_pages"],
+      "properties": {
+        "width_mm": {"type": "number", "minimum": 1},
+        "height_mm": {"type": "number", "minimum": 1},
+        "size_tolerance_mm": {"type": "number", "minimum": 0},
+        "min_margin_mm": {"type": "number", "minimum": 0},
+        "max_body_pages": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_body_font_pt", "min_figure_font_pt", "embedded_fonts_required", "cjk_render_review_required", "allowed_engines"],
+      "properties": {
+        "min_body_font_pt": {"type": "number", "minimum": 1},
+        "min_figure_font_pt": {"type": "number", "minimum": 1},
+        "embedded_fonts_required": {"type": "boolean"},
+        "cjk_render_review_required": {"type": "boolean"},
+        "allowed_engines": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["xelatex", "lualatex", "pdflatex"]}}
+      }
+    },
+    "figures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raster_min_dpi", "grayscale_review_required", "colorblind_review_required", "dual_axis_default"],
+      "properties": {
+        "raster_min_dpi": {"type": "number", "minimum": 1},
+        "grayscale_review_required": {"type": "boolean"},
+        "colorblind_review_required": {"type": "boolean"},
+        "dual_axis_default": {"type": "string", "enum": ["deny", "allow_with_justification", "allow"]}
+      }
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_vertical_rules", "require_units_in_header_or_caption"],
+      "properties": {
+        "allow_vertical_rules": {"type": "boolean"},
+        "require_units_in_header_or_caption": {"type": "boolean"}
+      }
+    },
+    "severity_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["official_rule_violation", "unreadable_or_clipped", "font_embedding", "low_resolution", "density_or_style"],
+      "properties": {
+        "official_rule_violation": {"type": "string", "const": "error"},
+        "unreadable_or_clipped": {"type": "string", "const": "error"},
+        "font_embedding": {"type": "string", "enum": ["error", "warning"]},
+        "low_resolution": {"type": "string", "enum": ["error", "warning"]},
+        "density_or_style": {"type": "string", "const": "warning"}
+      }
+    }
+  }
+}

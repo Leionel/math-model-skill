@@ -1,6 +1,6 @@
 # Validation Obligations
 
-不要用“报告文件存在”代表验证完成。M1 必须按题型声明 `validation_obligations`，P2 冻结时逐项提交 `status=pass` 和可读的 `observed` 证据。
+不要用“报告文件存在”或手写 `ok=true` 代表验证完成。M1 必须按题型声明可计算的 `validation_obligations`；P2 由独立求值器从测量快照重算 verdict，冻结时不得人工填写通过结论。
 
 ## 题型最低义务
 
@@ -15,21 +15,63 @@
 
 该表是触发器，不是固定清单。只声明会改变结论可信度的义务，避免几十个空检查。
 
-## 报告合同
+## 有限比较合同
+
+每项义务的 `acceptance` 只能使用有限、无表达式执行的比较：左侧测量指标、比较符、右侧字面量或同一测量快照中的指标、单位及可选 tolerance。禁止把自然语言、Python/LaTex 表达式或模型输出的自评文字作为验收条件。
 
 ```json
 {
-  "ok": true,
-  "obligations": [
+  "obligation_id": "VAL-PEAK-LOAD",
+  "category": "baseline",
+  "method": "在相同场景下比较峰值负荷",
+  "acceptance": {
+    "left_metric_id": "proposed_peak_mw",
+    "operator": "<=",
+    "right": {"kind": "metric", "metric_id": "baseline_peak_mw"},
+    "unit": "MW"
+  },
+  "required_stage": "full"
+}
+```
+
+与之配套的测量快照只记录可定位的数值，不记录 verdict：
+
+```json
+{
+  "schema_version": "1.0",
+  "run_id": "run-001",
+  "observations": [
     {
-      "obligation_id": "VAL-FEASIBILITY",
-      "status": "pass",
-      "observed": "最大约束违反为 0；目标值由独立函数重算一致"
+      "obligation_id": "VAL-PEAK-LOAD",
+      "metrics": [
+        {"metric_id": "proposed_peak_mw", "value": 550, "unit": "MW", "locator": "q3.proposed_peak"},
+        {"metric_id": "baseline_peak_mw", "value": 498, "unit": "MW", "locator": "q3.baseline_peak"}
+      ]
     }
   ]
 }
 ```
 
-冻结脚本会拒绝：`ok!=true`、没有 obligations、未覆盖 M1 声明的义务、出现未声明义务、非 pass 状态或缺少 observed。
+运行独立求值器生成报告：
+
+```powershell
+python scripts/validation/evaluate_obligations.py `
+  --project-root . `
+  --model-contract model_contract.json `
+  --measurements reports/validation_measurements.json `
+  --output reports/full_validation.json
+```
+
+报告含 contract/measurement 的 SHA-256、`operator`、`observed`、`threshold`、`unit`、`locator` 和派生 `PASS`/`FAIL`/`ERROR`。以示例数值会产生 `550 MW <= 498 MW` 的 `FAIL`，而不是被改写为“总体有效”。
+
+## 冻结与可引用性
+
+`freeze_results.py` 会重新读取 measurement snapshot 并重算报告；手改报告中的 `ok`、`verdict` 或 obligation status 会被拒绝。它保留完整的 `PASS`、`FAIL`、`ERROR` run：
+
+- 全部义务 `PASS`：`validation_verdict=PASS`、`claimable=true`，才可通过 P2 并进入 `evidence_registry.json`；
+- 任一 `FAIL`：`validation_verdict=FAIL`、`claimable=false`，可审计、不可支撑论文数值 claim；
+- 任一 `ERROR`：`validation_verdict=ERROR`、`claimable=false`，可审计、不可支撑论文数值 claim。
+
+原始结果的 `validation_status` 同样由总 verdict 约束为 `passed`、`failed` 或 `error`；不能用一条“已通过”的 raw result 覆盖失败验证。
 
 机器学习/时间序列任务中，所有会从数据学习参数的预处理都只能在训练数据上 `fit`，再应用到验证/测试数据。参考 scikit-learn 官方的 [Common pitfalls](https://scikit-learn.org/stable/common_pitfalls.html)。

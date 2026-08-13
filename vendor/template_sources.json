@@ -1,0 +1,165 @@
+{
+  "schema_version": "1.0",
+  "audited_at": "2026-08-13",
+  "policy": {
+    "official_rules_are_authoritative": true,
+    "community_templates_are_authoritative": false,
+    "upstream_clones_are_distributable": false,
+    "notes": "Shallow clones are compatibility references only. A competition profile and current official rule snapshot must patch and validate the final output."
+  },
+  "sources": [
+    {
+      "source_id": "overleaf-mcm-tmzfgynjcqfc",
+      "name": "Overleaf MCM/ICM Chinese annotated template",
+      "role": "user-nominated MCM/ICM page reference",
+      "url": "https://www.overleaf.com/latex/templates/mei-guo-da-xue-sheng-shu-xue-jian-mo-jing-sai-mcm-slash-icm-lun-wen-mo-ban/tmzfgynjcqfc",
+      "upstream_relation": "Uses the mcmthesis document class; the public page is not itself a Git repository.",
+      "clone_path": null,
+      "commit": null,
+      "last_verified": "2026-08-13",
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "evidence_path": null,
+        "status": "page_verified"
+      },
+      "distribution": "blocked",
+      "reason": "Overleaf exposes this as a copy-into-account template, not an anonymous Git clone. Keep the exact page as provenance; use the separately locked mcmthesis class clone for compatibility tests only."
+    },
+    {
+      "source_id": "overleaf-lnumcm-jjbhyxjqdtyg",
+      "name": "Overleaf lnumcmthesis",
+      "role": "user-nominated Liaoning competition page reference",
+      "url": "https://www.overleaf.com/latex/templates/lnumcmthesis-thesis-latex-template-for-liaoning-undergraduate-mathematical-contest-in-modeling/jjbhyxjqdtyg",
+      "upstream_relation": "No independently verifiable public Git repository was found in the page metadata.",
+      "clone_path": null,
+      "commit": null,
+      "last_verified": "2026-08-13",
+      "license": {
+        "spdx": "LPPL-1.3c",
+        "evidence_path": null,
+        "status": "page_verified"
+      },
+      "distribution": "blocked",
+      "reason": "The public page can be inspected, but source export requires opening a logged-in Overleaf project. Do not substitute a different repository or claim a clone."
+    },
+    {
+      "source_id": "overleaf-cumcm-tkpdcwqsphwk",
+      "name": "Overleaf CUMCM cumcmthesis template",
+      "role": "user-nominated CUMCM page reference",
+      "url": "https://www.overleaf.com/latex/templates/quan-guo-da-xue-sheng-shu-xue-jian-mo-jing-sai-bian-xie-de-latex/tkpdcwqsphwk",
+      "upstream_relation": "The page states that it derives from the 2021 LaTeXStudio CUMCM template; local compatibility uses the separately locked CUMCMThesis repository.",
+      "clone_path": null,
+      "commit": null,
+      "last_verified": "2026-08-13",
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "evidence_path": null,
+        "status": "page_verified"
+      },
+      "distribution": "blocked",
+      "reason": "The exact Overleaf derivative bundles additional fonts/assets and is not an anonymous Git clone. Audit each bundled asset before redistribution."
+    },
+    {
+      "source_id": "cumcmthesis-community",
+      "name": "CUMCMThesis",
+      "role": "CUMCM compatibility reference",
+      "url": "https://github.com/latexstudio/CUMCMThesis",
+      "upstream_relation": "Compatibility repository related to the tkpdcwqsphwk Overleaf derivative; not asserted byte-identical.",
+      "clone_path": "vendor/upstream/CUMCMThesis",
+      "commit": "90d3e854534ae7dc605dfe9296785f8c17e56e22",
+      "commit_date": "2023-09-08T20:26:01+08:00",
+      "license": {
+        "spdx": null,
+        "evidence_path": null,
+        "status": "unverified"
+      },
+      "distribution": "blocked",
+      "reason": "The audited upstream snapshot contains no LICENSE/COPYING file or explicit repository-wide redistribution grant. Use locally for inspection and compile compatibility only."
+    },
+    {
+      "source_id": "mcmthesis-community",
+      "name": "mcmthesis",
+      "role": "MCM/ICM compatibility reference",
+      "url": "https://github.com/latexstudio-org/mcmthesis",
+      "upstream_relation": "Document-class compatibility repository used by the tmzfgynjcqfc Overleaf derivative; not asserted byte-identical.",
+      "clone_path": "vendor/upstream/mcmthesis",
+      "commit": "8ac05e2c3a9ef5880a15e3a3a18762a546c10b69",
+      "commit_date": "2024-01-25T08:42:45+08:00",
+      "license": {
+        "spdx": "LPPL-1.3c-or-later",
+        "evidence_path": "vendor/upstream/mcmthesis/LICENSE",
+        "status": "verified"
+      },
+      "distribution": "conditional",
+      "reason": "Redistribution or modification must preserve LPPL conditions and maintained-file status; this snapshot is not an official COMAP rule source."
+    },
+    {
+      "source_id": "eisvogel-engineering-reference",
+      "name": "Eisvogel / pandoc-latex-template",
+      "role": "general LaTeX engineering reference",
+      "url": "https://github.com/Wandmalfarbe/pandoc-latex-template",
+      "clone_path": "vendor/upstream/pandoc-latex-template",
+      "commit": "93cc5b8e08c658da012d7609491ae72b1aff72fc",
+      "commit_date": "2026-07-04T13:48:15Z",
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence_path": "vendor/upstream/pandoc-latex-template/LICENSE",
+        "status": "verified"
+      },
+      "distribution": "conditional",
+      "reason": "Useful for build and editorial engineering patterns only. Bundled font and media assets carry their own licenses and require a separate asset audit."
+    },
+    {
+      "source_id": "scienceplots-style-reference",
+      "name": "SciencePlots",
+      "role": "Matplotlib scientific style reference",
+      "url": "https://github.com/garrettj403/SciencePlots",
+      "clone_path": "vendor/upstream/SciencePlots",
+      "commit": "b9b16959570bd2fbc9ff5118bacc423c3bddd592",
+      "commit_date": "2026-06-23T09:44:37+02:00",
+      "license": {
+        "spdx": "MIT",
+        "evidence_path": "vendor/upstream/SciencePlots/LICENSE",
+        "status": "verified"
+      },
+      "distribution": "conditional",
+      "reason": "Use as a style design reference. The local plotting kit uses its own conservative style and does not require SciencePlots at runtime."
+    },
+    {
+      "source_id": "scientific-visualization-book-reference",
+      "name": "Scientific Visualization: Python + Matplotlib",
+      "role": "visualization principles and recipe reference",
+      "url": "https://github.com/rougier/scientific-visualization-book",
+      "clone_path": "vendor/upstream/scientific-visualization-book",
+      "commit": "62fa569f30333c817c13e4dc757877c1192fd15a",
+      "commit_date": "2026-08-07T02:45:58Z",
+      "license": {
+        "spdx": "CC-BY-NC-SA-4.0 (book); BSD-3-Clause (code)",
+        "evidence_path": "vendor/upstream/scientific-visualization-book/LICENSE.txt",
+        "status": "verified_mixed_local_reference"
+      },
+      "distribution": "blocked",
+      "local_only": true,
+      "sparse_paths": ["README.md", "LICENSE.txt", "code/**/*.py", "rst/**/*.rst", "rst2latex.py"],
+      "reason": "Sparse local clone is locked and usable for chart-design study. Book text is CC BY-NC-SA 4.0 and code is BSD-3-Clause; generated figures, fonts and other assets were intentionally not restored. Keep the upstream working copy local and do not distribute it with the Skill."
+    },
+    {
+      "source_id": "python-graph-gallery-reference",
+      "name": "Python Graph Gallery",
+      "role": "chart-type and layout reference",
+      "url": "https://github.com/holtzy/The-Python-Graph-Gallery",
+      "clone_path": "vendor/upstream/python-graph-gallery",
+      "commit": "566349bf2b3cf0531fa6fd5de0810c8e075f8638",
+      "commit_date": "2026-01-04T14:29:20+01:00",
+      "license": {
+        "spdx": "0BSD",
+        "evidence_path": "vendor/upstream/python-graph-gallery/LICENSE",
+        "status": "verified_local_reference"
+      },
+      "distribution": "blocked",
+      "local_only": true,
+      "sparse_paths": ["README.md", "LICENSE*", "gallery/**/*.py", "content/**/*.py", "scripts/**/*.py", "datasets/**/*.csv", "datasets/**/*.json"],
+      "reason": "Sparse local clone is locked and usable for chart-type and layout study. Root repository license is 0BSD; keep the upstream working copy local and do not distribute the repository or copied gallery assets with the Skill."
+    }
+  ]
+}

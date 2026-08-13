@@ -196,6 +196,25 @@ def main() -> int:
     if len(checkpoint_ids) != len(set(checkpoint_ids)) or any(not value for value in checkpoint_ids):
         errors.append("checkpoint_id values must be distinct and non-empty")
 
+    modeling_ai = any(
+        isinstance(usage, dict) and usage.get("stage") == "modeling"
+        for usage in usage_rows
+    )
+    if modeling_ai:
+        m1_checkpoint = next(
+            (
+                row for row in checkpoints
+                if isinstance(row, dict) and row.get("stage") == "m1" and row.get("decision") == "pass"
+            ),
+            None,
+        )
+        m1_manual = set(m1_checkpoint.get("manual_checks", [])) if m1_checkpoint else set()
+        if "team_led_core_modeling" not in m1_manual:
+            warnings.append(
+                "AI was used during modeling; add 'team_led_core_modeling' to the M1 human checkpoint "
+                "manual_checks to confirm core modeling was team-led per competition AI policy"
+            )
+
     ok = not errors and (not args.strict or not warnings)
     print(json.dumps({
         "ok": ok,

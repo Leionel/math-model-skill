@@ -58,7 +58,8 @@ def main() -> int:
     if ai is not None:
         verify_ref("ai_disclosure", ai, sized=True)
     verify_ref("s1_report", value.get("s1_report"))
-    verify_ref("human_checkpoint", value.get("human_checkpoint"))
+    run_manifest_ref = value.get("run_manifest")
+    verify_ref("run_manifest", run_manifest_ref)
     for index, ref in enumerate(value.get("competition", {}).get("rule_snapshots", [])):
         verify_ref(f"competition.rule_snapshots[{index}]", ref)
 
@@ -66,15 +67,77 @@ def main() -> int:
         expected_package = sha256_json({"paper": paper, "support_files": support, "ai_disclosure": ai})
         if value.get("package_sha256") != expected_package:
             errors.append("package_sha256 does not match final file records")
+    run_manifest: dict[str, Any] = {}
+    try:
+        run_manifest_path = resolve_path(run_manifest_ref["path"], root).resolve()
+        loaded_manifest = load_structured(run_manifest_path)
+        if not isinstance(loaded_manifest, dict):
+            errors.append("referenced run_manifest is not an object")
+        else:
+            run_manifest = loaded_manifest
+            if run_manifest.get("project_id") != value.get("project_id"):
+                errors.append("run_manifest project_id does not match submission manifest")
+            if run_manifest.get("run_id") != value.get("run_id"):
+                errors.append("run_manifest run_id does not match submission manifest")
+            profile = run_manifest.get("competition_profile")
+            if not isinstance(profile, dict) or sha256_json(profile) != value.get("competition", {}).get("profile_sha256"):
+                errors.append("run_manifest competition profile does not match submission manifest")
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        errors.append(f"cannot inspect run_manifest: {exc}")
+
     try:
         report_path = resolve_path(value["s1_report"]["path"], root).resolve()
         report = load_structured(report_path)
         if not isinstance(report, dict) or report.get("ok") is not True:
             errors.append("referenced S1 report does not have ok=true")
-        elif report.get("competition_profile_sha256") != value.get("competition", {}).get("profile_sha256"):
-            errors.append("S1 report profile hash does not match submission manifest")
+        else:
+            if report.get("competition_profile_sha256") != value.get("competition", {}).get("profile_sha256"):
+                errors.append("S1 report profile hash does not match submission manifest")
+            rules = run_manifest.get("competition_profile", {}).get("submission")
+            if not isinstance(rules, dict) or report.get("submission_rules_sha256") != sha256_json(rules):
+                errors.append("S1 report submission rules hash does not match run_manifest")
+            if report.get("ai_usage_sha256") != sha256_json(run_manifest.get("ai_usage", [])):
+                errors.append("S1 report AI usage hash does not match run_manifest")
+            s1_checkpoints = [
+                row for row in run_manifest.get("human_checkpoints", [])
+                if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") == "pass"
+            ]
+            report_checkpoint = report.get("s1_checkpoint")
+            if not s1_checkpoints or not isinstance(report_checkpoint, dict) or (
+                report_checkpoint.get("checkpoint_id") != s1_checkpoints[-1].get("checkpoint_id")
+                or report_checkpoint.get("sha256") != sha256_json(s1_checkpoints[-1])
+            ):
+                errors.append("S1 report human checkpoint hash does not match run_manifest")
+            page_count = report.get("page_count")
+            if not isinstance(page_count, dict):
+                errors.append("S1 report has no auditable page_count record")
+            elif isinstance(paper, dict):
+                for report_key, paper_key in (
+                    ("total_pages", "pages"),
+                    ("page_count_method", "page_count_method"),
+                    ("limited_pages", "limited_pages"),
+                    ("ai_report_pages", "ai_report_pages"),
+                ):
+                    if page_count.get(report_key) != paper.get(paper_key):
+                        errors.append(f"S1 report {report_key} does not match frozen paper record")
     except (OSError, ValueError, TypeError, KeyError) as exc:
         errors.append(f"cannot inspect S1 report: {exc}")
+
+    if isinstance(paper, dict):
+        pages = paper.get("pages")
+        ai_pages = paper.get("ai_report_pages")
+        limited_pages = paper.get("limited_pages")
+        if isinstance(pages, int) and isinstance(ai_pages, int) and isinstance(limited_pages, int):
+            if ai_pages >= pages:
+                errors.append("paper.ai_report_pages must be smaller than paper.pages")
+            if limited_pages != pages - ai_pages:
+                errors.append("paper.limited_pages must equal pages - ai_report_pages")
+            rules = run_manifest.get("competition_profile", {}).get("submission", {})
+            max_pages = rules.get("max_pages") if isinstance(rules, dict) else None
+            if isinstance(max_pages, int) and limited_pages > max_pages:
+                errors.append("paper.limited_pages exceeds the pinned competition maximum")
+            if isinstance(rules, dict) and not rules.get("max_pages_excludes_ai_report") and ai_pages != 0:
+                errors.append("paper.ai_report_pages must be zero when the profile does not exclude AI report pages")
     closes_at = value.get("deadline", {}).get("closes_at")
     try:
         datetime.fromisoformat(str(closes_at).replace("Z", "+00:00"))

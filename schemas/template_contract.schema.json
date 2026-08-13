@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/template-contract.schema.json",
+  "title": "Paper Template Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "template_id", "competition_profile_id", "source_kind", "source_locator", "status", "document_class", "entrypoint", "required_files", "required_commands", "forbidden_document_classes", "allowed_engines"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "template_id": {"type": "string", "minLength": 1},
+    "competition_profile_id": {"type": "string", "minLength": 1},
+    "source_kind": {"type": "string", "enum": ["official", "community", "user_supplied", "local"]},
+    "source_locator": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["draft", "verified"]},
+    "document_class": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+    "entrypoint": {"type": "string", "pattern": "^[^\\\\]*\\.tex$"},
+    "required_files": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "required_commands": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "forbidden_document_classes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"}},
+    "allowed_engines": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["xelatex", "lualatex", "pdflatex"]}},
+    "notes": {"type": "string"}
+  }
+}

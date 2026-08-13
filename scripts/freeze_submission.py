@@ -17,12 +17,22 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
 
 
-def submission_file(path: Path, root: Path, *, pages: int | None = None, method: str | None = None) -> dict[str, Any]:
+def submission_file(
+    path: Path,
+    root: Path,
+    *,
+    pages: int | None = None,
+    method: str | None = None,
+    limited_pages: int | None = None,
+    ai_report_pages: int | None = None,
+) -> dict[str, Any]:
     return {
         "path": rel_path(path, root),
         "sha256": sha256_file(path),
         "bytes": path.stat().st_size,
         **({"pages": pages, "page_count_method": method} if pages is not None or method is not None else {}),
+        **({"limited_pages": limited_pages} if limited_pages is not None else {}),
+        **({"ai_report_pages": ai_report_pages} if ai_report_pages is not None else {}),
     }
 
 
@@ -87,6 +97,24 @@ def main() -> int:
             raise ValueError("run manifest has no competition profile")
         if report.get("competition_profile_sha256") != sha256_json(profile):
             raise ValueError("S1 report competition profile hash is stale")
+        rules = profile.get("submission")
+        if not isinstance(rules, dict) or report.get("submission_rules_sha256") != sha256_json(rules):
+            raise ValueError("S1 report submission rules hash is stale")
+        if report.get("ai_usage_sha256") != sha256_json(manifest.get("ai_usage", [])):
+            raise ValueError("S1 report AI usage hash is stale")
+        s1_checkpoints = [
+            row for row in manifest.get("human_checkpoints", [])
+            if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") == "pass"
+        ]
+        if not s1_checkpoints:
+            raise ValueError("current run manifest has no passing S1 human checkpoint")
+        current_checkpoint = s1_checkpoints[-1]
+        report_checkpoint = report.get("s1_checkpoint")
+        if not isinstance(report_checkpoint, dict) or (
+            report_checkpoint.get("checkpoint_id") != current_checkpoint.get("checkpoint_id")
+            or report_checkpoint.get("sha256") != sha256_json(current_checkpoint)
+        ):
+            raise ValueError("S1 report human checkpoint hash is stale")
 
         paper_path = resolve_path(args.paper, root).resolve()
         support_paths = [resolve_path(value, root).resolve() for value in args.support]
@@ -110,11 +138,41 @@ def main() -> int:
                 raise ValueError(f"S1 report does not cover current {role} artifact: {key[1]}")
 
         paper_input = next(row for row in report["inputs"] if row.get("role") == "paper")
+        page_count = report.get("page_count")
+        if not isinstance(page_count, dict):
+            raise ValueError("S1 report has no auditable page_count record")
+        if (
+            page_count.get("total_pages") != paper_input.get("pages")
+            or page_count.get("page_count_method") != paper_input.get("page_count_method")
+        ):
+            raise ValueError("S1 report page_count record does not match its paper input")
+        if (
+            page_count.get("max_pages") != rules.get("max_pages")
+            or page_count.get("max_pages_excludes_ai_report")
+            != bool(rules.get("max_pages_excludes_ai_report"))
+        ):
+            raise ValueError("S1 report page_count policy does not match current submission rules")
+        total_pages = page_count.get("total_pages")
+        ai_report_pages = page_count.get("ai_report_pages")
+        limited_pages = page_count.get("limited_pages")
+        if not all(isinstance(value, int) for value in (total_pages, ai_report_pages, limited_pages)):
+            raise ValueError("S1 report page_count values must be integers")
+        if total_pages < 1 or ai_report_pages < 0 or ai_report_pages >= total_pages:
+            raise ValueError("S1 report AI page count is outside the valid range")
+        if limited_pages != total_pages - ai_report_pages:
+            raise ValueError("S1 report limited_pages does not equal total_pages - ai_report_pages")
+        max_pages = rules.get("max_pages")
+        if isinstance(max_pages, int) and limited_pages > max_pages:
+            raise ValueError("S1 report limited_pages exceeds the current competition maximum")
+        if not rules.get("max_pages_excludes_ai_report") and ai_report_pages != 0:
+            raise ValueError("S1 report excludes AI pages but the current profile does not allow it")
         paper_record = submission_file(
             paper_path,
             root,
             pages=paper_input.get("pages"),
             method=paper_input.get("page_count_method"),
+            limited_pages=limited_pages,
+            ai_report_pages=ai_report_pages,
         )
         support_records = [submission_file(path, root) for path in support_paths]
         ai_record = submission_file(ai_path, root) if ai_path else None
@@ -130,7 +188,7 @@ def main() -> int:
         if not args.timezone.strip():
             raise ValueError("--timezone must be non-empty")
         submission = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "project_id": manifest["project_id"],
             "run_id": manifest["run_id"],
             "status": "final_frozen",
@@ -147,9 +205,9 @@ def main() -> int:
             "support_files": support_records,
             "ai_disclosure": ai_record,
             "s1_report": {"path": rel_path(report_path, root), "sha256": sha256_file(report_path)},
-            "human_checkpoint": {"path": rel_path(manifest_path, root), "sha256": sha256_file(manifest_path)},
+            "run_manifest": {"path": rel_path(manifest_path, root), "sha256": sha256_file(manifest_path)},
             "package_sha256": package_hash,
-            "builder": {"name": "freeze_submission.py", "version": "1.0"},
+            "builder": {"name": "freeze_submission.py", "version": "1.1"},
         }
         write_json(output_path, submission)
     except (OSError, ValueError, KeyError, StopIteration, TypeError) as exc:

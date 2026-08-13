@@ -6,7 +6,7 @@
 
 ### 1.1 当前实现状态
 
-当前目录已从“两份 reference”发展为可运行的 P0 Harness：6 个 schema、结果与提交冻结工具、增量 Evidence Registry、安全/合同/一致性/引用/Gate/S1 检查，以及正负例回归测试。仍未实现的主要是 Nature Figure 的最终尺寸深度 QA、自动 Gate 失效、多 run 选择审计和平台/API。
+当前目录已从“两份 reference”发展为可运行的 P0 Harness：19 个 schema、结果与提交冻结工具、增量 Evidence Registry、安全/合同/一致性/引用/Gate/S1 检查，以及正负例回归测试。本轮又补上题面/数据/公式映射、artifact DAG stale 检测、claim inventory、安全 LaTeX 构建、实际 PDF 全页渲染和受控绘图库；仍未实现的主要是自动选择性重跑、多 run 选择审计、当届 official golden template 和平台/API。
 
 逐仓表中的“当前是否已有”保留审计发生时的基线判断；“建议”是否已落地以本节和第 8 节为准。
 
@@ -175,7 +175,7 @@ Gate 没有过多：M1/P1/P2/W1/W2/S1 分别只有一个决策问题，F1 是不
 Abstract Gate 不应成为第六个 Agent 或第六个顶层 Gate。它是 Paper Strategy 与最终 Consistency QA 共同执行的一组阻断断言：
 
 - 每个必须回答的子问题在摘要中都有方法和结论落点，除非 `paper_plan` 明确说明不应进入摘要；
-- 摘要的每个关键数字都引用 `paper_plan.abstract_result_ids`，且能在 `frozen_results` 找到完全一致的值、单位、显示精度和统计定义；
+- 摘要的每个关键数字都引用 `paper_plan.abstract_results[]`，说明选择原因，并能在 `frozen_results` 找到完全一致的值、单位、显示精度和统计定义；
 - “稳健、显著、最优、提升”等表述必须有对应 evidence 和明确 baseline；
 - 摘要、正文结果、结论和图表 caption 复用同一 result/evidence ID，而不是各自复制数字；
 - 任一 result 在 P2 后改变，Abstract Gate 和所有下游写作检查自动失效。

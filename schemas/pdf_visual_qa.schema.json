@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/pdf-visual-qa.schema.json",
+  "title": "PDF Formal and Render QA Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pdf", "profile", "generated_at", "tools", "page_count", "page_size", "fonts", "render", "warnings", "errors", "formal_ok", "visual_review_required"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "pdf": {"$ref": "#/$defs/file_ref"},
+    "profile": {"$ref": "#/$defs/file_ref"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "tools": {"type": "object", "additionalProperties": {"type": "string"}},
+    "page_count": {"type": "integer", "minimum": 1},
+    "page_size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed_width_mm", "observed_height_mm", "expected_width_mm", "expected_height_mm", "within_tolerance"],
+      "properties": {
+        "observed_width_mm": {"type": "number", "minimum": 1},
+        "observed_height_mm": {"type": "number", "minimum": 1},
+        "expected_width_mm": {"type": "number", "minimum": 1},
+        "expected_height_mm": {"type": "number", "minimum": 1},
+        "within_tolerance": {"type": "boolean"}
+      }
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "font_count", "unembedded", "cjk_source_detected", "cjk_render_review_required"],
+      "properties": {
+        "checked": {"type": "boolean"},
+        "font_count": {"type": "integer", "minimum": 0},
+        "unembedded": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "cjk_source_detected": {"type": ["boolean", "null"]},
+        "cjk_render_review_required": {"type": "boolean"}
+      }
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "dpi", "pages_rendered", "directory", "contact_sheet"],
+      "properties": {
+        "status": {"type": "string", "enum": ["pass", "fail", "not_run"]},
+        "dpi": {"type": ["integer", "null"], "minimum": 1},
+        "pages_rendered": {"type": "integer", "minimum": 0},
+        "directory": {"type": ["string", "null"]},
+        "contact_sheet": {"type": ["string", "null"]}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "errors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "formal_ok": {"type": "boolean"},
+    "visual_review_required": {"type": "boolean", "const": true}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    }
+  }
+}

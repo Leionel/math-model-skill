@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -48,11 +49,16 @@ class P0HarnessTest(unittest.TestCase):
             "rule": "official_rules.html",
             "ai_record": "ai_interaction.md",
             "validation": "full_validation.json",
+            "measurements": "validation_measurements.json",
             "raw": "raw_results.json",
             "frozen": "frozen_results.json",
             "evidence": "evidence_registry.json",
             "model": "model_contract.json",
             "plan": "paper_plan.json",
+            "tex": "paper_source/main.tex",
+            "template_contract": "paper_source/template_contract.json",
+            "build_log": "build.log",
+            "build_receipt": "build_receipt.json",
             "paper": "solution.pdf",
             "abstract": "abstract.txt",
             "conclusion": "conclusion.txt",
@@ -71,13 +77,14 @@ class P0HarnessTest(unittest.TestCase):
         paths["rule"].write_text("official rule snapshot\n", encoding="utf-8")
         paths["ai_record"].write_text("prompt summary and checked response\n", encoding="utf-8")
         paths["paper"].write_bytes(b"%PDF-1.4\n% fixture solution\n")
-        paths["support"].write_bytes(b"PK fixture support\n")
+        with zipfile.ZipFile(paths["support"], "w") as archive:
+            archive.writestr("README.txt", "fixture support\n")
         paths["ai_disclosure"].write_bytes(b"%PDF-1.4\n% AI use report\n")
 
         write_json(
             paths["model"],
             {
-                "schema_version": "1.1",
+                "schema_version": "1.2",
                 "project_id": "demo",
                 "run_id": "demo-run",
                 "unit_system": "SI with CNY for cost",
@@ -99,12 +106,32 @@ class P0HarnessTest(unittest.TestCase):
                 "assumptions": [
                     {"assumption_id": "A1", "text": "demand is fixed during the run", "basis": "problem statement", "sensitivity_plan": "rerun with +/-10% demand"}
                 ],
+                "research_basis": {
+                    "status": "verified",
+                    "research_questions": [{
+                        "research_id": "RES-Q1", "question_ids": ["q1"],
+                        "purpose": "compare transparent optimization formulations for fixed demand",
+                        "chinese_keywords": ["固定需求 成本优化"],
+                        "english_keywords": ["fixed demand cost optimization"],
+                    }],
+                    "searches": [
+                        {"search_id": "S-LLM", "research_ids": ["RES-Q1"], "query": "candidate formulations for fixed-demand cost optimization", "language": "en", "source": "llm_knowledge", "searched_at": "2026-08-08T00:00:00Z", "candidate_count": 2},
+                        {"search_id": "S-WEB", "research_ids": ["RES-Q1"], "query": "fixed demand cost minimization linear optimization", "language": "en", "source": "openalex", "searched_at": "2026-08-08T00:01:00Z", "candidate_count": 4},
+                    ],
+                    "candidate_models": [
+                        {"candidate_id": "CM-LP", "question_id": "q1", "name": "enumerated linear cost model", "mechanism_fit": "directly represents the fixed demand and non-negativity constraints", "assumptions": ["cost is additive"], "data_requirements": ["demand and unit cost"], "strengths": ["transparent optimum"], "weaknesses": ["does not represent stochastic demand"], "evidence_ids": ["E-CITE-PLAN"], "rejection_conditions": ["nonlinear path dependence is material"], "decision": "selected", "model_id": "M1"},
+                        {"candidate_id": "CM-SIM", "question_id": "q1", "name": "stochastic simulation", "mechanism_fit": "can represent uncertain demand", "assumptions": ["a demand distribution is identifiable"], "data_requirements": ["repeated demand observations"], "strengths": ["represents uncertainty"], "weaknesses": ["unsupported by the fixed fixture data"], "evidence_ids": ["E-CITE-PLAN"], "rejection_conditions": ["no repeated observations are available"], "decision": "rejected"},
+                    ],
+                    "decisions": [{"question_id": "q1", "selected_candidate_id": "CM-LP", "alternatives_considered": ["CM-SIM"], "selection_criteria": ["mechanism fit", "data sufficiency", "auditability"], "rationale": "The deterministic formulation matches the supplied data while retaining exact feasibility and objective checks.", "decisive_evidence_ids": ["E-CITE-PLAN"], "unresolved_risks": ["demand misspecification"]}],
+                    "unresolved_questions": []
+                },
                 "models": [
                     {
                         "model_id": "M1",
                         "question_id": "q1",
                         "name": "baseline optimization",
                         "problem_type": "optimization",
+                        "characteristics": ["deterministic"],
                         "rationale": "matches the stated objective",
                         "variables": [
                             {"symbol": "x", "meaning": "selected production amount", "unit": "item", "domain": "x >= 0", "role": "decision"}
@@ -116,11 +143,31 @@ class P0HarnessTest(unittest.TestCase):
                         "outputs": ["optimal_cost"],
                         "validation": [{"check_id": "V1", "stage": "both", "method": "check feasibility and objective", "acceptance": "all constraints pass"}],
                         "validation_obligations": [
-                            {"obligation_id": "VAL-FEASIBILITY", "category": "feasibility", "method": "recompute all constraints", "acceptance": "maximum violation is zero", "required_stage": "both"},
-                            {"obligation_id": "VAL-OBJECTIVE", "category": "objective_recomputation", "method": "independent objective function", "acceptance": "exact match", "required_stage": "full"},
+                            {
+                                "obligation_id": "VAL-FEASIBILITY", "category": "feasibility",
+                                "method": "recompute all constraints",
+                                "acceptance": {"left_metric_id": "max_violation", "operator": "<=", "right": {"kind": "literal", "value": 0}, "unit": "item"},
+                                "required_stage": "both",
+                            },
+                            {
+                                "obligation_id": "VAL-OBJECTIVE", "category": "objective_recomputation",
+                                "method": "independent objective function",
+                                "acceptance": {"left_metric_id": "solver_objective", "operator": "==", "right": {"kind": "metric", "metric_id": "independent_objective"}, "unit": "CNY", "tolerance": 0.000001},
+                                "required_stage": "full",
+                            },
                         ],
                         "risks": ["fixed-demand assumption"],
                         "fallback": "use the best feasible enumerated solution",
+                        "plan_details": {
+                            "selected_candidate_id": "CM-LP",
+                            "mechanism": "Choose a non-negative production decision that covers fixed demand while minimizing additive cost.",
+                            "equation_plan": [{"equation_id": "EQ-Q1-OBJ", "purpose": "define the optimization objective", "expression_or_derivation": "min C(x) subject to x >= demand", "variables": ["x", "demand"], "assumptions": ["additive cost"]}],
+                            "parameter_plan": [{"parameter": "demand", "source_or_estimator": "contest attachment", "unit": "item", "uncertainty_or_range": "+/-10% sensitivity"}],
+                            "implementation_steps": ["load and validate demand", "enumerate feasible decisions", "recompute objective and constraints independently"],
+                            "output_artifacts": ["raw_results.json", "validation_measurements.json"],
+                            "validation_strategy": ["feasibility and independent objective recomputation"],
+                            "failure_modes": ["fixed demand is misspecified"]
+                        }
                     }
                 ],
                 "terminology": [{"canonical": "optimal cost", "forbidden_variants": ["optimium cost"]}],
@@ -128,15 +175,33 @@ class P0HarnessTest(unittest.TestCase):
             },
         )
         write_json(
-            paths["validation"],
+            paths["measurements"],
             {
-                "ok": True,
-                "obligations": [
-                    {"obligation_id": "VAL-FEASIBILITY", "status": "pass", "observed": "maximum violation = 0"},
-                    {"obligation_id": "VAL-OBJECTIVE", "status": "pass", "observed": "independent objective = 123.45"},
+                "schema_version": "1.0",
+                "run_id": "demo-run",
+                "observations": [
+                    {
+                        "obligation_id": "VAL-FEASIBILITY",
+                        "metrics": [{"metric_id": "max_violation", "value": 0, "unit": "item", "locator": "checks/constraints.max_violation"}],
+                    },
+                    {
+                        "obligation_id": "VAL-OBJECTIVE",
+                        "metrics": [
+                            {"metric_id": "solver_objective", "value": 123.45, "unit": "CNY", "locator": "solver.objective"},
+                            {"metric_id": "independent_objective", "value": 123.45, "unit": "CNY", "locator": "recompute.objective"},
+                        ],
+                    },
                 ],
             },
         )
+        validation = self.run_script(
+            "validation/evaluate_obligations.py",
+            "--project-root", str(project),
+            "--model-contract", paths["model"].name,
+            "--measurements", paths["measurements"].name,
+            "--output", paths["validation"].name,
+        )
+        self.assertEqual(validation.returncode, 0, validation.stdout + validation.stderr)
         write_json(
             paths["raw"],
             {"results": [{
@@ -167,19 +232,64 @@ class P0HarnessTest(unittest.TestCase):
             "--output", "evidence_registry.json",
         )
         self.assertEqual(register.returncode, 0, register.stdout + register.stderr)
+        registry = read_json(paths["evidence"])
+        registry["evidence"].append({
+            "evidence_id": "E-CITE-PLAN", "type": "citation", "result_ids": [], "artifacts": [],
+            "supports": "transparent optimization formulation and explicit assumptions",
+            "boundary": "method choice only; it does not validate this run's numerical result",
+            "verification_status": "verified",
+            "citation": {
+                "bib_key": "fixture2026", "title": "Fixture optimization method", "authors": ["A. Author"], "year": 2026,
+                "canonical_url": "https://example.org/fulltext", "venue": "Fixture Journal", "source_tier": "publisher",
+                "metadata_sources": ["https://example.org/metadata"], "access_level": "full_text",
+                "locator": "Methods, section 2", "metadata_verified": True, "content_verified": True,
+                "publication_status_checked": True, "verified_at": "2026-08-08T00:02:00Z"
+            }
+        })
+        write_json(paths["evidence"], registry)
         write_json(
             paths["plan"],
             {
-                "schema_version": "1.0",
+                "schema_version": "1.2",
                 "run_id": "demo-run",
+                "central_thesis": {"text": "The selected feasible plan minimizes cost under the frozen demand.", "claim_ids": ["C1"], "boundary": "Under the frozen demand and declared constraints."},
                 "requirements": [{"requirement_id": "RQ1", "text": "answer question 1", "claim_ids": ["C1"]}],
-                "claims": [{"claim_id": "C1", "text": "the selected plan has the minimum cost", "question_id": "q1", "evidence_ids": ["E-R-Q1-01"], "section": "results.q1", "boundary": "under the frozen run"}],
+                "claims": [{"claim_id": "C1", "claim_type": "observation", "text": "the selected plan has the minimum cost", "question_id": "q1", "evidence_ids": ["E-R-Q1-01"], "result_ids": ["R-Q1-01"], "section": "results.q1", "boundary": "under the frozen run", "support_level": "direct"}],
                 "sections": [{"section_id": "results.q1", "purpose": "answer question 1", "claim_ids": ["C1"]}],
-                "abstract_result_ids": ["R-Q1-01"],
+                "argument_units": [
+                    {"unit_id": "AU-Q1-FORM", "section_id": "results.q1", "rhetorical_role": "mechanism_derivation", "claim_ids": ["C1"], "evidence_ids": ["E-CITE-PLAN"], "prerequisite_unit_ids": [], "expected_reader_judgment": "The formulation matches the fixed-demand mechanism.", "boundary": "Additive cost and fixed demand.", "target_words": 70},
+                    {"unit_id": "AU-Q1-RESULT", "section_id": "results.q1", "rhetorical_role": "result_observation", "claim_ids": ["C1"], "evidence_ids": ["E-R-Q1-01"], "prerequisite_unit_ids": ["AU-Q1-FORM"], "expected_reader_judgment": "The reported value is directly supported by the frozen run.", "boundary": "Under the frozen run.", "target_words": 70},
+                    {"unit_id": "AU-Q1-VALID", "section_id": "results.q1", "rhetorical_role": "validation", "claim_ids": ["C1"], "evidence_ids": ["E-R-Q1-01"], "prerequisite_unit_ids": ["AU-Q1-RESULT"], "expected_reader_judgment": "The optimum is feasible and independently recomputed.", "boundary": "Declared constraints only.", "target_words": 70},
+                    {"unit_id": "AU-Q1-INTERP", "section_id": "results.q1", "rhetorical_role": "boundary", "claim_ids": ["C1"], "evidence_ids": ["E-R-Q1-01"], "prerequisite_unit_ids": ["AU-Q1-VALID"], "expected_reader_judgment": "The result is not extrapolated beyond fixed demand.", "boundary": "No stochastic-demand claim.", "target_words": 70}
+                ],
+                "depth_budget": [{"question_id": "q1", "target_words": 180, "rationale": "This fixture has one validated optimization result."}],
+                "precision_policy": {"audit_source": "frozen_display_value", "prose_source": "frozen_display_value", "table_source": "frozen_display_value", "abstract_max_numeric_claims": 2},
+                "abstract_results": [{"result_id": "R-Q1-01", "priority": "primary", "selection_reason": "This is the decision-defining validated result for the only requirement.", "claim_ids": ["C1"], "word_budget": 24}],
                 "terminology": [{"canonical": "optimal cost", "forbidden_variants": ["optimium cost"]}],
-                "figures": [], "tables": [], "status": "ready",
+                "figures": [], "tables": [],
+                "readiness": {"stage": "technical_draft", "question_coverage": [{"question_id": "q1", "formulation_unit_ids": ["AU-Q1-FORM"], "result_unit_ids": ["AU-Q1-RESULT"], "validation_unit_ids": ["AU-Q1-VALID"], "interpretation_unit_ids": ["AU-Q1-INTERP"], "display_ids": [], "display_waiver": "The fixture has one scalar result; prose and equation are clearer than a display."}]},
+                "status": "ready",
             },
         )
+        paths["tex"].parent.mkdir(parents=True, exist_ok=True)
+        paths["tex"].write_text("\\documentclass{article}\n\\begin{document}fixture\\end{document}\n", encoding="utf-8")
+        write_json(paths["template_contract"], {
+            "schema_version": "1.0", "template_id": "fixture-template", "competition_profile_id": "demo-2026",
+            "source_kind": "local", "source_locator": "tests/test_p0_harness.py", "status": "verified",
+            "document_class": "article", "entrypoint": "main.tex", "required_files": ["main.tex"],
+            "required_commands": ["\\begin{document}"], "forbidden_document_classes": [], "allowed_engines": ["xelatex"]
+        })
+        paths["build_log"].write_text("fixture build log\n", encoding="utf-8")
+        write_json(paths["build_receipt"], {
+            "schema_version": "1.1", "generated_at": "2026-08-08T00:00:00Z", "integrity_mode": "submission",
+            "engine": "xelatex", "source_root": "paper_source", "entrypoint": "main.tex",
+            "template": {"contract": "paper_source/template_contract.json", "template_id": "fixture-template", "document_class": "article", "verified": True, "sha256": sha256(paths["template_contract"])},
+            "source_tree_sha256_before": "0" * 64, "source_tree_sha256_after": "0" * 64,
+            "command": ["latexmk", "-xelatex", "main.tex"], "shell_escape": False,
+            "output": {"path": paths["paper"].name, "sha256": sha256(paths["paper"])},
+            "log": {"path": paths["build_log"].name, "sha256": sha256(paths["build_log"])},
+            "exit_code": 0, "source_unchanged": True, "ok": True
+        })
         paths["abstract"].write_text("The optimal cost is 123.45 CNY.\n", encoding="utf-8")
         paths["conclusion"].write_text("The optimal cost is 123.45 CNY.\n", encoding="utf-8")
         qa_inputs = [
@@ -203,7 +313,7 @@ class P0HarnessTest(unittest.TestCase):
             "static_reference_search": "allow", "ai_tool_use": "allow",
         }
         checkpoints = [
-            {"checkpoint_id": "HC-M1", "stage": "m1", "scope": "model and obligations", "artifacts": [file_ref(paths["model"])], "manual_checks": ["problem interpretation"], "reviewed_by_role": "team", "decision": "pass", "checked_at": "2026-08-08T00:00:00Z"},
+            {"checkpoint_id": "HC-M1", "stage": "m1", "scope": "research, model choice and obligations", "artifacts": [file_ref(paths["model"]), file_ref(paths["evidence"])], "manual_checks": ["problem_mechanism_fit", "candidate_comparison_fairness", "data_sufficiency", "mathematical_consistency", "literature_support_fit", "validation_can_falsify"], "reviewed_by_role": "team", "decision": "pass", "checked_at": "2026-08-08T00:00:00Z"},
             {"checkpoint_id": "HC-P2", "stage": "p2", "scope": "code validation and results", "artifacts": [file_ref(paths["frozen"])], "manual_checks": ["result plausibility"], "reviewed_by_role": "team", "decision": "pass", "checked_at": "2026-08-08T00:00:00Z"},
             {"checkpoint_id": "HC-W2", "stage": "w2", "scope": "claims citations figures and AI", "artifacts": [file_ref(paths["paper"])], "manual_checks": ["claim boundary"], "reviewed_by_role": "team", "decision": "pass", "checked_at": "2026-08-08T00:00:00Z"},
             {"checkpoint_id": "HC-S1", "stage": "s1", "scope": "final package", "artifacts": [file_ref(paths["paper"]), file_ref(paths["support"]), file_ref(paths["ai_disclosure"])], "manual_checks": ["anonymity", "final_render", "support_contents", "page_count"], "reviewed_by_role": "team", "decision": "pass", "checked_at": "2026-08-08T00:00:00Z"},
@@ -214,7 +324,8 @@ class P0HarnessTest(unittest.TestCase):
             "w2": ["solution.pdf", "deterministic_qa.json", "semantic_critic.json"], "s1": [],
         }
         manifest = {
-            "schema_version": "1.1", "project_id": "demo", "run_id": "demo-run",
+            "schema_version": "1.2", "project_id": "demo", "run_id": "demo-run", "enhanced_integrity_profile": False,
+            "integrity_mode": "submission",
             "status": "content_ready", "phase": "review",
             "competition_profile": {
                 "profile_id": "demo-2026", "competition": "other", "season": "2026", "mode": "pre_contest",
@@ -247,6 +358,8 @@ class P0HarnessTest(unittest.TestCase):
                 {**file_ref(paths["frozen"]), "role": "frozen_results"},
                 {**file_ref(paths["evidence"]), "role": "evidence_registry"},
                 {**file_ref(paths["plan"]), "role": "paper_plan"},
+                {"path": "paper_source/template_contract.json", "sha256": sha256(paths["template_contract"]), "role": "template_contract"},
+                {**file_ref(paths["build_receipt"]), "role": "build_receipt"},
                 {**file_ref(paths["paper"]), "role": "paper"},
             ],
             "gates": {name: {"status": ("pending" if name == "s1" else "pass"), "checked_at": "2026-08-08T00:00:00Z", "evidence": gate_evidence[name]} for name in ("m1", "p1", "p2", "w1", "w2", "s1")},
@@ -282,6 +395,39 @@ class P0HarnessTest(unittest.TestCase):
             "--paper-plan", "paper_plan.json", "--strict",
         )
 
+    def make_peak_failure(self, project: Path, paths: dict[str, Path], output_name: str) -> Path:
+        """Create the Q3 counterexample: proposed 550 MW versus baseline 498 MW."""
+
+        model = read_json(paths["model"])
+        acceptance = model["models"][0]["validation_obligations"][0]["acceptance"]
+        acceptance.update({
+            "left_metric_id": "proposed_peak_mw",
+            "operator": "<=",
+            "right": {"kind": "metric", "metric_id": "baseline_peak_mw"},
+            "unit": "MW",
+        })
+        write_json(paths["model"], model)
+        measurements = read_json(paths["measurements"])
+        measurements["observations"][0]["metrics"] = [
+            {"metric_id": "proposed_peak_mw", "value": 550, "unit": "MW", "locator": "q3.proposed_peak"},
+            {"metric_id": "baseline_peak_mw", "value": 498, "unit": "MW", "locator": "q3.baseline_peak"},
+        ]
+        write_json(paths["measurements"], measurements)
+        report_path = project / output_name
+        evaluate = self.run_script(
+            "validation/evaluate_obligations.py",
+            "--project-root", str(project),
+            "--model-contract", paths["model"].name,
+            "--measurements", paths["measurements"].name,
+            "--output", report_path.name,
+        )
+        self.assertEqual(evaluate.returncode, 0, evaluate.stdout + evaluate.stderr)
+        report = read_json(report_path)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["obligations"][0]["status"], "FAIL")
+        self.assertIn("550 MW <= 498 MW", report["obligations"][0]["message"])
+        return report_path
+
     def test_happy_path_contracts_safety_and_gates(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-p0-") as temp:
             project = Path(temp)
@@ -305,7 +451,142 @@ class P0HarnessTest(unittest.TestCase):
                 "--command", "python model.py", "--code", paths["code"].name, "--validation", paths["validation"].name,
             )
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("non-empty obligations", result.stderr)
+            self.assertIn("measurement_snapshot.path", result.stderr)
+
+    def test_failed_run_is_frozen_but_cannot_enter_evidence_registry(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-failed-run-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            failed_report = self.make_peak_failure(project, paths, "peak_failure.json")
+            raw = read_json(paths["raw"])
+            raw["results"][0]["validation_status"] = "failed"
+            write_json(paths["raw"], raw)
+            failed_frozen = project / "failed_frozen.json"
+            freeze = self.run_script(
+                "freeze_results.py", "--project-root", str(project), "--source", paths["raw"].name,
+                "--output", failed_frozen.name, "--run-id", "demo-run", "--model-contract", paths["model"].name,
+                "--command", "python model.py", "--code", paths["code"].name, "--validation", failed_report.name,
+            )
+            self.assertEqual(freeze.returncode, 0, freeze.stdout + freeze.stderr)
+            frozen = read_json(failed_frozen)
+            self.assertEqual(frozen["validation_verdict"], "FAIL")
+            self.assertFalse(frozen["claimable"])
+            self.assertEqual(frozen["results"][0]["validation_status"], "failed")
+            self.assertFalse(frozen["results"][0]["claimable"])
+            register = self.run_script(
+                "register_evidence.py", "--project-root", str(project),
+                "--frozen-results", failed_frozen.name, "--output", "failed_evidence.json",
+            )
+            self.assertNotEqual(register.returncode, 0)
+            self.assertIn("not claimable", register.stderr)
+
+    def test_freeze_rejects_hand_edited_fail_as_pass(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-tampered-verdict-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            failed_report = self.make_peak_failure(project, paths, "tampered_validation.json")
+            report = read_json(failed_report)
+            report["ok"] = True
+            report["verdict"] = "PASS"
+            report["obligations"][0]["status"] = "PASS"
+            write_json(failed_report, report)
+            result = self.run_script(
+                "freeze_results.py", "--project-root", str(project), "--source", paths["raw"].name,
+                "--output", "tampered_frozen.json", "--run-id", "demo-run", "--model-contract", paths["model"].name,
+                "--command", "python model.py", "--code", paths["code"].name, "--validation", failed_report.name,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not match independent recomputation", result.stderr)
+
+    def test_p2_rejects_a_non_claimable_frozen_artifact(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-p2-claimable-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            frozen = read_json(paths["frozen"])
+            frozen["claimable"] = False
+            write_json(paths["frozen"], frozen)
+            manifest = read_json(paths["manifest"])
+            for artifact in manifest["artifacts"]:
+                if artifact.get("role") == "frozen_results":
+                    artifact.update(file_ref(paths["frozen"]))
+            write_json(paths["manifest"], manifest)
+            gates = self.run_script(
+                "qa/check_gates.py", "--project-root", str(project), "--manifest", paths["manifest"].name, "--strict",
+            )
+            self.assertNotEqual(gates.returncode, 0)
+            self.assertIn("claimable=true", gates.stdout)
+
+    def test_writer_package_blocks_new_number_and_causal_explanation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-writer-package-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            package = project / "writer_package.json"
+            compile_result = self.run_script(
+                "claims/compile_writer_package.py", "--project-root", str(project),
+                "--paper-plan", paths["plan"].name, "--frozen-results", paths["frozen"].name,
+                "--evidence-registry", paths["evidence"].name, "--output", package.name,
+            )
+            self.assertEqual(compile_result.returncode, 0, compile_result.stdout + compile_result.stderr)
+            draft = project / "draft.txt"
+            draft.write_text("The cost is 123.45 CNY and therefore causes a 20% improvement.\n", encoding="utf-8")
+            checked = self.run_script(
+                "qa/check_writer_package.py", "--project-root", str(project),
+                "--writer-package", package.name, "--draft", draft.name, "--strict",
+            )
+            self.assertNotEqual(checked.returncode, 0)
+            self.assertIn("numeric token", checked.stdout)
+            self.assertIn("causal/explanatory", checked.stdout)
+
+    def test_modeling_plan_requires_external_research_and_candidate_comparison(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-model-plan-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            model = read_json(paths["model"])
+            model["research_basis"]["searches"] = [model["research_basis"]["searches"][0]]
+            model["research_basis"]["candidate_models"] = [
+                model["research_basis"]["candidate_models"][0]
+            ]
+            model["research_basis"]["decisions"][0]["alternatives_considered"] = []
+            model["models"][0]["characteristics"] = ["scenario_based", "multi_stage"]
+            write_json(paths["model"], model)
+            result = self.run_script(
+                "qa/check_modeling_plan.py", "--project-root", str(project),
+                "--model-contract", paths["model"].name,
+                "--evidence-registry", paths["evidence"].name,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("external literature/web search", result.stdout)
+            self.assertIn("at least two candidate models", result.stdout)
+            self.assertIn("nonanticipativity", result.stdout)
+            self.assertIn("scenario_generalization", result.stdout)
+
+    def test_paper_readiness_rejects_result_only_first_draft_plan(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-paper-readiness-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            plan = read_json(paths["plan"])
+            plan["argument_units"][0]["rhetorical_role"] = "result_observation"
+            write_json(paths["plan"], plan)
+            result = self.run_script(
+                "qa/check_paper_readiness.py", "--project-root", str(project),
+                "--paper-plan", paths["plan"].name,
+                "--evidence-registry", paths["evidence"].name,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("invalid for formulation_unit_ids", result.stdout)
+
+    def test_paper_plan_requires_depth_budget_and_observation_result(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-paper-plan-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            plan = read_json(paths["plan"])
+            plan["depth_budget"][0]["question_id"] = "q2"
+            del plan["claims"][0]["result_ids"]
+            write_json(paths["plan"], plan)
+            validate = self.validate_fixture(project)
+            self.assertNotEqual(validate.returncode, 0)
+            self.assertIn("depth_budget", validate.stdout)
+            self.assertIn("observation claim", validate.stdout)
 
     def test_verified_citation_requires_full_content_and_status_checks(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-literature-") as temp:
@@ -364,6 +645,9 @@ class P0HarnessTest(unittest.TestCase):
             self.assertEqual(freeze.returncode, 0, freeze.stdout + freeze.stderr)
             submission = read_json(paths["submission_manifest"])
             self.assertEqual(submission["status"], "final_frozen")
+            self.assertEqual(submission["schema_version"], "1.1")
+            self.assertEqual(submission["paper"]["limited_pages"], 12)
+            self.assertEqual(submission["paper"]["ai_report_pages"], 0)
             final_check = self.run_script(
                 "qa/check_submission_manifest.py", "--project-root", str(project),
                 "--submission-manifest", paths["submission_manifest"].name,
@@ -432,6 +716,240 @@ class P0HarnessTest(unittest.TestCase):
             (project / "references.bib").write_text("@article{demo2026, title={Demo}, year={2026}}\n", encoding="utf-8")
             result = self.run_script("qa/check_citations.py", "--project-root", str(project), "--tex", "main.tex", "--bib", "references.bib")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_ai_disclosure_in_paper_section_skips_separate_file(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-fmt-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["ai_disclosure_format"] = "in_paper_section"
+            manifest["competition_profile"]["submission"]["required_manual_checks"].append("ai_report_in_paper")
+            checkpoint = next(row for row in manifest["human_checkpoints"] if row["stage"] == "s1")
+            checkpoint["manual_checks"].append("ai_report_in_paper")
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "12", "--page-count-method", "manual_verified",
+                "--support", paths["support"].name,
+                "--output", "submission_qa_fmt.json",
+            )
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+
+    def test_ai_disclosure_in_paper_section_requires_manual_check(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-fmt-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["ai_disclosure_format"] = "in_paper_section"
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "12", "--page-count-method", "manual_verified",
+                "--support", paths["support"].name,
+                "--output", "submission_qa_fmt.json",
+            )
+            self.assertNotEqual(report.returncode, 0)
+            self.assertIn("ai_report_in_paper", read_json(project / "submission_qa_fmt.json")["errors"][0])
+
+    def test_ai_disclosure_both_requires_file_and_manual_check(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-fmt-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["ai_disclosure_format"] = "both"
+            manifest["competition_profile"]["submission"]["required_manual_checks"].append("ai_report_in_paper")
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "12", "--page-count-method", "manual_verified",
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--output", "submission_qa_fmt.json",
+            )
+            self.assertNotEqual(report.returncode, 0)
+            self.assertIn("ai_report_in_paper", read_json(project / "submission_qa_fmt.json")["errors"][0])
+
+    def test_max_pages_excludes_ai_report_accepts_excess(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-pages-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["max_pages_excludes_ai_report"] = True
+            manifest["competition_profile"]["submission"]["max_pages"] = 20
+            manifest["competition_profile"]["submission"]["ai_disclosure_format"] = "both"
+            manifest["competition_profile"]["submission"]["required_manual_checks"].append("ai_report_position")
+            checkpoint = next(row for row in manifest["human_checkpoints"] if row["stage"] == "s1")
+            checkpoint["manual_checks"].append("ai_report_position")
+            checkpoint["manual_checks"].append("ai_report_in_paper")
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "22", "--page-count-method", "manual_verified",
+                "--ai-report-pages", "3",
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--output", "submission_qa_pages.json",
+            )
+            self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+            page_count = read_json(project / "submission_qa_pages.json")["page_count"]
+            self.assertEqual(page_count["total_pages"], 22)
+            self.assertEqual(page_count["ai_report_pages"], 3)
+            self.assertEqual(page_count["limited_pages"], 19)
+
+    def test_max_pages_excludes_ai_report_fails_over_limit(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-pages-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["max_pages_excludes_ai_report"] = True
+            manifest["competition_profile"]["submission"]["max_pages"] = 20
+            manifest["competition_profile"]["submission"]["ai_disclosure_format"] = "both"
+            manifest["competition_profile"]["submission"]["required_manual_checks"].append("ai_report_position")
+            checkpoint = next(row for row in manifest["human_checkpoints"] if row["stage"] == "s1")
+            checkpoint["manual_checks"].append("ai_report_position")
+            checkpoint["manual_checks"].append("ai_report_in_paper")
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "25", "--page-count-method", "manual_verified",
+                "--ai-report-pages", "3",
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--output", "submission_qa_pages.json",
+            )
+            self.assertNotEqual(report.returncode, 0)
+            self.assertIn("maximum is 20", read_json(project / "submission_qa_pages.json")["errors"][0])
+
+    def test_ai_report_pages_cannot_exceed_total_pages(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-pages-bound-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            rules = manifest["competition_profile"]["submission"]
+            rules["max_pages_excludes_ai_report"] = True
+            rules["max_pages"] = 20
+            rules["ai_disclosure_format"] = "both"
+            checkpoint = next(row for row in manifest["human_checkpoints"] if row["stage"] == "s1")
+            checkpoint["manual_checks"].extend(["ai_report_position", "ai_report_in_paper"])
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "22", "--page-count-method", "manual_verified",
+                "--ai-report-pages", "30", "--support", paths["support"].name,
+                "--ai-disclosure", paths["ai_disclosure"].name, "--output", "submission_qa_bad_pages.json",
+            )
+            self.assertNotEqual(report.returncode, 0)
+            self.assertIn("smaller than the total", read_json(project / "submission_qa_bad_pages.json")["errors"][0])
+
+    def test_freeze_rejects_ai_usage_added_after_s1(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-stale-ai-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            added_usage = dict(manifest["ai_usage"][0])
+            added_usage["usage_id"] = "AI-2"
+            added_usage["stage"] = "writing"
+            manifest["ai_usage"].append(added_usage)
+            write_json(paths["manifest"], manifest)
+            freeze = self.run_script(
+                "freeze_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--s1-report", paths["submission_report"].name, "--paper", paths["paper"].name,
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--deadline", "2026-09-01T20:00:00+08:00", "--timezone", "Asia/Hong_Kong",
+                "--output", paths["submission_manifest"].name,
+            )
+            self.assertNotEqual(freeze.returncode, 0)
+            self.assertIn("AI usage hash is stale", freeze.stderr)
+
+    def test_freeze_rejects_tampered_page_audit(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-stale-pages-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            report = read_json(paths["submission_report"])
+            report["page_count"]["limited_pages"] = 10
+            write_json(paths["submission_report"], report)
+            manifest = read_json(paths["manifest"])
+            submission_artifact = next(row for row in manifest["artifacts"] if row["role"] == "submission_qa")
+            submission_artifact["sha256"] = sha256(paths["submission_report"])
+            write_json(paths["manifest"], manifest)
+            freeze = self.run_script(
+                "freeze_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--s1-report", paths["submission_report"].name, "--paper", paths["paper"].name,
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--deadline", "2026-09-01T20:00:00+08:00", "--timezone", "Asia/Hong_Kong",
+                "--output", paths["submission_manifest"].name,
+            )
+            self.assertNotEqual(freeze.returncode, 0)
+            self.assertIn("limited_pages does not equal", freeze.stderr)
+
+    def test_ai_conditional_manual_checks_are_enforced(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-checks-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["ai_manual_checks"] = {
+                "when_used": ["ai_inline_citations"],
+                "when_not_used": ["no_ai_declaration"],
+            }
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "12", "--page-count-method", "manual_verified",
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--output", "submission_qa_ai_checks.json",
+            )
+            self.assertNotEqual(report.returncode, 0)
+            self.assertIn("ai_inline_citations", read_json(project / "submission_qa_ai_checks.json")["errors"][0])
+
+    def test_s1_rejects_stale_ai_disclosure_inside_support_zip(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-support-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            with zipfile.ZipFile(paths["support"], "w") as archive:
+                archive.writestr(paths["ai_disclosure"].name, b"stale AI disclosure")
+            manifest = read_json(paths["manifest"])
+            manifest["competition_profile"]["submission"]["ai_manual_checks"] = {
+                "when_used": ["ai_disclosure_in_support"],
+                "when_not_used": [],
+            }
+            checkpoint = next(row for row in manifest["human_checkpoints"] if row["stage"] == "s1")
+            checkpoint["manual_checks"].append("ai_disclosure_in_support")
+            checkpoint["artifacts"] = [file_ref(paths["paper"]), file_ref(paths["support"]), file_ref(paths["ai_disclosure"])]
+            write_json(paths["manifest"], manifest)
+            report = self.run_script(
+                "qa/check_submission.py", "--project-root", str(project), "--run-manifest", paths["manifest"].name,
+                "--paper", paths["paper"].name, "--paper-pages", "12", "--page-count-method", "manual_verified",
+                "--support", paths["support"].name, "--ai-disclosure", paths["ai_disclosure"].name,
+                "--output", "submission_qa_ai_support.json",
+            )
+            self.assertNotEqual(report.returncode, 0)
+            self.assertIn("matching SHA-256", read_json(project / "submission_qa_ai_support.json")["errors"][0])
+
+    def test_modeling_ai_requires_team_led_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-model-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["ai_usage"][0]["stage"] = "modeling"
+            write_json(paths["manifest"], manifest)
+            safety = self.run_script(
+                "qa/check_contest_safety.py", "--project-root", str(project),
+                "--manifest", paths["manifest"].name, "--strict",
+            )
+            self.assertNotEqual(safety.returncode, 0)
+            self.assertIn("team_led_core_modeling", safety.stdout)
+
+    def test_modeling_ai_passes_with_team_led_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-ai-model-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            manifest["ai_usage"][0]["stage"] = "modeling"
+            m1_checkpoint = next(row for row in manifest["human_checkpoints"] if row["stage"] == "m1")
+            m1_checkpoint["manual_checks"].append("team_led_core_modeling")
+            write_json(paths["manifest"], manifest)
+            safety = self.run_script(
+                "qa/check_contest_safety.py", "--project-root", str(project),
+                "--manifest", paths["manifest"].name, "--strict",
+            )
+            self.assertEqual(safety.returncode, 0, safety.stdout + safety.stderr)
 
 
 if __name__ == "__main__":
