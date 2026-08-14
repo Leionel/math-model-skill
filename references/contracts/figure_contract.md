@@ -1,5 +1,18 @@
 # Figure Contract
 
+## 概念流程图/框架图的制作合同
+
+当 `kind=concept` 且 `semantic_type` 为 `methodology_overview`、`data_flow` 或 `model_structure` 时，正式图还应声明 `diagram`：
+
+- `spec_path`：结构化 `diagram_spec.json`，其中每个节点和边都有 `source_refs`；
+- `source_format/source_path`：draw.io、SVG、Figma 或 PPTX 的可编辑源；
+- `delivery_mode`：默认 `vector_preferred`，可选 `raster_allowed` 或显式例外 `raster_only`；
+- `text_policy`：`native_text`、`outlined_text` 或 `raster_text`；位图文字只能配合 `raster_only`；
+- `rendered_paths`：实际放入论文或用于构建的 SVG/PDF/PNG；
+- `status`：`brief` → `draft` → `rendered` → `reviewed`；只有 `reviewed` 才能作为正式 W2 图稿。
+
+默认不使用 Mermaid 或 Python 绘图脚本作为最终概念图。AI 可以辅助生成节点、边和布局草案，但不能凭空生成公式、中文标签、结果数值或模型步骤。`raster_only` 必须保留可编辑源，PNG 至少 300 DPI，建议 600 DPI，并经过最终论文尺寸视觉复核。
+
 画图前先回答“这张图证明什么”，再选图型。它与 `paper_plan.figures[]` 一一对应，不以图数为输入。
 
 ## 必填问题

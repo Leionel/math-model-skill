@@ -10,9 +10,10 @@
 
 W2 enhanced profile 的顺序：
 
-```text
-safe_build.py → check_pdf.py（全页渲染 + contact sheet）
-→ 人工/多模态逐页检查 → visual_review_receipt.json
+```mermaid
+flowchart LR
+    B["safe_build.py"] --> P["check_pdf.py\n全页渲染 + contact sheet"]
+    P --> H["人工/多模态逐页检查"] --> R["visual_review_receipt.json"]
 ```
 
 图 QA 的自动部分运行 `scripts/figures/check_figure.py`；灰度、色觉、语义强调和双轴误导仍需人工判断。

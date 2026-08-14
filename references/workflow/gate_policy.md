@@ -9,13 +9,14 @@
 
 Contest Safety 持续执行，不计为额外 Gate。主链保留六个有限决策点：
 
-```text
-M1 → P1 → P2 → W1 → W2 → S1 → F1 manifest
+```mermaid
+flowchart LR
+    M1[M1] --> P1[P1] --> P2[P2] --> W1[W1] --> W2[W2] --> S1[S1] --> F1["F1 manifest"]
 ```
 
 | Gate | 唯一职责 | 通过条件摘要 |
 |---|---|---|
-| M1 | 数学与验证方案可编码 | ready model contract、规则/数据边界明确、M1 人审 |
+| M1 | 数学与验证方案可编码 | ready model contract、规则/数据边界明确、research/submission formal M1 evidence-linkage check、M1 人审 |
 | P1 | 最小执行路径可运行 | 恰一个成功 smoke，结构/单位/基本约束通过 |
 | P2 | 全量结果可信且可用于论文 | full + freeze 成功、独立重算后全部 validation obligations `PASS`、`claimable=true`、P2 人审 |
 | W1 | 论证可写 | ready paper plan、必要 claim 均有 verified evidence；结果 evidence 只能来自 claimable frozen run |
@@ -24,6 +25,8 @@ M1 → P1 → P2 → W1 → W2 → S1 → F1 manifest
 | F1 | 最终不可变交付 | 生成不可覆盖的 `submission_manifest.json`，不是 run manifest 中的新可变 Gate |
 
 每个 Gate 使用 `pending | pass | fail | blocked`。`pass` 只对当前哈希有效；上游 artifact 变化后受影响 Gate 必须回到 `pending`。
+
+增强 profile 的 W2 Gate 会从 deterministic QA 报告声明的输入重建一次临时 QA；它不覆盖原报告，重算失败不能通过手改 `ok=true` 绕过。
 
 ## 回退
 

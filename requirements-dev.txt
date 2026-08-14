@@ -1,0 +1,6 @@
+# Optional EDA, numerical-scaffold, plotting, profile, and enhancement-test dependencies.
+numpy
+pandas
+PyYAML
+scipy
+matplotlib

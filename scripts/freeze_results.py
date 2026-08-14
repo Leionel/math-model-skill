@@ -65,8 +65,24 @@ def normalize_result(
     result = dict(row)
     if not isinstance(result["unit"], str) or not result["unit"].strip():
         raise ValueError(f"results[{index}].unit must be a non-empty string")
+    display_scale = result.get("display_scale")
+    has_display_unit = bool(result.get("display_unit")) or bool(result.get("display_label"))
+    if display_scale is not None:
+        if not isinstance(display_scale, (int, float)) or isinstance(display_scale, bool) or display_scale <= 0:
+            raise ValueError(f"results[{index}].display_scale must be a positive number")
+        if not has_display_unit:
+            raise ValueError(
+                f"results[{index}].display_scale requires display_unit or display_label so value/unit/scale stay bound"
+            )
+    elif has_display_unit:
+        raise ValueError(
+            f"results[{index}] declares display_unit/display_label without display_scale; scaled presentation is ambiguous"
+        )
+    scaled_value = result["value"]
+    if display_scale is not None and isinstance(result["value"], (int, float)) and not isinstance(result["value"], bool):
+        scaled_value = result["value"] / display_scale
     try:
-        expected_display = numeric_display(result["value"], precision)
+        expected_display = numeric_display(scaled_value, precision)
     except ValueError:
         expected_display = None
     if "display_value" not in result:

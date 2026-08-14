@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/diagram-spec.schema.json",
+  "title": "Structured Vector Diagram Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "diagram_id",
+    "kind",
+    "message",
+    "layout",
+    "nodes",
+    "edges",
+    "style_profile",
+    "source_format",
+    "delivery_mode",
+    "output_formats",
+    "text_policy",
+    "source_editability",
+    "human_review_required",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "diagram_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "kind": {
+      "type": "string",
+      "enum": ["overview", "task_pipeline", "model_framework", "validation_flow", "decision_tree", "comparison", "custom"]
+    },
+    "message": {"type": "string", "minLength": 1},
+    "layout": {
+      "type": "string",
+      "enum": ["left_to_right", "top_to_bottom", "two_column", "grid", "hybrid"]
+    },
+    "style_profile": {"type": "string", "minLength": 1},
+    "font_family": {"type": "string", "minLength": 1},
+    "font_size": {"type": "integer", "minimum": 8, "maximum": 36},
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 600},
+        "height": {"type": "integer", "minimum": 400}
+      }
+    },
+    "source_format": {"type": "string", "enum": ["drawio", "svg", "figma", "pptx"]},
+    "source_artifact": {"type": ["string", "null"], "minLength": 1},
+    "delivery_mode": {"type": "string", "enum": ["vector_preferred", "raster_allowed", "raster_only"]},
+    "output_formats": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["svg", "pdf", "emf", "png"]}
+    },
+    "rendered_artifacts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "text_policy": {"type": "string", "enum": ["native_text", "outlined_text", "raster_text"]},
+    "raster_dpi": {"type": ["integer", "null"], "minimum": 72},
+    "source_editability": {"type": "string", "enum": ["editable_source", "vector_only"]},
+    "human_review_required": {"type": "boolean", "const": true},
+    "status": {"type": "string", "enum": ["brief", "draft", "rendered", "reviewed"]},
+    "nodes": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "panels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/panel"}
+    },
+    "notes": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "label", "role", "source_refs", "emphasis"],
+      "properties": {
+        "node_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "role": {
+          "type": "string",
+          "enum": ["input", "task", "process", "model", "validation", "decision", "result", "annotation", "group"]
+        },
+        "source_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "emphasis": {"type": "string", "enum": ["core", "secondary", "neutral"]},
+        "parent_id": {"type": ["string", "null"]},
+        "line_breaks": {"type": "array", "items": {"type": "integer", "minimum": 1}}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edge_id", "from", "to", "relation", "source_refs"],
+      "properties": {
+        "edge_id": {"type": "string", "minLength": 1},
+        "from": {"type": "string", "minLength": 1},
+        "to": {"type": "string", "minLength": 1},
+        "relation": {"type": "string", "enum": ["data", "control", "dependency", "feedback", "comparison", "annotation"]},
+        "label": {"type": "string", "minLength": 1},
+        "source_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "panel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["panel_id", "title", "node_ids", "message"],
+      "properties": {
+        "panel_id": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "node_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "message": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

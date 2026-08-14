@@ -61,6 +61,10 @@
         "source_key": {"type": "string", "minLength": 1},
         "validation_status": {"type": "string", "enum": ["passed", "failed", "error"]},
         "claimable": {"type": "boolean"},
+        "canonical_unit": {"type": "string", "minLength": 1},
+        "display_unit": {"type": "string", "minLength": 1},
+        "display_label": {"type": "string", "minLength": 1},
+        "display_scale": {"type": "number"},
         "notes": {"type": "string"}
       }
     }

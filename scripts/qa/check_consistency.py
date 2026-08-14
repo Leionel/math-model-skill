@@ -15,6 +15,18 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
+from qa.validate_contracts import _validate_document  # noqa: E402
+
+
+FIGURE_ROLE_SEMANTIC_TYPES = {
+    "methodology_overview": {"methodology_overview", "model_flow", "model_structure", "pipeline"},
+    "data_flow": {"data_flow", "data_overview", "data_distribution"},
+    "model_structure": {"model_structure", "model_flow", "optimization_structure"},
+    "result_comparison": {"result_comparison", "comparison", "bar_comparison", "line_comparison"},
+    "sensitivity": {"sensitivity", "sensitivity_curve", "tornado"},
+    "validation": {"validation", "residual", "diagnostic", "validation_curve"},
+    "recommendation": {"recommendation", "decision_boundary", "comparison"},
+}
 
 
 def canonical_display(value: Any, precision: int) -> str | None:
@@ -40,6 +52,7 @@ def main() -> int:
     parser.add_argument("--paper-plan", required=True)
     parser.add_argument("--frozen-results", required=True)
     parser.add_argument("--evidence-registry", required=True)
+    parser.add_argument("--derived-results")
     parser.add_argument("--abstract")
     parser.add_argument("--paper")
     parser.add_argument("--conclusion")
@@ -155,6 +168,18 @@ def main() -> int:
                 errors.append(f"claim {claim.get('claim_id')} references unknown evidence_id {evidence_id}")
             elif evidence_by_id[evidence_id].get("verification_status") != "verified":
                 errors.append(f"claim {claim.get('claim_id')} references unverified evidence_id {evidence_id}")
+
+    planned_derived_ids = {
+        derived_id
+        for claim in claims
+        if isinstance(claim, dict)
+        for derived_id in claim.get("derived_result_ids", [])
+        if isinstance(derived_id, str)
+    }
+    if planned_derived_ids and not args.derived_results:
+        errors.append(
+            "paper_plan references derived_result_ids but no --derived-results artifact was supplied"
+        )
     for requirement in plan.get("requirements", []):
         if isinstance(requirement, dict):
             for claim_id in requirement.get("claim_ids", []):
@@ -198,6 +223,57 @@ def main() -> int:
                 if evidence_id not in evidence_by_id:
                     errors.append(f"{collection_name[:-1]} {item_id} references unknown evidence_id {evidence_id}")
 
+    figures_by_id = {
+        row.get("figure_id"): row
+        for row in plan.get("figures", [])
+        if isinstance(row, dict) and isinstance(row.get("figure_id"), str)
+    }
+    for reference in plan.get("figure_references", []):
+        if not isinstance(reference, dict):
+            continue
+        figure = figures_by_id.get(reference.get("figure_id"))
+        if not isinstance(figure, dict):
+            continue
+        role = reference.get("reference_role")
+        semantic_type = figure.get("semantic_type")
+        if semantic_type not in FIGURE_ROLE_SEMANTIC_TYPES.get(role, set()):
+            errors.append(
+                f"figure reference {reference.get('reference_id')} role={role!r} "
+                f"does not match figure {figure.get('figure_id')} semantic_type={semantic_type!r}"
+            )
+
+    derived_by_id: dict[str, dict[str, Any]] = {}
+    if args.derived_results:
+        derived_path = resolve_path(args.derived_results, root).resolve()
+        try:
+            derived_doc = load_structured(derived_path)
+        except (OSError, ValueError, TypeError) as exc:
+            derived_doc = None
+            errors.append(f"derived results cannot be loaded: {exc}")
+        if isinstance(derived_doc, dict):
+            _, schema_errors, _ = _validate_document(
+                derived_path, Path(__file__).resolve().parents[2] / "schemas" / "derived_results.schema.json"
+            )
+            errors.extend(f"derived_results schema: {message}" for message in schema_errors)
+            if derived_doc.get("run_id") != plan.get("run_id"):
+                errors.append("derived_results.run_id does not match paper_plan.run_id")
+            frozen_ref = derived_doc.get("frozen_results")
+            if not isinstance(frozen_ref, dict) or frozen_ref.get("path") != rel_path(frozen_path, root):
+                errors.append("derived_results were not computed from the supplied frozen_results file")
+            elif frozen_ref.get("sha256") is not None and frozen_ref.get("sha256") != sha256_file(frozen_path):
+                errors.append("derived_results were not computed from the supplied frozen_results file: sha256 drift")
+            for row in derived_doc.get("derived", []):
+                if not isinstance(row, dict) or not isinstance(row.get("derived_result_id"), str):
+                    errors.append("derived_results rows must contain derived_result_id")
+                    continue
+                if row["derived_result_id"] in derived_by_id:
+                    errors.append(f"duplicate derived_result_id: {row['derived_result_id']}")
+                derived_by_id[row["derived_result_id"]] = row
+
+    missing_derived_ids = sorted(planned_derived_ids - set(derived_by_id))
+    if missing_derived_ids:
+        errors.append(f"paper_plan references missing derived_result_ids: {missing_derived_ids}")
+
     text_sources: dict[str, str] = {}
     for label, raw_path in (("abstract", args.abstract), ("paper", args.paper), ("conclusion", args.conclusion)):
         if raw_path:
@@ -220,6 +296,10 @@ def main() -> int:
             display = str(result.get("display_value", ""))
             if result_id in text and display and display not in text:
                 errors.append(f"{label} mentions result {result_id} without canonical display_value {display}")
+        for derived_id, row in derived_by_id.items():
+            display = str(row.get("display_value", ""))
+            if derived_id in text and display and display not in text:
+                errors.append(f"{label} mentions derived result {derived_id} without canonical display_value {display}")
 
     if "abstract" in text_sources:
         abstract = text_sources["abstract"]
@@ -240,6 +320,7 @@ def main() -> int:
                     errors.append(f"abstract result {result_id} is missing unit {unit!r} near {display}")
 
     registered_numbers = {str(result.get("display_value")) for result in result_by_id.values()}
+    registered_numbers.update(str(row.get("display_value")) for row in derived_by_id.values())
     number_pattern = re.compile(r"(?<![A-Za-z0-9_])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?![A-Za-z0-9_])")
     for label in ("abstract", "conclusion"):
         if label not in text_sources:
@@ -254,6 +335,9 @@ def main() -> int:
             figure_id = figure.get("figure_id")
             if figure_id and figure_id not in paper_text:
                 warnings.append(f"paper does not reference planned figure_id {figure_id}")
+        for reference in plan.get("figure_references", []):
+            if isinstance(reference, dict) and reference.get("figure_id") not in paper_text:
+                errors.append(f"paper is missing semantic figure reference {reference.get('figure_id')}")
         for table in plan.get("tables", []):
             table_id = table.get("table_id")
             if table_id and table_id not in paper_text:

@@ -27,6 +27,10 @@ REQUIRED_VALIDATION_CATEGORIES = {
     "differential_equation": {"numerical_error", "sensitivity"},
     "statistical_inference": {"uncertainty"},
 }
+ARTIFACT_REQUIRED_BY_CATEGORY = {
+    "sensitivity": "sensitivity_experiment",
+    "out_of_sample": "oos_artifact",
+}
 
 
 def _type_matches(value: Any, expected: str) -> bool:
@@ -261,6 +265,28 @@ def _cross_references(
             errors.append(
                 f"model {row['model_id']} problem_type={row.get('problem_type')} is missing validation category/categories: {missing_categories}"
             )
+        for obligation in row["validation_obligations"]:
+            expected_role = ARTIFACT_REQUIRED_BY_CATEGORY.get(obligation.get("category"))
+            if expected_role and obligation.get("artifact_role") != expected_role:
+                errors.append(
+                    f"model {row['model_id']} obligation {obligation.get('obligation_id')} "
+                    f"category={obligation.get('category')} requires artifact_role={expected_role}"
+                )
+        details = row.get("plan_details")
+        if isinstance(details, dict):
+            parameter_names = {
+                item.get("parameter")
+                for item in details.get("parameter_plan", [])
+                if isinstance(item, dict) and isinstance(item.get("parameter"), str)
+            }
+            uncovered_inputs = sorted(
+                input_name for input_name in row.get("inputs", [])
+                if isinstance(input_name, str) and input_name not in parameter_names
+            )
+            if uncovered_inputs:
+                errors.append(
+                    f"model {row['model_id']} inputs lack typed parameter provenance: {uncovered_inputs}"
+                )
         unknown_outputs = set(row["outputs"]) - set(question_by_id[row["question_id"]]["outputs"])
         if unknown_outputs:
             errors.append(f"model {row['model_id']} outputs are not declared by its question: {sorted(unknown_outputs)}")
@@ -458,6 +484,9 @@ def _cross_references(
         for result_id in claim.get("result_ids", []):
             if result_id not in result_set:
                 errors.append(f"claim {claim['claim_id']} references unknown result_id {result_id}")
+        for derived_result_id in claim.get("derived_result_ids", []):
+            if not isinstance(derived_result_id, str) or not derived_result_id.strip():
+                errors.append(f"claim {claim['claim_id']} has an invalid derived_result_id")
         for claim_id in claim.get("precondition_claim_ids", []):
             if claim_id not in claim_set:
                 errors.append(f"claim {claim['claim_id']} references unknown precondition_claim_id {claim_id}")
@@ -469,6 +498,15 @@ def _cross_references(
                 errors.append(f"{claim_type} claim {claim['claim_id']} cannot claim direct support")
             if not claim.get("precondition_claim_ids"):
                 errors.append(f"{claim_type} claim {claim['claim_id']} requires precondition_claim_ids")
+        inference_strength = claim.get("inference_strength")
+        if inference_strength == "causal" and claim_type == "observation":
+            errors.append(f"observation claim {claim['claim_id']} cannot declare causal inference_strength")
+        if inference_strength == "mechanistic" and claim_type == "observation":
+            errors.append(f"observation claim {claim['claim_id']} cannot declare mechanistic inference_strength")
+        if inference_strength == "descriptive" and claim_type in {"inference", "recommendation"}:
+            errors.append(f"{claim_type} claim {claim['claim_id']} cannot declare descriptive inference_strength")
+        if inference_strength == "causal" and not isinstance(claim.get("causal_design"), str):
+            errors.append(f"causal claim {claim['claim_id']} requires causal_design")
         if any(token in claim.get("text", "") for token in ("最优", "显著", "稳健", "提升")) and "comparison" not in claim:
             errors.append(f"claim {claim['claim_id']} uses a comparative-strength term but has no comparison contract")
     thesis = plan.get("central_thesis", {})
@@ -499,9 +537,82 @@ def _cross_references(
     for figure in plan.get("figures", []):
         check_claim_refs(f"figure {figure.get('figure_id')}", figure)
         check_evidence_refs(f"figure {figure.get('figure_id')}", figure)
+        if plan.get("status") == "ready" and not figure.get("semantic_type"):
+            errors.append(f"figure {figure.get('figure_id')} requires semantic_type before the plan is ready")
+        if (
+            plan.get("status") == "ready"
+            and figure.get("kind") == "concept"
+            and figure.get("semantic_type") in {"methodology_overview", "data_flow", "model_structure"}
+            and not isinstance(figure.get("diagram"), dict)
+        ):
+            errors.append(
+                f"concept figure {figure.get('figure_id')} requires a diagram artifact contract "
+                "for methodology_overview/data_flow/model_structure"
+            )
+    figure_by_id = {row.get("figure_id"): row for row in plan.get("figures", []) if isinstance(row, dict)}
+    figure_references = plan.get("figure_references", [])
+    if plan.get("status") == "ready" and figure_by_id and not figure_references:
+        errors.append("ready paper_plan with figures requires figure_references semantic bindings")
+    figure_reference_ids: set[str] = set()
+    referenced_figure_ids: set[str] = set()
+    for reference in figure_references:
+        reference_id = reference.get("reference_id") if isinstance(reference, dict) else None
+        if isinstance(reference_id, str):
+            if reference_id in figure_reference_ids:
+                errors.append(f"duplicate figure reference_id: {reference_id}")
+            figure_reference_ids.add(reference_id)
+        figure_reference_figure_id = reference.get("figure_id") if isinstance(reference, dict) else None
+        if not isinstance(figure_reference_figure_id, str) or figure_reference_figure_id not in figure_by_id:
+            errors.append(f"figure reference {reference_id} references an unknown figure")
+        else:
+            referenced_figure_ids.add(figure_reference_figure_id)
+            if reference.get("section_id") not in section_set:
+                errors.append(f"figure reference {reference_id} references an unknown section")
+    if plan.get("status") == "ready":
+        unreferenced_figures = sorted(set(figure_by_id) - referenced_figure_ids)
+        if unreferenced_figures:
+            errors.append(f"ready paper_plan has formal figure(s) without semantic references: {unreferenced_figures}")
     for table in plan.get("tables", []):
         check_claim_refs(f"table {table.get('table_id')}", table)
         check_evidence_refs(f"table {table.get('table_id')}", table)
+    draft_coverage = plan.get("draft_coverage")
+    if isinstance(draft_coverage, dict):
+        anchors = [row for row in draft_coverage.get("anchors", []) if isinstance(row, dict)]
+        unique("paper_plan draft anchor_id", [row.get("anchor_id") for row in anchors])
+        anchor_unit_ids = [row.get("unit_id") for row in anchors]
+        unique("paper_plan draft anchor unit_id", anchor_unit_ids)
+        used_by_readiness: set[str] = set()
+        readiness = plan.get("readiness", {})
+        if isinstance(readiness, dict):
+            for coverage in readiness.get("question_coverage", []):
+                if not isinstance(coverage, dict):
+                    continue
+                for field in ("formulation_unit_ids", "result_unit_ids", "validation_unit_ids", "interpretation_unit_ids"):
+                    used_by_readiness.update(
+                        unit_id for unit_id in coverage.get(field, []) if isinstance(unit_id, str)
+                    )
+        if draft_coverage.get("status") in {"planned", "verified"} and plan.get("status") == "ready":
+            missing_anchors = sorted(used_by_readiness - set(anchor_unit_ids))
+            if missing_anchors:
+                errors.append(f"draft_coverage is missing anchors for planned argument units: {missing_anchors}")
+        for anchor in anchors:
+            unit_id = anchor.get("unit_id")
+            unit = next((row for row in argument_units if row.get("unit_id") == unit_id), None)
+            if unit is None:
+                errors.append(f"draft anchor {anchor.get('anchor_id')} references unknown unit_id {unit_id}")
+            elif unit.get("section_id") not in section_set:
+                errors.append(f"draft anchor {anchor.get('anchor_id')} unit has unknown section_id")
+            unit_questions = {
+                claim_by_id.get(claim_id, {}).get("question_id")
+                for claim_id in unit.get("claim_ids", [])
+                if claim_id in claim_by_id
+            }
+            if anchor.get("question_id") not in unit_questions:
+                errors.append(
+                    f"draft anchor {anchor.get('anchor_id')} question_id does not match its argument unit"
+                )
+            if not all(isinstance(pattern, str) and pattern.strip() for pattern in anchor.get("patterns", [])):
+                errors.append(f"draft anchor {anchor.get('anchor_id')} must contain non-empty patterns")
     recommendation = plan.get("canonical_recommendation") or {}
     check_evidence_refs("canonical_recommendation", recommendation)
     abstract_rows = [row for row in plan.get("abstract_results", []) if isinstance(row, dict)]

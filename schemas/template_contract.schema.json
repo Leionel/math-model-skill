@@ -18,6 +18,30 @@
     "required_commands": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "forbidden_document_classes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"}},
     "allowed_engines": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["xelatex", "lualatex", "pdflatex"]}},
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "body_mode", "metadata_input", "body_input"],
+      "properties": {
+        "family": {"type": "string", "enum": ["mcm_icm", "cumcm", "generic"]},
+        "body_mode": {"type": "string", "const": "replace_demo_body"},
+        "metadata_input": {"type": "string", "minLength": 1},
+        "body_input": {"type": "string", "minLength": 1}
+      }
+    },
+    "template_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_file_count", "source_tree_sha256", "asset_hashes"],
+      "properties": {
+        "source_file_count": {"type": "integer", "minimum": 1},
+        "source_tree_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "asset_hashes": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
     "notes": {"type": "string"}
   }
 }

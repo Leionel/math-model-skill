@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/failure-evidence.schema.json",
+  "title": "Diagnostic Failure Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "failure_evidence_id", "run_id", "status", "generated_at", "source_frozen_results", "validation_verdict", "failed_obligations", "diagnostic_claims"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "failure_evidence_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "const": "diagnostic"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "source_frozen_results": {"$ref": "#/$defs/file_ref"},
+    "validation_verdict": {"type": "string", "enum": ["FAIL", "ERROR"]},
+    "failed_obligations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/failed_obligation"}},
+    "diagnostic_claims": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/diagnostic_claim"}},
+    "evidence_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "failed_obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation_id", "status", "report", "summary", "implication"],
+      "properties": {
+        "obligation_id": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["FAIL", "ERROR"]},
+        "report": {"$ref": "#/$defs/file_ref"},
+        "summary": {"type": "string", "minLength": 1},
+        "implication": {"type": "string", "minLength": 1}
+      }
+    },
+    "diagnostic_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "question_id", "text", "support_level", "claimable"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "text": {"type": "string", "minLength": 1},
+        "support_level": {"type": "string", "const": "diagnostic"},
+        "claimable": {"type": "boolean", "const": false}
+      }
+    }
+  }
+}

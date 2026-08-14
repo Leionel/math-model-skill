@@ -1,0 +1,57 @@
+# competition_profiles/_base_cumcm.yaml
+# 全国大学生数学建模竞赛 (CUMCM) 基础画像与通用规则底座
+
+competition_family: "cumcm"
+language: "zh-CN"
+default_engine: "xelatex"
+base_template: "cumcm-2026-electronic"
+
+rules:
+  page_limit: 25
+  min_pages: 15
+  abstract_pages: 1
+  cover_page: "cumcm_header_page"
+  anonymous_mode: true
+  anonymous_rules:
+    forbid_team_number_in_body: true
+    forbid_school_name_in_body: true
+    forbid_student_names_in_body: true
+    strip_pdf_metadata: true
+
+ai_disclosure:
+  policy: "required_when_used"
+  format: "support_material_pdf"  # CUMCM 2025/2026 专项基线：使用时放入支撑材料中的 AI 使用详情报告
+  manual_checks:
+    when_used:
+      - "ai_generated_content_marked"
+      - "ai_tool_in_references"
+      - "ai_disclosure_in_support"
+    when_not_used:
+      - "no_ai_declaration_after_references"
+
+submission:
+  required_files:
+    - role: "paper"
+      pattern: "{team_id}.pdf"
+      format: "pdf"
+    - role: "support"
+      pattern: "{team_id}.zip"
+      format: "zip"
+  support_zip:
+    max_size_mb: 20
+    include_clean_code: true
+    include_processed_data: true
+    exclude_patterns:
+      - "*.aux"
+      - "*.log"
+      - "*.out"
+      - "*.synctex.gz"
+      - ".git*"
+      - "__pycache__*"
+      - "*.tmp"
+      - "*.bak"
+
+validation:
+  strict_units: true
+  enforce_independent_validator: true
+  max_refl_rounds: 3

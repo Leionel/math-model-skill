@@ -4,11 +4,11 @@
 
 ## 目录
 
-```text
-references/precedents/
-├── cumcm/       国赛论文与 index.json
-├── mcm-icm/     美赛论文与 index.json
-└── pattern-cards/  从论文抽取的机制卡，可提交到 Git
+```mermaid
+flowchart TD
+    ROOT["references/precedents/"] --> C["cumcm/\n国赛论文与 index.json"]
+    ROOT --> M["mcm-icm/\n美赛论文与 index.json"]
+    ROOT --> P["pattern-cards/\n从论文抽取的机制卡，可提交到 Git"]
 ```
 
 PDF、Word 和压缩包默认被 `.gitignore` 排除，避免版权、体积和公开传播风险。只在获得合法来源后放到本地；`index.json` 记录赛事、年份、题号、奖项、官方 URL、文件哈希、权利说明、标签与处理状态。

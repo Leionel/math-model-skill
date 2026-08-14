@@ -36,6 +36,7 @@
       "section": "results.q1",
       "boundary": "仅适用于冻结数据和给定约束",
       "support_level": "direct",
+      "inference_strength": "descriptive",
       "comparison": {"comparator": "同一约束下的候选方案", "metric": "总成本", "direction": "lower_is_better", "scenario": "frozen-base"}
     }
   ],
@@ -50,6 +51,10 @@
       "claim_ids": ["C-Q1-01"],
       "evidence_ids": ["E-CITE-Q1-METHOD"],
       "prerequisite_unit_ids": [],
+      "model_ids": ["M-Q1"],
+      "equation_ids": ["EQ-Q1-OBJ"],
+      "constraint_ids": ["C1"],
+      "math_locators": ["\\label{eq:EQ-Q1-OBJ}", "\\label{con:C1}"],
       "expected_reader_judgment": "模型机制、变量和约束与题意一致。",
       "boundary": "固定需求和可加成本。",
       "target_words": 80
@@ -61,6 +66,8 @@
       "claim_ids": ["C-Q1-01"],
       "evidence_ids": ["E-R-Q1-01"],
       "prerequisite_unit_ids": [],
+      "result_ids": ["R-Q1-01"],
+      "math_locators": ["\\label{harness:AU-Q1-RESULT}"],
       "expected_reader_judgment": "该数值来自可复核的冻结运行。",
       "boundary": "仅适用于 frozen-base。",
       "target_words": 120
@@ -72,6 +79,9 @@
       "claim_ids": ["C-Q1-01"],
       "evidence_ids": ["E-R-Q1-01"],
       "prerequisite_unit_ids": ["AU-Q1-RESULT"],
+      "model_ids": ["M-Q1"],
+      "validation_obligation_ids": ["VAL-FEASIBILITY"],
+      "math_locators": ["\\label{val:VAL-FEASIBILITY}"],
       "expected_reader_judgment": "可行性与目标值已经独立重算。",
       "boundary": "仅验证已声明约束。",
       "target_words": 80
@@ -83,6 +93,7 @@
       "claim_ids": ["C-Q1-01"],
       "evidence_ids": ["E-R-Q1-01"],
       "prerequisite_unit_ids": ["AU-Q1-VALID"],
+      "math_locators": ["\\label{harness:AU-Q1-BOUNDARY}"],
       "expected_reader_judgment": "结论不会外推到未测试需求。",
       "boundary": "仅适用于 frozen-base。",
       "target_words": 60
@@ -114,6 +125,15 @@
   ],
   "figures": [],
   "tables": [],
+  "draft_coverage": {
+    "status": "planned",
+    "anchors": [
+      {"anchor_id": "AU-Q1-FORM", "unit_id": "AU-Q1-FORM", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-FORM}"], "minimum_words": 80},
+      {"anchor_id": "AU-Q1-RESULT", "unit_id": "AU-Q1-RESULT", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-RESULT}"], "minimum_words": 80},
+      {"anchor_id": "AU-Q1-VALID", "unit_id": "AU-Q1-VALID", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-VALID}"], "minimum_words": 60},
+      {"anchor_id": "AU-Q1-BOUNDARY", "unit_id": "AU-Q1-BOUNDARY", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-BOUNDARY}"], "minimum_words": 50}
+    ]
+  },
   "readiness": {
     "stage": "technical_draft",
     "question_coverage": [
@@ -140,10 +160,14 @@
 - 只引用已验证 evidence；不得用 `pending` evidence 支撑论文主张。
 - `central_thesis` 只绑定 1—5 条决定性 claim，并显式说明整体边界；不能把每小问的数字清单伪装成总论点。
 - claim 必须标注为 `observation`、`inference` 或 `recommendation`。Observation 必须给出 `result_ids`；Inference/Recommendation 必须给出已经成立的 `precondition_claim_ids`，且不能标为 `direct`。
+- 可选的 `inference_strength` 用 `descriptive`、`associational`、`mechanistic`、`causal` 区分论断强度；Observation 不能声明 mechanistic/causal。`causal` 还必须登记 `causal_design`，不能从普通优化结果直接推出因果。未登记时 Writer 按 observation=descriptive、其他 claim=mechanistic 的保守默认处理。
 - 使用“最优、显著、稳健、提升”等比较性强词时，填写 `comparison` 的 comparator、metric、direction 和 scenario；缺少比较合同时降为 observation 或删除强词。
 - 每个 `argument_unit` 只能有一个 `rhetorical_role`，同时绑定 claim/evidence、前置单元、期望读者判断、边界和目标篇幅。把 model choice、结果观察、解释和边界混在一个万能段落会被拒绝。
+- 每个核心 `argument_unit` 还应绑定数学来源：formulation 绑定 `model_ids` 与 `equation_ids`/`constraint_ids`，validation 绑定 `validation_obligation_ids`，result/comparison 绑定 `result_ids` 或 `derived_result_ids`，并填写 `math_locators`。这使 Writer 不能把公式、验证和结果写成无来源的通用话术。
+- `prerequisite_unit_ids` 必须形成无环、前向的论证图；推荐顺序是 model/formulation → result/comparison → validation → interpretation/boundary/recommendation。`check_math_writing.py` 会检查依赖环、逆序和首稿定位。
 - `depth_budget` 必须覆盖所有承载 claim 的子问题，按难点、风险与决策影响分配篇幅，不能默认四问等长。
 - 正式第一版前必须达到 `readiness.stage=technical_draft`；每个子问题分别绑定 formulation、result、validation、interpretation argument units 和至少一个 display，确无必要时写具体 waiver。各单元计划篇幅之和不得低于该问 depth budget。
+- `draft_coverage` 是把计划落到首稿的可选强校验：为 readiness 使用的每个 argument unit 登记一个稳定锚点（推荐使用不可见的 `\\label{harness:...}` 或明确小节标题）和 `minimum_words`。正式 QA 传 `--require-first-draft-coverage` 后，缺锚点或只有结果流水账的首稿会被阻断；英文按词计数，中文按 CJK 字符计数，不强迫中英文采用同一空格规则。
 - 数字只能来自 `precision_policy` 指定的 frozen display source；摘要的权威数字不超过 `abstract_max_numeric_claims`。
 - 文献 evidence 必须同时通过 metadata、全文内容和出版状态检查；优秀论文机制卡不属于 evidence。
 - 为“最优、显著、稳健、提升”等表述登记 baseline、指标、统计口径和适用边界。
@@ -170,5 +194,39 @@ python scripts/qa/check_writer_package.py `
   --draft paper/draft.txt `
   --strict
 ```
+
+正式首稿还应让确定性 QA 检查计划覆盖是否真的写进正文：
+
+```powershell
+python scripts/qa/run_deterministic_qa.py `
+  --model-contract model_contract.json `
+  --run-manifest run_manifest.json `
+  --frozen-results results/frozen_results.json `
+  --evidence-registry evidence_registry.json `
+  --paper-plan paper_plan.json `
+  --abstract paper/abstract.txt `
+  --paper paper/main.tex `
+  --conclusion paper/conclusion.txt `
+  --writer-package reports/writer_package.json `
+  --require-first-draft-coverage `
+  --output reports/deterministic_qa.json
+```
+
+`draft_coverage` 只验证 formulation/result/validation/interpretation 是否出现及达到最低内容量，不固定每问字数相同，也不强制每问必须有图。
+
+数学写作正式检查还需运行：
+
+```powershell
+python scripts/qa/check_math_writing.py `
+  --model-contract model_contract.json `
+  --paper-plan paper_plan.json `
+  --frozen-results results/frozen_results.json `
+  --writer-package reports/writer_package.json `
+  --draft paper/main.tex `
+  --require-coverage `
+  --strict
+```
+
+它检查可追溯性和逻辑顺序，不宣称自动证明代数正确。增强 W2 仍需人工勾选公式正确性、方程—约束映射、论证顺序、单位与边界一致性。
 
 它会阻断 package 外的研究数值，以及只有 observation 却使用因果/解释性语言的草稿。它不替代人工判断机制是否真实成立；这仍是 Semantic Critic 的职责。

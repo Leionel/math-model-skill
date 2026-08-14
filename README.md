@@ -2,44 +2,53 @@
 
 面向 CUMCM、MCM/ICM 等数学建模竞赛的本地 Skill/Harness。它把“当届规则—模型—代码—验证—结果—证据—论文—提交”连接成可复核链路，重点降低四类风险：比赛违规、验证占位、关键数字漂移、最终文件与规则不符。
 
-> 当前状态：已有 P0 基础链路、research-first 模型选型门、技术首稿 readiness、分级完整性、真实模板使用检查、实际 LaTeX/PDF QA 和回归测试。CUMCM 已提供从锁定 community snapshot 建立清洗骨架的入口，但它仍不是官方模板；当届 official golden profile、自动选择性重跑和独立能力 benchmark 仍在后续发布门。它是可组合 Harness，不是全自动解题 Agent；模型选择、结论负责和最终提交仍由参赛队完成。
+> 当前状态：已有 P0 基础链路、research-first 模型选型门、技术首稿 readiness、分级完整性、真实模板使用检查、实际 LaTeX/PDF QA 和回归测试；并可把用户提供的完整模板目录受控导入为 draft 项目，保留字体、文献样式与图件。CUMCM 的锁定 community snapshot 和用户模板都不等于官方模板；当届 official golden profile、自动选择性重跑和独立能力 benchmark 仍在后续发布门。它是可组合 Harness，不是全自动解题 Agent；模型选择、结论负责和最终提交仍由参赛队完成。
 
 ## 架构
 
-```text
-Competition Profile / Official Rule Snapshot
-╔══════════════ Contest Safety + AI Registry + Human Review ══════════════╗
-║ Problem → Research/Candidates → M1 → Coding → P1 → Full/Validation     ║
-║ → P2 → Results Freeze                                                   ║
-║ → Evidence Registry → Paper Plan/Figures → W1 → Writer → QA/Critic → W2║
-╚═════════════════════════════════════════════════════════════════════════╝
-→ S1 Competition-specific Submission QA
-→ F1 Immutable submission_manifest.json
+```mermaid
+flowchart LR
+    A["题目与官方规则快照"] --> B["Research / Candidates"]
+    B --> M1["M1"] --> P1["Coding + Smoke"]
+    P1 --> P2["Full + Validation"] --> F["Results Freeze"]
+    F --> W1["Evidence Registry + Paper Plan"]
+    W1 --> W2["Writer + QA / Critic"]
+    W2 --> S1["S1 Submission QA"] --> F1["F1 Immutable Manifest"]
 ```
 
 两条追溯链并行存在：
 
-```text
-paper claim → evidence → frozen result → code/input → raw data
-contest action → effective policy → official rule snapshot
+```mermaid
+flowchart TD
+    C["paper claim"] --> E["evidence"] --> R["frozen result"] --> I["code / input"] --> D["raw data"]
+    A["contest action"] --> P["effective policy"] --> O["official rule snapshot"]
 ```
+
+数学公式、约束、验证义务和论文论证顺序的实现状态见 [Math Harness Implementation Status](docs/MATH_HARNESS_IMPLEMENTATION_STATUS.md)。
 
 ## P0 能力
 
 - **Contest Safety**：固定当届官方规则快照；区分官方规则与本地保守策略；检查 live contest 的队外求助、赛题讨论、公开发布、外部写入与 AI 使用。
 - **AI Usage + Human Checkpoints**：在 `run_manifest` 中登记影响交付物的 AI 使用；M1/P2/W2/S1 绑定当前 artifact 做人工确认，只有 submission 模式强制全量哈希。
 - **Research-first Model Contract**：先记录中英检索词、大模型知识侦察、外部文献搜索和候选模型比较，再固定变量、公式、参数、实现步骤、验证与失败模式。
+- **保守 Auto-EDA**：显式 target、split/time 边界后才允许把泄漏审计提升为 `pass`；未提供边界时数据契约保留 `not_run`，不会把画像推断冒充验证。
 - **Validation Obligations**：P2 不再只看验证文件是否存在；由有限比较合同和 measurement snapshot 独立导出 `PASS/FAIL/ERROR`，`{"ok": true}` 不能替代重算。
+- **Experiment Evidence**：敏感性必须有逐 grid 重跑回执；OOS 必须有独立 train/test 场景身份和泄漏检查；FAIL/ERROR 可编译为 diagnostic evidence，但不能伪装成 PASS 结果。
+- **First-Draft Coverage**：`paper_plan.draft_coverage` 把 formulation/result/validation/interpretation 锚点和最低内容量绑定到 writer package；正式 QA 可阻断只写结果、不写模型和验证的简陋首稿。
 - **Result Freeze**：禁止覆盖已有冻结文件，绑定模型合同、输入、代码、可重算验证报告与结果哈希；保留失败 run，但只有 `claimable=true` 的 PASS run 可进入论文证据链。
 - **Evidence Registry**：一个可增量账本同时承载文献与结果证据；文献身份、全文支持和出版状态分开核验。
 - **Argument Plan / Writer Package**：central thesis、claim type、段落研究动作和按风险分配的篇幅在写作前锁定；每问必须覆盖 formulation/result/validation/interpretation，避免第一版只有摘要式结果。
+- **Math Writing Contract**：argument unit 显式绑定 model/equation/constraint/validation/result，并检查 prerequisite DAG、首稿 locator 和 Writer package 是否漂移；自动检查追溯与顺序，W2 人工确认代数正确性。
+- **Equation Contract / Derivation DAG**：公式可声明 equation type、math risk、symbols、domains、unit signature、preconditions、verification 和中间量依赖；`check_derivation_integrity.py` 防守未定义符号、断链、孤立公式和常见操作前提缺失。
+- **M1 正式合理性门槛**：`research/submission` 的 Gate 会运行 `check_modeling_plan.py --formal --strict`，检查外部检索 evidence linkage、候选数、选型理由、风险处置和已声明的结构性推导完整性；它不替代人的机制判断。
 - **Paper Plan / Figure Contract**：requirement → claim → evidence 驱动章节与图表；不硬编码图数。
+- **Vector Diagram Workflow**：总览图、任务流程图和模型框架图先生成 `diagram_spec.json`，再用 draw.io/Figma/PowerPoint 等可编辑矢量工具制作；默认输出 SVG/PDF，兼容性需要时显式选择高 DPI `raster_only`，不把 Mermaid/Python 成品或 AI 位图直接塞进论文。
 - **Deterministic QA + Semantic Critic**：机械一致性交给脚本，边界外推和论证强度交给 Critic。
 - **Template Usage + Submission Freeze**：正式构建验证实际 `documentclass`、类文件、命令和引擎；W2 与 S1 分离，最终由不可覆盖的 `submission_manifest.json` 固定比赛 profile、规则、文件、截止时间和包哈希。
 
 ## 核心 artifact
 
-基础兼容 profile 维护五个核心 JSON。新项目默认使用 `integrity_mode=research`；只有最终提交切换到 `submission` 并强制全量文件哈希。`enhanced_integrity_profile=true` 是额外的题面、数据、实现、呈现与 PDF receipts 检查，不应和哈希模式混为一谈：
+基础兼容 profile 维护五个核心 JSON。新项目默认使用 `integrity_mode=research`；只有最终提交切换到 `submission` 并强制全量文件哈希。新加入的派生/敏感性/OOS/失败辅助 artifact 在 dev/research 只需路径和语义绑定，已有哈希会被校验，但本地不必为每一步生成哈希。`enhanced_integrity_profile=true` 是额外的题面、数据、实现、呈现与 PDF receipts 检查，不应和哈希模式混为一谈：
 
 | 文件 | 作用 |
 |---|---|
@@ -59,22 +68,24 @@ contest action → effective policy → official rule snapshot
 ```text
 SKILL.md                         Skill 入口与阶段路由
 agents/openai.yaml               UI 元数据
-schemas/                         核心、增强 integrity、视觉与提交回执 JSON Schema
+schemas/                         核心、增强 integrity、视觉、diagram 与提交回执 JSON Schema
 scripts/validation/              有限比较的独立验证求值器
 scripts/freeze_results.py        重算验证后冻结完整 run，并派生 claimable
 scripts/register_evidence.py     初始化/合并唯一 Evidence Registry
 scripts/freeze_submission.py     生成 F1 不可变提交 manifest
 scripts/qa/                      Safety、合同、一致性、引用、Gate、S1 QA
+scripts/qa/check_math_writing.py 数学引用、论证 DAG 与首稿定位检查
+scripts/qa/check_derivation_integrity.py Equation Contract 与推导图结构检查
 references/safety/               规则快照、网络/外写、AI 与人审政策
 references/validation/           题型触发的验证义务
 references/research/             文献真实性与优秀论文隔离规则
-references/precedents/cumcm/     国赛优秀论文本地预留区 + index
-references/precedents/mcm-icm/   美赛优秀论文本地预留区 + index
-references/precedents/pattern-cards/
-                                  可提交到 Git 的机制卡
+references/precedents/            隔离的优秀论文本地预留区（不进证据链）
+references/cards/                 方法、题型与失败机制卡
 references/contracts/            核心 artifact 与 Figure Contract
 references/writing/              Writer 按需加载的摘要/一致性规则
 scripts/claims/                  编译只读 writer package
+scripts/figures/generate_drawio.py 结构化图稿 → native .drawio 后端
+scripts/figures/check_diagram_spec.py 结构化概念图与可编辑源/导出检查
 scripts/latex/                   数值宏生成与隔离安全构建
 assets/templates/               原创清洗骨架与 Template Contract（不内嵌受限上游 class）
 scripts/pdf/                     实际 PDF 检查、逐页渲染与 contact sheet
@@ -86,6 +97,8 @@ docs/HARNESS_INTEGRATION_ANALYSIS.md
                                   开源机制审计与整合决策
 docs/UPSTREAM_STRENGTHS_REVIEW_2026-08-13.md
                                   用户补充仓库的分层复核与本轮落地映射
+docs/MATH_HARNESS_IMPLEMENTATION_STATUS.md
+                                  已实现能力、人工边界与 M0–M4 后续路线
 tests/test_p0_harness.py          P0 正/负例回归测试
 vendor/template_sources.json     模板来源、锁定提交与许可证决策
 vendor/clone_templates.ps1       重建本地浅克隆（clone 目录不随 Skill 分发）
@@ -98,6 +111,12 @@ vendor/clone_templates.ps1       重建本地浅克隆（clone 目录不随 Skil
 ```powershell
 powershell -ExecutionPolicy Bypass -File vendor/clone_templates.ps1
 python scripts/doctor.py --offline
+```
+
+运行完整的 EDA、数值脚手架与增强回归测试前，先在项目 Python 环境安装可选开发依赖：
+
+```powershell
+python -m pip install -r requirements-dev.txt
 ```
 
 默认锁定 CUMCMThesis、mcmthesis、Eisvogel 和 SciencePlots。用户指定的三个 Overleaf 页面也逐项登记，但公开 Gallery 项目需要进入登录账户后才能导出 source ZIP，不能冒充 Git clone；manifest 将它们与可验证的兼容仓库明确分开。Scientific Visualization Book 与 Python Graph Gallery 需要显式传 `-IncludeLargeReferences` 才下载；当前已按稀疏路径锁定到指定提交，仅作为本地图形设计参考，整个 `vendor/upstream/` 已被 Git 忽略，禁止随 Skill 分发。所有社区上游都不是当届官方规则。CUMCMThesis 的当前审计快照没有仓库级 LICENSE，因此也禁止随 Skill 分发；具体页面、提交、稀疏路径和许可证见 `vendor/template_sources.json`。
@@ -117,6 +136,22 @@ python scripts/latex/init_cumcm_project.py `
 ```
 
 这会生成 `paper/main.tex`、`paper/template_contract.json`、匿名 metadata 和正文分片，并实际使用 `cumcmthesis`。community class 只作技术底座；提交前仍须通过当届官方 profile 与最终 PDF QA。
+
+若已从 Overleaf 下载完整 source ZIP，使用 [完整模板适配流程](references/writing/template_adapter.md)，不要只复制 `main.tex` 和 `.cls`。它会保留 `.sty/.bib/.bst`、字体、图件和数据文件，同时以 Harness 的 metadata/正文分片替换示例内容：
+
+```powershell
+python scripts/latex/import_user_template.py `
+  --project-root . `
+  --template-root "C:\Users\Administrator\Desktop\美赛模板" `
+  --destination paper_en `
+  --template-id mcm-user-template-2026 `
+  --competition-profile mcm_icm `
+  --family mcm_icm `
+  --title "Paper title" `
+  --problem A `
+  --control-number 2600000 `
+  --keywords "keyword 1, keyword 2"
+```
 
 ### 1. 建立规则、题面与数据快照
 
@@ -290,6 +325,10 @@ python scripts/qa/run_deterministic_qa.py `
   --abstract paper/abstract.txt `
   --paper paper/main.tex `
   --conclusion paper/conclusion.txt `
+  --writer-package reports/writer_package.json `
+  --require-first-draft-coverage `
+  --require-math-writing-coverage `
+  --require-derivation-integrity `
   --problem-snapshot problem_snapshot.json `
   --data-contract data_contract.json `
   --implementation-map implementation_map.json `
@@ -425,7 +464,7 @@ python scripts/qa/check_submission_manifest.py `
 
 ## Figure / Reviewer 边界
 
-Figure Contract 现在要求 message、comparison、visual encoding、selection rule 与 accessibility；`check_figure.py` 检查导出格式、PDF 字体和栅格有效 DPI，`check_pdf.py` 负责最终 PDF 全页渲染。灰度/色觉、视觉强调和可读性仍由 visual review receipt 裁决，不冒充纯自动审美评分。
+Figure Contract 现在要求 message、comparison、visual encoding、selection rule 与 accessibility。数据图继续由确定性绘图库生成；概念流程图/框架图使用 [Diagram Workflow](references/visualization/diagram_workflow.md) 的可编辑源和 `diagram_spec.json`。默认 SVG/PDF，另有 `raster_only` 选项时必须声明 `raster_text`、DPI 和源文件。`check_figure.py` 检查导出格式、PDF 字体和栅格有效 DPI，`check_diagram_spec.py` 检查节点/边/来源/编辑性，`check_pdf.py` 负责最终 PDF 全页渲染。灰度/色觉、视觉强调和可读性仍由 visual review receipt 裁决，不冒充纯自动审美评分。
 
 Reviewer 默认不堆 Agent：
 
@@ -443,7 +482,7 @@ Reviewer 默认不堆 Agent：
 python -m unittest discover -s tests -v
 ```
 
-当前 37 个回归测试覆盖：规则/安全策略、人工 checkpoint、验证占位拒绝、`550 MW > 498 MW` 的失败比较、失败 run 冻结但不能注册 evidence、手改 FAIL 为 PASS 的拒绝、P2 对 non-claimable 冻结件的阻断、题面漏答、数据泄漏、公式—代码 hash 漂移、artifact DAG stale、正文未登记数字/因果、Pareto 伪前沿、统一数值宏、LaTeX shell escape/路径穿越、真实构建与 PDF 全页渲染、8 类受控图型、AI 条件披露、ZIP 安全、S1 状态过期与最终包不可覆盖行为。
+回归测试覆盖：规则/安全策略、人工 checkpoint、验证占位拒绝、失败 run 冻结与 evidence 边界、敏感性/OOS/失败凭证、题面漏答、数据泄漏、公式—代码绑定、推导图/数学写作追溯、Auto-EDA 语义与泄漏边界、Reflexion 分类、模板实际使用、LaTeX/PDF 构建和图表 QA。具体数量随本地依赖和测试集合更新，以实际 `unittest` 输出为准。
 
 ## 进一步阅读
 

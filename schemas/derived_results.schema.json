@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/derived-results.schema.json",
+  "title": "Derived Results",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "status", "derived_at", "frozen_results", "derived"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "const": "frozen"},
+    "derived_at": {"type": "string", "minLength": 1},
+    "frozen_results": {"$ref": "#/$defs/file_ref"},
+    "spec_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "derived_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "derived": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/derived_result"}}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "derived_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["derived_result_id", "question_id", "type", "inputs", "formula", "value", "precision", "display_value", "unit"],
+      "properties": {
+        "derived_result_id": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "type": {"type": "string", "enum": ["relative_change", "absolute_change", "ratio", "percentage_point_change", "difference", "mean", "std", "min", "max"]},
+        "inputs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "formula": {"type": "string", "minLength": 1},
+        "value": {"type": "number"},
+        "precision": {"type": "integer", "minimum": 0},
+        "display_value": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

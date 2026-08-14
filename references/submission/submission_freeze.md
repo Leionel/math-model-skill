@@ -6,10 +6,10 @@ F1 只证明本地最终包不可变，不证明门户已接受。用户实际�
 
 W2 只表示内容准备完成；它不等于可提交。
 
-```text
-W2 Content Ready
-→ S1 competition-specific package QA
-→ F1 immutable submission_manifest.json
+```mermaid
+flowchart LR
+    W2["W2 Content Ready"] --> S1["S1 competition-specific package QA"]
+    S1 --> F1["F1 immutable submission_manifest.json"]
 ```
 
 ## S1

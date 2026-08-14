@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "project_id", "run_id", "unit_system", "questions", "data_sources", "assumptions", "models", "terminology", "status"],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.2"},
+    "schema_version": {"type": "string", "const": "1.3"},
     "project_id": {"type": "string", "minLength": 1},
     "run_id": {"type": "string", "minLength": 1},
     "unit_system": {"type": "string", "minLength": 1},
@@ -15,6 +15,7 @@
     "questions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/question"}},
     "data_sources": {"type": "array", "items": {"$ref": "#/$defs/data_source"}},
     "assumptions": {"type": "array", "items": {"$ref": "#/$defs/assumption"}},
+    "assumption_forks": {"type": "array", "items": {"$ref": "#/$defs/assumption_fork"}},
     "research_basis": {"$ref": "#/$defs/research_basis"},
     "models": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/model"}},
     "terminology": {"type": "array", "items": {"$ref": "#/$defs/term"}},
@@ -88,6 +89,7 @@
         "source": {"type": "string", "enum": ["llm_knowledge", "web_search", "google_scholar", "openalex", "crossref", "cnki", "publisher", "official_repository", "local_method_library", "other"]},
         "searched_at": {"type": "string", "minLength": 1},
         "candidate_count": {"type": "integer", "minimum": 0},
+        "evidence_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "notes": {"type": "string"}
       }
     },
@@ -122,6 +124,7 @@
         "rationale": {"type": "string", "minLength": 1},
         "decisive_evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "unresolved_risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "risk_disposition": {"type": "string", "minLength": 1},
         "single_candidate_waiver": {"type": "string", "minLength": 1}
       }
     },
@@ -134,6 +137,31 @@
         "text": {"type": "string", "minLength": 1},
         "basis": {"type": "string", "minLength": 1},
         "sensitivity_plan": {"type": "string", "minLength": 1}
+      }
+    },
+    "assumption_fork": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fork_id", "phrase", "question_id", "interpretations", "checks"],
+      "properties": {
+        "fork_id": {"type": "string", "minLength": 1},
+        "phrase": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "interpretations": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/fork_interpretation"}},
+        "checks": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "selected": {"type": "string", "minLength": 1},
+        "selection_reason": {"type": "string", "minLength": 1},
+        "unresolved_risk": {"type": "string", "minLength": 1}
+      }
+    },
+    "fork_interpretation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "meaning", "mathematical_effect"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "meaning": {"type": "string", "minLength": 1},
+        "mathematical_effect": {"type": "string", "minLength": 1}
       }
     },
     "variable": {
@@ -178,7 +206,8 @@
         "category": {"type": "string", "enum": ["data_quality", "feasibility", "objective_recomputation", "baseline", "out_of_sample", "leakage", "uncertainty", "sensitivity", "stability", "convergence", "numerical_error", "conservation", "nonanticipativity", "correlation_validity", "scenario_generalization", "other"]},
         "method": {"type": "string", "minLength": 1},
         "acceptance": {"$ref": "#/$defs/validation_acceptance"},
-        "required_stage": {"type": "string", "enum": ["smoke", "full", "both"]}
+        "required_stage": {"type": "string", "enum": ["smoke", "full", "both"]},
+        "artifact_role": {"type": "string", "enum": ["sensitivity_experiment", "oos_artifact", "failure_evidence"]}
       }
     },
     "validation_acceptance": {
@@ -237,6 +266,9 @@
         "risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "fallback": {"type": "string", "minLength": 1},
         "rejected_alternatives": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "identity": {"$ref": "#/$defs/model_identity"},
+        "risk_semantics": {"$ref": "#/$defs/risk_semantics"},
+        "correlation_spec": {"$ref": "#/$defs/correlation_spec"},
         "plan_details": {"$ref": "#/$defs/model_plan_details"}
       }
     },
@@ -252,7 +284,8 @@
         "implementation_steps": {"type": "array", "minItems": 3, "items": {"type": "string", "minLength": 1}},
         "output_artifacts": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "validation_strategy": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-        "failure_modes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        "failure_modes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "derivation_graph": {"$ref": "#/$defs/derivation_graph"}
       }
     },
     "equation_plan": {
@@ -264,18 +297,197 @@
         "purpose": {"type": "string", "minLength": 1},
         "expression_or_derivation": {"type": "string", "minLength": 1},
         "variables": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-        "assumptions": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        "assumptions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "equation_type": {"type": "string", "enum": ["definition", "derivation", "constraint", "objective", "approximation", "reformulation", "theorem_application", "state_update", "other"]},
+        "math_risk": {"type": "string", "enum": ["low", "medium", "high"]},
+        "inputs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "outputs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "symbols": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "domains": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+        "preconditions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "transformation_rule": {"type": "string", "minLength": 1},
+        "unit_signature": {"type": "string", "minLength": 1},
+        "verification": {"$ref": "#/$defs/equation_verification"}
       }
     },
     "parameter_plan": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["parameter", "source_or_estimator", "unit", "uncertainty_or_range"],
+      "required": ["parameter", "provenance", "unit", "uncertainty_or_range"],
       "properties": {
         "parameter": {"type": "string", "minLength": 1},
-        "source_or_estimator": {"type": "string", "minLength": 1},
+        "provenance": {"$ref": "#/$defs/parameter_provenance"},
+        "semantic_role": {"type": "string", "minLength": 1},
         "unit": {"type": "string", "minLength": 1},
         "uncertainty_or_range": {"type": "string", "minLength": 1}
+      }
+    },
+    "derivation_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/derivation_node"}},
+        "edges": {"type": "array", "items": {"$ref": "#/$defs/derivation_edge"}},
+        "source_node_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "terminal_node_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "derivation_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "inputs", "outputs"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "equation_id": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "enum": ["definition", "scenario_transform", "objective_component", "objective", "constraint", "state_update", "parameter_transform", "approximation", "reformulation", "theorem_application", "other"]},
+        "inputs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "outputs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "derivation_edge": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "equation_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "symbol_check": {"$ref": "#/$defs/verification_status"},
+        "domain_check": {"$ref": "#/$defs/verification_status"},
+        "index_check": {"$ref": "#/$defs/verification_status"},
+        "unit_check": {"$ref": "#/$defs/verification_status"},
+        "boundary_check": {"$ref": "#/$defs/verification_status"},
+        "precondition_check": {"$ref": "#/$defs/verification_status"},
+        "symbolic_check": {"$ref": "#/$defs/verification_status"},
+        "property_test_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "semantic_test_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "tiny_oracle_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "UNVERIFIED", "NOT_APPLICABLE"]
+    },
+    "parameter_provenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "source_locator"],
+          "properties": {
+            "type": {"type": "string", "const": "GIVEN"},
+            "source_locator": {"type": "string", "minLength": 1},
+            "notes": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "derivation_chain", "source_variables"],
+          "properties": {
+            "type": {"type": "string", "const": "DERIVED"},
+            "derivation_chain": {"type": "string", "minLength": 1},
+            "source_variables": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "notes": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "estimator", "sample_scope", "uncertainty"],
+          "properties": {
+            "type": {"type": "string", "const": "ESTIMATED"},
+            "estimator": {"type": "string", "minLength": 1},
+            "sample_scope": {"type": "string", "minLength": 1},
+            "uncertainty": {"type": "string", "minLength": 1},
+            "notes": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "calibration_data", "calibration_objective", "independent_validation"],
+          "properties": {
+            "type": {"type": "string", "const": "CALIBRATED"},
+            "calibration_data": {"type": "string", "minLength": 1},
+            "calibration_objective": {"type": "string", "minLength": 1},
+            "independent_validation": {"type": "string", "minLength": 1},
+            "notes": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "reason", "range", "sensitivity"],
+          "properties": {
+            "type": {"type": "string", "const": "ASSUMED"},
+            "reason": {"type": "string", "minLength": 1},
+            "range": {"type": "string", "minLength": 1},
+            "sensitivity": {"type": "string", "minLength": 1},
+            "notes": {"type": "string"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "official_source", "rule_snapshot"],
+          "properties": {
+            "type": {"type": "string", "const": "POLICY"},
+            "official_source": {"type": "string", "minLength": 1},
+            "rule_snapshot": {"type": "string", "minLength": 1},
+            "notes": {"type": "string"}
+          }
+        }
+      ]
+    },
+    "model_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_name", "mathematical_class", "objective_form", "forbidden_aliases"],
+      "properties": {
+        "canonical_name": {"type": "string", "minLength": 1},
+        "mathematical_class": {"type": "string", "minLength": 1},
+        "objective_form": {"type": "string", "minLength": 1},
+        "forbidden_aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "defining_equations": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "risk_semantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["random_variable", "tail", "confidence_level", "objective_direction"],
+      "properties": {
+        "random_variable": {"type": "string", "enum": ["profit", "loss"]},
+        "tail": {"type": "string", "enum": ["upper", "lower"]},
+        "confidence_level": {"type": "number", "minimum": 0, "maximum": 1},
+        "objective_direction": {"type": "string", "enum": ["minimize", "maximize"]},
+        "scenario_source": {"type": "string", "minLength": 1}
+      }
+    },
+    "correlation_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sample_scope", "dimension", "min_eigenvalue", "checks"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "sample_scope": {"type": "string", "minLength": 1},
+        "dimension": {"type": "integer", "minimum": 2},
+        "min_eigenvalue": {"type": "number"},
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["in_unit_interval", "symmetric", "psd_verified"],
+          "properties": {
+            "in_unit_interval": {"type": "boolean"},
+            "symmetric": {"type": "boolean"},
+            "psd_verified": {"type": "boolean"}
+          }
+        }
       }
     },
     "term": {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,36 @@ def validate_template_usage(
         )
     if actual_class in set(contract.get("forbidden_document_classes", [])):
         errors.append(f"entrypoint uses forbidden document class {actual_class!r}")
+
+    adapter = contract.get("adapter")
+    if isinstance(adapter, dict):
+        for field in ("metadata_input", "body_input"):
+            target = adapter.get(field)
+            if not isinstance(target, str) or not target:
+                errors.append(f"template adapter has no valid {field}")
+                continue
+            marker = rf"\input{{{target}}}"
+            if marker not in entrypoint_text:
+                errors.append(f"entrypoint does not include adapter {field}: {target}")
+
+    snapshot = contract.get("template_snapshot")
+    if isinstance(snapshot, dict):
+        asset_hashes = snapshot.get("asset_hashes")
+        if not isinstance(asset_hashes, dict):
+            errors.append("template snapshot asset_hashes must be an object")
+        else:
+            for raw_path, expected_hash in asset_hashes.items():
+                relative = Path(str(raw_path))
+                if relative.is_absolute() or ".." in relative.parts:
+                    errors.append(f"template asset must stay inside source root: {raw_path}")
+                    continue
+                path = source_root / relative
+                if not path.is_file():
+                    errors.append(f"retained template asset is missing: {relative.as_posix()}")
+                    continue
+                actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                if actual_hash != expected_hash:
+                    errors.append(f"retained template asset changed: {relative.as_posix()}")
 
     for raw_path in contract.get("required_files", []):
         relative = Path(str(raw_path))

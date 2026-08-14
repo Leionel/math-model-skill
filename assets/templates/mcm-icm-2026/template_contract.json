@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "template_id": "mcm-icm-2026-community-base",
+  "competition_profile_id": "mcm_icm",
+  "source_kind": "community",
+  "source_locator": "https://github.com/latexstudio-org/mcmthesis/tree/8ac05e2c3a9ef5880a15e3a3a18762a546c10b69",
+  "status": "verified",
+  "document_class": "mcmthesis",
+  "entrypoint": "main.tex",
+  "required_files": [
+    "main.tex",
+    "metadata.tex",
+    "sections/abstract.tex",
+    "sections/body.tex",
+    "sections/ai_report.tex",
+    "mcmthesis.cls"
+  ],
+  "required_commands": [
+    "\\documentclass[12pt]{mcmthesis}",
+    "\\mcmsetup{",
+    "\\begin{abstract}",
+    "\\begin{keywords}"
+  ],
+  "forbidden_document_classes": ["article", "ctexart", "report", "book"],
+  "allowed_engines": ["pdflatex", "xelatex"],
+  "notes": "MCM/ICM community template with Summary Sheet and in-paper Report on Use of AI section."
+}

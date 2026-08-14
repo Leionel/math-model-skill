@@ -84,7 +84,7 @@ class P0HarnessTest(unittest.TestCase):
         write_json(
             paths["model"],
             {
-                "schema_version": "1.2",
+                "schema_version": "1.3",
                 "project_id": "demo",
                 "run_id": "demo-run",
                 "unit_system": "SI with CNY for cost",
@@ -116,13 +116,13 @@ class P0HarnessTest(unittest.TestCase):
                     }],
                     "searches": [
                         {"search_id": "S-LLM", "research_ids": ["RES-Q1"], "query": "candidate formulations for fixed-demand cost optimization", "language": "en", "source": "llm_knowledge", "searched_at": "2026-08-08T00:00:00Z", "candidate_count": 2},
-                        {"search_id": "S-WEB", "research_ids": ["RES-Q1"], "query": "fixed demand cost minimization linear optimization", "language": "en", "source": "openalex", "searched_at": "2026-08-08T00:01:00Z", "candidate_count": 4},
+                        {"search_id": "S-WEB", "research_ids": ["RES-Q1"], "query": "fixed demand cost minimization linear optimization", "language": "en", "source": "openalex", "searched_at": "2026-08-08T00:01:00Z", "candidate_count": 4, "evidence_ids": ["E-CITE-PLAN"]},
                     ],
                     "candidate_models": [
                         {"candidate_id": "CM-LP", "question_id": "q1", "name": "enumerated linear cost model", "mechanism_fit": "directly represents the fixed demand and non-negativity constraints", "assumptions": ["cost is additive"], "data_requirements": ["demand and unit cost"], "strengths": ["transparent optimum"], "weaknesses": ["does not represent stochastic demand"], "evidence_ids": ["E-CITE-PLAN"], "rejection_conditions": ["nonlinear path dependence is material"], "decision": "selected", "model_id": "M1"},
                         {"candidate_id": "CM-SIM", "question_id": "q1", "name": "stochastic simulation", "mechanism_fit": "can represent uncertain demand", "assumptions": ["a demand distribution is identifiable"], "data_requirements": ["repeated demand observations"], "strengths": ["represents uncertainty"], "weaknesses": ["unsupported by the fixed fixture data"], "evidence_ids": ["E-CITE-PLAN"], "rejection_conditions": ["no repeated observations are available"], "decision": "rejected"},
                     ],
-                    "decisions": [{"question_id": "q1", "selected_candidate_id": "CM-LP", "alternatives_considered": ["CM-SIM"], "selection_criteria": ["mechanism fit", "data sufficiency", "auditability"], "rationale": "The deterministic formulation matches the supplied data while retaining exact feasibility and objective checks.", "decisive_evidence_ids": ["E-CITE-PLAN"], "unresolved_risks": ["demand misspecification"]}],
+                    "decisions": [{"question_id": "q1", "selected_candidate_id": "CM-LP", "alternatives_considered": ["CM-SIM"], "selection_criteria": ["mechanism fit", "data sufficiency", "auditability"], "rationale": "CM-LP, the deterministic formulation, matches the supplied data while retaining exact feasibility and objective checks.", "decisive_evidence_ids": ["E-CITE-PLAN"], "unresolved_risks": ["demand misspecification"]}],
                     "unresolved_questions": []
                 },
                 "models": [
@@ -162,7 +162,7 @@ class P0HarnessTest(unittest.TestCase):
                             "selected_candidate_id": "CM-LP",
                             "mechanism": "Choose a non-negative production decision that covers fixed demand while minimizing additive cost.",
                             "equation_plan": [{"equation_id": "EQ-Q1-OBJ", "purpose": "define the optimization objective", "expression_or_derivation": "min C(x) subject to x >= demand", "variables": ["x", "demand"], "assumptions": ["additive cost"]}],
-                            "parameter_plan": [{"parameter": "demand", "source_or_estimator": "contest attachment", "unit": "item", "uncertainty_or_range": "+/-10% sensitivity"}],
+                            "parameter_plan": [{"parameter": "demand", "provenance": {"type": "GIVEN", "source_locator": "contest attachment input.json demand field"}, "unit": "item", "uncertainty_or_range": "+/-10% sensitivity"}],
                             "implementation_steps": ["load and validate demand", "enumerate feasible decisions", "recompute objective and constraints independently"],
                             "output_artifacts": ["raw_results.json", "validation_measurements.json"],
                             "validation_strategy": ["feasibility and independent objective recomputation"],
@@ -677,7 +677,7 @@ class P0HarnessTest(unittest.TestCase):
             )
             self.assertEqual(qa.returncode, 0, qa.stdout + qa.stderr)
             labels = {row["label"] for row in read_json(paths["qa_report"])["checks"]}
-            self.assertEqual(labels, {"contracts", "contest_safety", "consistency", "citations"})
+            self.assertEqual(labels, {"contracts", "math_semantics", "contest_safety", "consistency", "citations"})
 
     def test_s1_rejects_missing_manual_check(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-s1-") as temp:

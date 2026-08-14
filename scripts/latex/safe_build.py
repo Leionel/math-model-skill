@@ -25,9 +25,11 @@ from latex.template_usage import validate_template_usage  # noqa: E402
 BLOCKED_TOKENS = (r"\write18", r"\immediate\write18", r"\input|", r"\openout18", r"\usepackage{shellesc}")
 PATH_COMMAND_RE = re.compile(r"\\(?:input|include|includegraphics|bibliography|addbibresource)\s*(?:\[[^\]]*\]\s*)?\{([^}]+)\}")
 SOURCE_EXTENSIONS = {
-    ".tex", ".bib", ".cls", ".sty", ".bst", ".cfg", ".def",
-    ".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg",
-    ".py", ".m", ".r", ".jl", ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".txt",
+    ".tex", ".bib", ".cls", ".sty", ".bst", ".bbx", ".cbx", ".lbx", ".cfg", ".def", ".fd",
+    ".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg", ".tikz", ".pgf", ".pgfplots",
+    ".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2",
+    ".csv", ".tsv", ".dat", ".json", ".yaml", ".yml", ".xml",
+    ".py", ".m", ".r", ".jl", ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".lua", ".txt",
 }
 
 
@@ -84,6 +86,7 @@ def main() -> int:
     parser.add_argument("--engine", choices=("xelatex", "lualatex", "pdflatex"), default="xelatex")
     parser.add_argument("--integrity-mode", choices=("dev", "research", "submission"), default="research")
     parser.add_argument("--template-contract")
+    parser.add_argument("--timeout-seconds", type=int, default=180)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -102,6 +105,8 @@ def main() -> int:
         errors.append("source_root must stay inside project_root")
     if entrypoint.is_absolute() or ".." in entrypoint.parts or entrypoint.suffix.lower() != ".tex":
         errors.append("entrypoint must be a relative .tex path without parent traversal")
+    if args.timeout_seconds <= 0:
+        errors.append("timeout_seconds must be positive")
     if not (source_root / entrypoint).is_file():
         errors.append(f"entrypoint does not exist: {entrypoint}")
     errors.extend(scan_sources(source_root) if source_root.is_dir() else [])
@@ -132,6 +137,7 @@ def main() -> int:
     output_ref = log_ref = None
     run_stdout = ""
     run_stderr = ""
+    timed_out = False
     with tempfile.TemporaryDirectory(prefix="mathmodel-latex-") as temporary:
         isolated = Path(temporary) / "source"
         isolated.mkdir(parents=True)
@@ -143,13 +149,20 @@ def main() -> int:
         environment = os.environ.copy()
         environment["openin_any"] = "p"
         environment["openout_any"] = "p"
-        result = subprocess.run(
-            command, cwd=isolated, env=environment, text=True, capture_output=True,
-            encoding="utf-8", errors="replace", check=False,
-        )
-        exit_code = result.returncode
-        run_stdout = result.stdout
-        run_stderr = result.stderr
+        try:
+            result = subprocess.run(
+                command, cwd=isolated, env=environment, text=True, capture_output=True,
+                encoding="utf-8", errors="replace", check=False, timeout=args.timeout_seconds,
+            )
+            exit_code = result.returncode
+            run_stdout = result.stdout
+            run_stderr = result.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = 124
+            run_stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+            run_stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+            run_stderr += f"\nLaTeX build exceeded timeout of {args.timeout_seconds} seconds."
         log_path = isolated / entrypoint.with_suffix(".log")
         pdf_path = isolated / entrypoint.with_suffix(".pdf")
         if log_path.is_file():
@@ -203,6 +216,8 @@ def main() -> int:
         "source_tree_sha256_after": source_after,
         "command": command,
         "shell_escape": False,
+        "compile_timeout_seconds": args.timeout_seconds,
+        "timed_out": timed_out,
         "output": output_ref,
         "log": log_ref,
         "exit_code": exit_code,

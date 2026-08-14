@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,91 @@ def checkpoint_is_confirmed(row: dict[str, Any]) -> bool:
     """Accept the new explicit action and the schema-1.1 legacy spelling."""
 
     return row.get("decision") in {"confirm", "pass"}
+
+
+def rerun_enhanced_deterministic_qa(
+    *,
+    root: Path,
+    manifest_path: Path,
+    report: dict[str, Any],
+) -> tuple[bool, str]:
+    """Recompute enhanced QA from the report's declared inputs without overwriting it."""
+    input_rows = report.get("inputs", [])
+    input_paths = {
+        row.get("role"): row.get("path")
+        for row in input_rows
+        if isinstance(row, dict) and isinstance(row.get("role"), str) and isinstance(row.get("path"), str)
+    }
+    required = {
+        "model_contract", "frozen_results", "evidence_registry", "paper_plan",
+        "abstract", "paper", "conclusion", "writer_package",
+    }
+    missing = sorted(role for role in required if role not in input_paths)
+    if missing:
+        return False, f"enhanced deterministic QA recheck missing input roles: {missing}"
+
+    command = [
+        sys.executable,
+        str(SCRIPT_DIR / "run_deterministic_qa.py"),
+        "--project-root", str(root),
+        "--model-contract", str(resolve_path(input_paths["model_contract"], root).resolve()),
+        "--run-manifest", str(manifest_path),
+        "--frozen-results", str(resolve_path(input_paths["frozen_results"], root).resolve()),
+        "--evidence-registry", str(resolve_path(input_paths["evidence_registry"], root).resolve()),
+        "--paper-plan", str(resolve_path(input_paths["paper_plan"], root).resolve()),
+        "--abstract", str(resolve_path(input_paths["abstract"], root).resolve()),
+        "--paper", str(resolve_path(input_paths["paper"], root).resolve()),
+        "--conclusion", str(resolve_path(input_paths["conclusion"], root).resolve()),
+        "--writer-package", str(resolve_path(input_paths["writer_package"], root).resolve()),
+        "--require-first-draft-coverage",
+        "--require-math-writing-coverage",
+        "--require-derivation-integrity",
+    ]
+    optional_args = {
+        "derived_results": "--derived-results",
+        "problem_snapshot": "--problem-snapshot",
+        "implementation_map": "--implementation-map",
+        "artifact_dag": "--artifact-dag",
+        "sensitivity_experiment": "--sensitivity-experiment",
+        "oos_artifact": "--oos-artifact",
+        "failure_evidence": "--failure-evidence",
+    }
+    for role, flag in optional_args.items():
+        if role in input_paths:
+            command.extend([flag, str(resolve_path(input_paths[role], root).resolve())])
+    for role in sorted(input_paths):
+        if role.startswith("data_contract_"):
+            command.extend(["--data-contract", str(resolve_path(input_paths[role], root).resolve())])
+        if role.startswith("diagram_spec_"):
+            command.extend(["--diagram-spec", str(resolve_path(input_paths[role], root).resolve())])
+    temp_output: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix="math-harness-qa-", suffix=".json", delete=False) as handle:
+            temp_output = Path(handle.name)
+        command.extend(["--output", str(temp_output), "--force"])
+        result = subprocess.run(
+            command,
+            cwd=root,
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if result.returncode != 0:
+            return False, f"enhanced deterministic QA recheck exited {result.returncode}: {result.stdout[-1200:]}"
+        try:
+            fresh = load_structured(temp_output)
+        except (OSError, ValueError, TypeError) as exc:
+            return False, f"enhanced deterministic QA recheck produced unreadable report: {exc}"
+        if not isinstance(fresh, dict) or fresh.get("ok") is not True:
+            return False, "enhanced deterministic QA recheck did not produce ok=true"
+        return True, "enhanced deterministic QA recomputed from declared inputs"
+    finally:
+        if temp_output is not None:
+            try:
+                temp_output.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def main() -> int:
@@ -266,16 +352,53 @@ def main() -> int:
                 errors.append(
                     f"{owner} report does not contain passing contracts/contest_safety/consistency/citations checks"
                 )
+            if manifest.get("enhanced_integrity_profile") is True and "writer_package" not in labels:
+                errors.append(f"{owner} report must contain a passing writer_package first-draft check")
+            if manifest.get("enhanced_integrity_profile") is True:
+                if "math_writing" not in labels:
+                    errors.append(f"{owner} report must contain a passing math_writing traceability check")
+                if "derivation_integrity" not in labels:
+                    errors.append(f"{owner} report must contain a passing derivation_integrity check")
+                writer_checks = [
+                    check for check in checks
+                    if isinstance(check, dict) and check.get("label") == "writer_package" and check.get("ok") is True
+                ]
+                if not writer_checks:
+                    errors.append(f"{owner} report has no passing writer_package check")
+                else:
+                    writer_report = writer_checks[-1].get("report")
+                    if not isinstance(writer_report, dict) or writer_report.get("first_draft_coverage_required") is not True:
+                        errors.append(f"{owner} writer_package check did not require first-draft coverage")
+                math_checks = [
+                    check for check in checks
+                    if isinstance(check, dict) and check.get("label") == "math_writing" and check.get("ok") is True
+                ]
+                if not math_checks:
+                    errors.append(f"{owner} report has no passing math_writing check")
+                else:
+                    math_report = math_checks[-1].get("report")
+                    if not isinstance(math_report, dict) or math_report.get("coverage_required") is not True:
+                        errors.append(f"{owner} math_writing check did not require formal coverage")
             inputs = report.get("inputs", [])
             if not isinstance(inputs, list) or not inputs:
                 errors.append(f"{owner} report has no hashed inputs")
             else:
                 input_roles = {ref.get("role") for ref in inputs if isinstance(ref, dict)}
                 required_roles = {"model_contract", "frozen_results", "evidence_registry", "paper_plan", "abstract", "paper", "conclusion"}
+                if manifest.get("enhanced_integrity_profile") is True:
+                    required_roles.add("writer_package")
                 if not required_roles.issubset(input_roles):
                     errors.append(f"{owner} report is missing required hashed input roles")
                 for index, ref in enumerate(inputs):
                     verify_file_ref(f"{owner}.inputs[{index}]", ref)
+                if manifest.get("enhanced_integrity_profile") is True:
+                    fresh_ok, fresh_message = rerun_enhanced_deterministic_qa(
+                        root=root,
+                        manifest_path=manifest_path,
+                        report=report,
+                    )
+                    if not fresh_ok:
+                        errors.append(f"{owner} independent recheck: {fresh_message}")
         else:
             if report.get("verdict") != "pass":
                 errors.append(f"{owner} report does not have verdict=pass")
@@ -350,15 +473,21 @@ def main() -> int:
                     str(research_registry_rows[0].get("path", "")), root
                 ).resolve()
                 if research_registry_path.is_file():
-                    run_json_checker(
-                        "M1 research-first modeling plan",
-                        [
+                        modeling_plan_command = [
                             str(SCRIPT_DIR / "check_modeling_plan.py"),
                             "--project-root", str(root),
                             "--model-contract", str(model_contract_path),
                             "--evidence-registry", str(research_registry_path),
-                        ],
-                    )
+                        ]
+                        # Research/submission is the point at which a plan must
+                        # be more than a syntactically complete form.  Enhanced
+                        # profiles add further artifact checks below, but the
+                        # formal M1 evidence-linkage gate applies to both modes.
+                        modeling_plan_command.extend(["--formal", "--strict"])
+                        run_json_checker(
+                            "M1 research-first modeling plan",
+                            modeling_plan_command,
+                        )
         if manifest.get("enhanced_integrity_profile") is True:
             problem_snapshot = require_structured_artifact(
                 "problem_snapshot",
@@ -490,12 +619,75 @@ def main() -> int:
                     errors.append("P2 pass requires code_snapshot and validation_snapshot")
                 if not frozen.get("validation_obligations"):
                     errors.append("P2 pass requires passed validation obligations")
+                if isinstance(frozen, dict) and frozen.get("validation_verdict") in {"FAIL", "ERROR"}:
+                    failure_evidence = require_structured_artifact(
+                        "failure_evidence",
+                        schema_name="failure_evidence.schema.json",
+                        status_field="status",
+                        accepted_statuses={"diagnostic"},
+                    )
+                    if isinstance(failure_evidence, dict):
+                        if failure_evidence.get("run_id") != manifest.get("run_id"):
+                            errors.append("failure_evidence.run_id does not match run_manifest.run_id")
+                        source_ref = failure_evidence.get("source_frozen_results")
+                        if not isinstance(source_ref, dict) or source_ref.get("path") != rel_path(frozen_path, root):
+                            errors.append("failure_evidence does not bind the current frozen_results artifact")
+                        failure_rows = artifacts_for_role(manifest, "failure_evidence")
+                        if len(failure_rows) == 1:
+                            failure_path = resolve_path(str(failure_rows[0].get("path", "")), root).resolve()
+                            run_json_checker(
+                                "P2 failure evidence semantic check",
+                                [
+                                    str(SCRIPT_DIR / "check_failure_evidence.py"),
+                                    "--project-root", str(root),
+                                    "--artifact", str(failure_path),
+                                    "--frozen-results", str(frozen_path),
+                                    "--run-id", str(manifest.get("run_id")),
+                                    "--strict",
+                                ],
+                            )
                 if model_contract_path is None:
                     errors.append("P2 pass requires a current model contract")
                 else:
                     model_contract = load_structured(model_contract_path)
                     if not isinstance(model_contract, dict):
                         raise ValueError("model contract must be an object")
+                    required_aux_roles = {
+                        obligation.get("artifact_role")
+                        for model in model_contract.get("models", [])
+                        if isinstance(model, dict)
+                        for obligation in model.get("validation_obligations", [])
+                        if isinstance(obligation, dict)
+                        and obligation.get("artifact_role") in {"sensitivity_experiment", "oos_artifact"}
+                    }
+                    for role, schema_name, status_field, accepted_statuses, checker in (
+                        ("sensitivity_experiment", "sensitivity_experiment.schema.json", "status", {"completed"}, "check_sensitivity_experiment.py"),
+                        ("oos_artifact", "oos_artifact.schema.json", "status", {"verified"}, "check_oos_artifact.py"),
+                    ):
+                        if role not in required_aux_roles:
+                            continue
+                        auxiliary = require_structured_artifact(
+                            role,
+                            schema_name=schema_name,
+                            status_field=status_field,
+                            accepted_statuses=accepted_statuses,
+                        )
+                        if isinstance(auxiliary, dict):
+                            if auxiliary.get("run_id") != manifest.get("run_id"):
+                                errors.append(f"{role}.run_id does not match run_manifest.run_id")
+                            aux_rows = artifacts_for_role(manifest, role)
+                            if len(aux_rows) == 1:
+                                aux_path = resolve_path(str(aux_rows[0].get("path", "")), root).resolve()
+                                run_json_checker(
+                                    f"P2 {role} semantic check",
+                                    [
+                                        str(SCRIPT_DIR / checker),
+                                        "--project-root", str(root),
+                                        "--" + ("experiment" if role == "sensitivity_experiment" else "artifact"), str(aux_path),
+                                        "--run-id", str(manifest.get("run_id")),
+                                        "--strict",
+                                    ],
+                                )
                     for index, report_ref in enumerate(frozen.get("validation_snapshot", [])):
                         report_path = verify_file_ref(f"P2 validation_snapshot[{index}]", report_ref)
                         if report_path is None:
@@ -521,6 +713,40 @@ def main() -> int:
                         )
             except (OSError, ValueError, TypeError) as exc:
                 errors.append(f"cannot inspect frozen_results for P2: {exc}")
+    if statuses["p2"] in {"fail", "blocked"}:
+        _, failed_frozen_path = single_artifact("frozen_results")
+        if failed_frozen_path:
+            try:
+                failed_frozen = load_structured(failed_frozen_path)
+                if isinstance(failed_frozen, dict) and failed_frozen.get("validation_verdict") in {"FAIL", "ERROR"}:
+                    failure_evidence = require_structured_artifact(
+                        "failure_evidence",
+                        schema_name="failure_evidence.schema.json",
+                        status_field="status",
+                        accepted_statuses={"diagnostic"},
+                    )
+                    if isinstance(failure_evidence, dict):
+                        if failure_evidence.get("run_id") != manifest.get("run_id"):
+                            errors.append("failure_evidence.run_id does not match run_manifest.run_id")
+                        source_ref = failure_evidence.get("source_frozen_results")
+                        if not isinstance(source_ref, dict) or source_ref.get("path") != rel_path(failed_frozen_path, root):
+                            errors.append("failure_evidence does not bind the failed frozen_results artifact")
+                        failure_rows = artifacts_for_role(manifest, "failure_evidence")
+                        if len(failure_rows) == 1:
+                            failure_path = resolve_path(str(failure_rows[0].get("path", "")), root).resolve()
+                            run_json_checker(
+                                "failed P2 failure evidence semantic check",
+                                [
+                                    str(SCRIPT_DIR / "check_failure_evidence.py"),
+                                    "--project-root", str(root),
+                                    "--artifact", str(failure_path),
+                                    "--frozen-results", str(failed_frozen_path),
+                                    "--run-id", str(manifest.get("run_id")),
+                                    "--strict",
+                                ],
+                            )
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append(f"cannot inspect failed frozen_results for diagnostic evidence: {exc}")
     if statuses["w1"] == "pass":
         if statuses["p2"] != "pass":
             errors.append("W1 pass requires P2 pass")
@@ -570,6 +796,39 @@ def main() -> int:
                     raise ValueError("registry and plan must be objects")
                 if plan.get("status") != "ready" or not plan.get("requirements") or not plan.get("claims"):
                     errors.append("W1 pass requires a ready, non-empty paper_plan")
+                planned_derived_ids = {
+                    derived_id
+                    for claim in plan.get("claims", [])
+                    if isinstance(claim, dict)
+                    for derived_id in claim.get("derived_result_ids", [])
+                    if isinstance(derived_id, str)
+                }
+                if planned_derived_ids:
+                    derived_doc = require_structured_artifact(
+                        "derived_results",
+                        schema_name="derived_results.schema.json",
+                        status_field="status",
+                        accepted_statuses={"frozen"},
+                    )
+                    if isinstance(derived_doc, dict):
+                        if derived_doc.get("run_id") != manifest.get("run_id"):
+                            errors.append("derived_results.run_id does not match run_manifest.run_id")
+                        frozen_ref = derived_doc.get("frozen_results")
+                        frozen_rows = artifacts_for_role(manifest, "frozen_results")
+                        if len(frozen_rows) == 1 and isinstance(frozen_ref, dict):
+                            frozen_path = resolve_path(str(frozen_rows[0].get("path", "")), root).resolve()
+                            if not frozen_path.is_file() or frozen_ref.get("path") != rel_path(frozen_path, root):
+                                errors.append("derived_results.frozen_results is not the current frozen_results artifact")
+                            elif frozen_ref.get("sha256") is not None and frozen_ref.get("sha256") != sha256_file(frozen_path):
+                                errors.append("derived_results.frozen_results sha256 drift")
+                        derived_ids = {
+                            row.get("derived_result_id")
+                            for row in derived_doc.get("derived", [])
+                            if isinstance(row, dict)
+                        }
+                        missing = sorted(planned_derived_ids - derived_ids)
+                        if missing:
+                            errors.append(f"paper_plan references missing derived_result_ids: {missing}")
                 evidence_by_id = {
                     row.get("evidence_id"): row
                     for row in registry.get("evidence", [])
@@ -600,7 +859,23 @@ def main() -> int:
             except (OSError, ValueError, TypeError) as exc:
                 errors.append(f"cannot inspect W1 artifacts: {exc}")
     if statuses["w2"] == "pass":
-        require_human_checkpoint("w2")
+        w2_checkpoint = require_human_checkpoint("w2")
+        if manifest.get("enhanced_integrity_profile") is True:
+            required_math_checks = {
+                "math_formula_correctness",
+                "equation_constraint_mapping",
+                "argument_logic_order",
+                "units_and_boundary_consistency",
+            }
+            completed_math_checks = set(
+                w2_checkpoint.get("manual_checks", []) if isinstance(w2_checkpoint, dict) else []
+            )
+            missing_math_checks = sorted(required_math_checks - completed_math_checks)
+            if missing_math_checks:
+                errors.append(
+                    "enhanced W2 checkpoint is missing independent math/writing review checks: "
+                    f"{missing_math_checks}"
+                )
         if statuses["w1"] != "pass":
             errors.append("W2 pass requires W1 pass")
         single_artifact("paper")
@@ -669,6 +944,23 @@ def main() -> int:
                             "--integrity-mode", integrity_mode,
                         ],
                     )
+        if manifest.get("enhanced_integrity_profile") is True:
+            writer_rows = artifacts_for_role(manifest, "writer_package")
+            if len(writer_rows) != 1:
+                errors.append(f"enhanced W2 requires exactly one writer_package artifact, found {len(writer_rows)}")
+            else:
+                writer_path = resolve_path(str(writer_rows[0].get("path", "")), root).resolve()
+                if not writer_path.is_file():
+                    errors.append("enhanced W2 writer_package artifact does not exist")
+                else:
+                    try:
+                        writer_package = load_structured(writer_path)
+                        if not isinstance(writer_package, dict) or writer_package.get("schema_version") != "1.0":
+                            errors.append("enhanced W2 writer_package must have schema_version=1.0")
+                        if not isinstance(writer_package, dict) or not isinstance(writer_package.get("draft_coverage"), dict):
+                            errors.append("enhanced W2 writer_package must bind draft_coverage")
+                    except (OSError, ValueError, TypeError) as exc:
+                        errors.append(f"cannot inspect enhanced W2 writer_package: {exc}")
         reviewer = manifest.get("reviewer", {})
         deterministic = reviewer.get("deterministic_qa", {}) if isinstance(reviewer, dict) else {}
         critic = reviewer.get("semantic_critic", {}) if isinstance(reviewer, dict) else {}

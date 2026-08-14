@@ -1,0 +1,17 @@
+# competition_profiles/cumcm.yaml
+# 2026 全国大学生数学建模竞赛 (CUMCM) 专属画像配置
+
+inherits: "_base_cumcm"
+profile_id: "cumcm-2026-electronic"
+competition_name: "2026年全国大学生数学建模竞赛"
+season: "2026"
+deadline: "2026-09-07T20:00:00+08:00"
+timezone: "Asia/Shanghai"
+
+overrides:
+  rules:
+    page_limit: 25
+    header_title: "2026年高教社杯全国大学生数学建模竞赛承诺书"
+  ai_disclosure:
+    policy: "required_when_used"
+    support_pdf_name: "AI使用说明_详细报告.pdf"

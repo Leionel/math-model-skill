@@ -231,7 +231,7 @@
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
-        "role": {"type": "string", "enum": ["rule_snapshot", "problem_snapshot", "data_contract", "implementation_map", "artifact_dag", "presentation_contract", "template_contract", "claim_inventory", "ai_interaction", "frozen_results", "evidence_registry", "paper_plan", "paper", "figure", "figure_qa", "table", "build_receipt", "pdf_visual_qa", "visual_review_receipt", "qa_report", "critic_report", "blind_report", "ai_disclosure", "support_package", "submission_qa", "submission_receipt", "other"]}
+        "role": {"type": "string", "enum": ["rule_snapshot", "problem_snapshot", "data_contract", "implementation_map", "artifact_dag", "presentation_contract", "template_contract", "claim_inventory", "writer_package", "ai_interaction", "frozen_results", "derived_results", "failure_evidence", "sensitivity_experiment", "oos_artifact", "evidence_registry", "paper_plan", "paper", "figure", "figure_qa", "table", "build_receipt", "pdf_visual_qa", "visual_review_receipt", "qa_report", "critic_report", "blind_report", "ai_disclosure", "support_package", "submission_qa", "submission_receipt", "other"]}
       }
     },
     "gate": {

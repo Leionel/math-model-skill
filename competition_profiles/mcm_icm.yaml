@@ -1,0 +1,16 @@
+# competition_profiles/mcm_icm.yaml
+# 2026 MCM/ICM 美赛专属画像配置
+
+inherits: "_base_mcm_icm"
+profile_id: "mcm_icm"
+competition_name: "2026 Mathematical Contest in Modeling (MCM/ICM)"
+season: "2026"
+deadline: "2026-02-02T20:00:00-05:00"
+timezone: "America/New_York"
+
+overrides:
+  rules:
+    page_limit: 25
+    summary_sheet_title: "2026 MCM/ICM Summary Sheet"
+  ai_disclosure:
+    report_title: "Report on Use of AI"

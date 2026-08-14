@@ -14,6 +14,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import rel_path, resolve_path  # noqa: E402
+from qa.check_derivation_integrity import evaluate_derivation_integrity  # noqa: E402
+from qa.check_math_semantics import evaluate_contract_semantics  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
 
 
@@ -35,11 +37,17 @@ CHARACTERISTIC_VALIDATION_REQUIREMENTS = {
     "multiobjective": {"sensitivity"},
     "machine_learning": {"out_of_sample", "leakage", "baseline"},
 }
+ARTIFACT_REQUIRED_BY_CATEGORY = {
+    "sensitivity": "sensitivity_experiment",
+    "out_of_sample": "oos_artifact",
+}
 
 
 def evaluate_modeling_plan(
     model_contract: dict[str, Any],
     evidence_registry: dict[str, Any],
+    *,
+    require_reasonableness: bool = False,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     """Return errors, warnings, and coverage details for the research-to-plan chain."""
 
@@ -71,6 +79,12 @@ def evaluate_modeling_plan(
             f"missing={sorted(question_ids - covered_by_research)}, extra={sorted(covered_by_research - question_ids)}"
         )
 
+    evidence_by_id = {
+        row.get("evidence_id"): row
+        for row in evidence_registry.get("evidence", [])
+        if isinstance(row, dict) and isinstance(row.get("evidence_id"), str)
+    }
+
     searches_by_research: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for search in research.get("searches", []):
         if not isinstance(search, dict):
@@ -86,12 +100,29 @@ def evaluate_modeling_plan(
             errors.append(f"research {research_id} has no recorded LLM-knowledge reconnaissance")
         if not any(row.get("source") in EXTERNAL_RESEARCH_SOURCES for row in rows):
             errors.append(f"research {research_id} has no recorded external literature/web search")
-
-    evidence_by_id = {
-        row.get("evidence_id"): row
-        for row in evidence_registry.get("evidence", [])
-        if isinstance(row, dict) and isinstance(row.get("evidence_id"), str)
-    }
+        if require_reasonableness:
+            for search in rows:
+                if search.get("candidate_count", 0) < 1:
+                    errors.append(
+                        f"formal M1 search {search.get('search_id')} has candidate_count=0; "
+                        "a zero-result search cannot support model selection"
+                    )
+                if search.get("source") in EXTERNAL_RESEARCH_SOURCES:
+                    search_evidence_ids = search.get("evidence_ids", [])
+                    if not search_evidence_ids:
+                        errors.append(
+                            f"formal M1 external search {search.get('search_id')} must bind evidence_ids"
+                        )
+                    for evidence_id in search_evidence_ids:
+                        evidence = evidence_by_id.get(evidence_id)
+                        if evidence is None:
+                            errors.append(
+                                f"formal M1 search {search.get('search_id')} references missing evidence {evidence_id}"
+                            )
+                        elif evidence.get("verification_status") != "verified":
+                            errors.append(
+                                f"formal M1 search {search.get('search_id')} references unverified evidence {evidence_id}"
+                            )
 
     candidates = [row for row in research.get("candidate_models", []) if isinstance(row, dict)]
     candidates_by_question: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -138,6 +169,31 @@ def evaluate_modeling_plan(
             errors.append(
                 f"model {model.get('model_id')} characteristics trigger missing validation categories: {missing_categories}"
             )
+        details = model.get("plan_details")
+        if isinstance(details, dict):
+            parameter_names = {
+                row.get("parameter")
+                for row in details.get("parameter_plan", [])
+                if isinstance(row, dict) and isinstance(row.get("parameter"), str)
+            }
+            uncovered_inputs = sorted(
+                input_name for input_name in model.get("inputs", [])
+                if isinstance(input_name, str) and input_name not in parameter_names
+            )
+            if uncovered_inputs:
+                errors.append(
+                    f"model {model.get('model_id')} inputs lack typed parameter provenance: {uncovered_inputs}"
+                )
+        for obligation in model.get("validation_obligations", []):
+            if not isinstance(obligation, dict):
+                continue
+            category = obligation.get("category")
+            expected_role = ARTIFACT_REQUIRED_BY_CATEGORY.get(category)
+            if expected_role and obligation.get("artifact_role") != expected_role:
+                errors.append(
+                    f"model {model.get('model_id')} obligation {obligation.get('obligation_id')} "
+                    f"category={category} requires artifact_role={expected_role}"
+                )
 
     selected_map: dict[str, str] = {}
     for qid in sorted(question_ids):
@@ -169,6 +225,19 @@ def evaluate_modeling_plan(
         if not set(decision.get("decisive_evidence_ids", [])).issubset(set(candidate.get("evidence_ids", []))):
             errors.append(f"question {qid} decisive evidence must be attached to the selected candidate")
 
+        if require_reasonableness:
+            rationale = str(decision.get("rationale", "")).casefold()
+            candidate_name = str(candidate.get("name", "")).casefold()
+            candidate_token = str(candidate_id).casefold()
+            if candidate_name not in rationale and candidate_token not in rationale:
+                errors.append(
+                    f"question {qid} decision rationale must name the selected candidate or candidate_id"
+                )
+            if not decision.get("unresolved_risks") and not str(decision.get("risk_disposition", "")).strip():
+                errors.append(
+                    f"question {qid} must record unresolved_risks or an explicit risk_disposition"
+                )
+
         verified_literature = []
         for evidence_id in candidate.get("evidence_ids", []):
             evidence = evidence_by_id.get(evidence_id, {})
@@ -188,6 +257,15 @@ def evaluate_modeling_plan(
             errors.append(
                 f"selected candidate {candidate_id} needs at least one full-text, locator-backed verified citation"
             )
+        if require_reasonableness:
+            decisive_literature = [
+                evidence_id for evidence_id in decision.get("decisive_evidence_ids", [])
+                if evidence_id in verified_literature
+            ]
+            if not decisive_literature:
+                errors.append(
+                    f"question {qid} decisive_evidence_ids must include a full-text locator-backed verified citation"
+                )
 
         model_id = candidate.get("model_id")
         model = models_by_id.get(model_id)
@@ -209,13 +287,42 @@ def evaluate_modeling_plan(
     if unresolved:
         warnings.append(f"research_basis retains {len(unresolved)} unresolved question(s)")
 
+    semantic_errors, semantic_warnings = evaluate_contract_semantics(model_contract)
+    errors.extend(semantic_errors)
+    warnings.extend(semantic_warnings)
+    derivation_requested = any(
+        isinstance(model.get("plan_details"), dict)
+        and (
+            isinstance(model["plan_details"].get("derivation_graph"), dict)
+            or any(
+                isinstance(equation, dict)
+                and any(field in equation for field in ("equation_type", "math_risk", "verification"))
+                for equation in model["plan_details"].get("equation_plan", [])
+            )
+        )
+        for model in model_contract.get("models", [])
+        if isinstance(model, dict)
+    )
+    if derivation_requested:
+        derivation_errors, derivation_warnings, derivation_details = evaluate_derivation_integrity(
+            model_contract, require_metadata=require_reasonableness
+        )
+        errors.extend(derivation_errors)
+        warnings.extend(derivation_warnings)
+    else:
+        derivation_details = {"status": "NOT_APPLICABLE", "reason": "no enhanced equation contract requested"}
+
     coverage = {
+        "reasonableness_check": (
+            "L1_completeness_evidence_linkage" if require_reasonableness else "L0_standard_contract_check"
+        ),
         "questions": sorted(question_ids),
         "research_questions": sorted(research_by_id),
         "selected_candidates": selected_map,
         "verified_evidence": len(
             [row for row in evidence_by_id.values() if row.get("verification_status") == "verified"]
         ),
+        "derivation_integrity": derivation_details,
     }
     return errors, warnings, coverage
 
@@ -226,6 +333,11 @@ def main() -> int:
     parser.add_argument("--evidence-registry", required=True)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--formal",
+        action="store_true",
+        help="Enable formal M1 completeness/evidence-linkage checks; this is still not a semantic proof of model validity.",
+    )
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
@@ -247,7 +359,9 @@ def main() -> int:
             raise ValueError("model contract and evidence registry must be objects")
         if contract.get("run_id") != registry.get("run_id"):
             errors.append("model_contract and evidence_registry must share one run_id")
-        plan_errors, plan_warnings, coverage = evaluate_modeling_plan(contract, registry)
+        plan_errors, plan_warnings, coverage = evaluate_modeling_plan(
+            contract, registry, require_reasonableness=args.formal
+        )
         errors.extend(plan_errors)
         warnings.extend(plan_warnings)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -258,6 +372,7 @@ def main() -> int:
         "ok": ok,
         "model_contract": rel_path(contract_path, root),
         "evidence_registry": rel_path(registry_path, root),
+        "formal": args.formal,
         "coverage": coverage,
         "errors": errors,
         "warnings": warnings,

@@ -1,0 +1,17 @@
+# competition_profiles/apmcm.yaml
+# 亚太地区大学生数学建模竞赛 (APMCM) 专属画像配置
+
+inherits: "_base_cumcm"
+profile_id: "apmcm"
+competition_name: "亚太地区大学生数学建模竞赛 (APMCM)"
+season: "2026"
+
+overrides:
+  language: "en-US"
+  default_engine: "pdflatex"
+  rules:
+    page_limit: 25
+    cover_page: "apmcm_cover"
+  ai_disclosure:
+    policy: "required_when_used"
+    format: "in_paper_section"

@@ -14,6 +14,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
 from qa.check_paper_readiness import evaluate_readiness  # noqa: E402
+from qa.validate_contracts import _validate_document  # noqa: E402
 
 
 def file_ref(path: Path, root: Path, integrity_mode: str) -> dict[str, str]:
@@ -28,6 +29,7 @@ def main() -> int:
     parser.add_argument("--paper-plan", required=True)
     parser.add_argument("--frozen-results", required=True)
     parser.add_argument("--evidence-registry", required=True)
+    parser.add_argument("--derived-results")
     parser.add_argument("--output", required=True)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--integrity-mode", choices=("dev", "research", "submission"), default="research")
@@ -63,11 +65,63 @@ def main() -> int:
                 raise ValueError("paper plan is not ready for a technical first draft: " + "; ".join(readiness_errors))
             if readiness_warnings:
                 raise ValueError("paper plan readiness has unresolved warnings: " + "; ".join(readiness_warnings))
+        planned_derived_ids = {
+            derived_id
+            for claim in plan.get("claims", [])
+            if isinstance(claim, dict)
+            for derived_id in claim.get("derived_result_ids", [])
+            if isinstance(derived_id, str)
+        }
+        if planned_derived_ids and not args.derived_results:
+            raise ValueError(
+                "paper plan references derived_result_ids; supply --derived-results so the Writer cannot recompute them"
+            )
         results = {
             row.get("result_id"): row
             for row in frozen.get("results", [])
             if isinstance(row, dict) and isinstance(row.get("result_id"), str)
         }
+        derived_rows: list[dict[str, Any]] = []
+        derived_by_id: dict[str, dict[str, Any]] = {}
+        if args.derived_results:
+            derived_path = resolve_path(args.derived_results, root).resolve()
+            derived_doc = load_structured(derived_path)
+            if not isinstance(derived_doc, dict):
+                raise ValueError("derived results must be an object")
+            _, derived_schema_errors, _ = _validate_document(
+                derived_path, Path(__file__).resolve().parents[2] / "schemas" / "derived_results.schema.json"
+            )
+            if derived_schema_errors:
+                raise ValueError("derived results schema is invalid: " + "; ".join(derived_schema_errors))
+            if derived_doc.get("run_id") != plan.get("run_id"):
+                raise ValueError("derived results run_id does not match the paper plan")
+            frozen_ref = derived_doc.get("frozen_results")
+            if not isinstance(frozen_ref, dict) or frozen_ref.get("path") != rel_path(frozen_path, root):
+                raise ValueError("derived results were not computed from the supplied frozen_results file")
+            if frozen_ref.get("sha256") is not None and frozen_ref.get("sha256") != sha256_file(frozen_path):
+                raise ValueError("derived results were not computed from the supplied frozen_results file: sha256 drift")
+            for row in derived_doc.get("derived", []):
+                if not isinstance(row, dict):
+                    raise ValueError("derived results rows must be objects")
+                for input_id in row.get("inputs", []):
+                    if input_id not in results:
+                        raise ValueError(f"derived result {row.get('derived_result_id')} uses unknown result {input_id}")
+                derived_id = row.get("derived_result_id")
+                if not isinstance(derived_id, str) or derived_id in derived_by_id:
+                    raise ValueError(f"derived result ids must be unique and non-empty: {derived_id!r}")
+                derived_by_id[derived_id] = row
+                derived_rows.append({
+                    "derived_result_id": derived_id,
+                    "question_id": row.get("question_id"),
+                    "type": row.get("type"),
+                    "formula": row.get("formula"),
+                    "display_value": row.get("display_value"),
+                    "unit": row.get("unit"),
+                    "inputs": row.get("inputs"),
+                })
+        missing_derived_ids = sorted(planned_derived_ids - set(derived_by_id))
+        if missing_derived_ids:
+            raise ValueError(f"paper plan references missing derived_result_ids: {missing_derived_ids}")
         evidence = {
             row.get("evidence_id"): row
             for row in registry.get("evidence", [])
@@ -100,8 +154,14 @@ def main() -> int:
                 "claim_type": claim["claim_type"],
                 "approved_text": claim["text"],
                 "support_level": claim["support_level"],
+                "inference_strength": claim.get(
+                    "inference_strength",
+                    "descriptive" if claim.get("claim_type") == "observation" else "mechanistic",
+                ),
+                "causal_design": claim.get("causal_design"),
                 "boundary": claim["boundary"],
                 "comparison": claim.get("comparison"),
+                "derived_result_ids": claim.get("derived_result_ids", []),
                 "precondition_claim_ids": claim.get("precondition_claim_ids", []),
                 "evidence": claim_evidence,
                 "results": result_values,
@@ -113,7 +173,9 @@ def main() -> int:
             "precision_policy": plan["precision_policy"],
             "abstract_results": plan["abstract_results"],
             "argument_units": plan["argument_units"],
+            "draft_coverage": plan.get("draft_coverage"),
             "claims": claims,
+            "derived_results": derived_rows,
             "source_snapshots": {
                 "paper_plan": file_ref(plan_path, root, args.integrity_mode),
                 "frozen_results": file_ref(frozen_path, root, args.integrity_mode),
@@ -123,8 +185,9 @@ def main() -> int:
             "package_mode": "preview" if args.preview else "technical_draft",
             "writer_constraints": [
                 "Do not create a research number, comparator, causal mechanism, scenario, or stronger conclusion absent from this package.",
-                "Use only frozen display_value and unit for result numbers.",
+                "Use only frozen display_value and unit for result numbers; cite derived_results by derived_result_id for any secondary metric and never recompute percentages, changes, or ratios by hand.",
                 "Preserve every claim boundary and support_level.",
+                "Preserve every claim inference_strength; do not turn descriptive or associational evidence into a mechanistic or causal statement.",
                 "Use each argument unit's rhetorical_role as its single primary research action.",
                 "For every question, write the formulation, results, validation, and interpretation units before compressing prose.",
                 "A short first draft is not acceptable when it omits an equation/derivation, validation evidence, or result boundary planned for that question.",

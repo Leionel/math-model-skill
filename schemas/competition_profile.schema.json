@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompetitionProfile",
+  "description": "Resolved competition profile defining rules, LaTeX template, AI disclosure and submission constraints",
+  "type": "object",
+  "required": [
+    "competition_family",
+    "competition_name",
+    "language",
+    "base_template",
+    "rules",
+    "ai_disclosure",
+    "submission"
+  ],
+  "properties": {
+    "profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "competition_family": {
+      "type": "string",
+      "enum": ["cumcm", "mcm_icm", "custom"]
+    },
+    "competition_name": {
+      "type": "string"
+    },
+    "season": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "default_engine": {
+      "type": "string",
+      "enum": ["xelatex", "pdflatex", "lualatex"]
+    },
+    "base_template": {
+      "type": "string"
+    },
+    "deadline": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "object",
+      "required": ["page_limit", "anonymous_mode"],
+      "properties": {
+        "page_limit": { "type": "integer", "minimum": 1 },
+        "min_pages": { "type": "integer", "minimum": 1 },
+        "abstract_pages": { "type": "integer" },
+        "cover_page": { "type": "string" },
+        "max_pages_excludes_ai_report": { "type": "boolean" },
+        "anonymous_mode": { "type": "boolean" },
+        "anonymous_rules": {
+          "type": "object",
+          "properties": {
+            "forbid_team_number_in_body": { "type": "boolean" },
+            "forbid_school_name_in_body": { "type": "boolean" },
+            "forbid_student_names_in_body": { "type": "boolean" },
+            "forbid_advisor_names_in_body": { "type": "boolean" },
+            "strip_pdf_metadata": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "ai_disclosure": {
+      "type": "object",
+      "required": ["policy"],
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": ["required_when_used", "optional", "prohibited"]
+        },
+        "format": {
+          "type": "string",
+          "enum": ["support_material_pdf", "in_paper_section", "separate_file"]
+        },
+        "manual_checks": {
+          "type": "object",
+          "properties": {
+            "when_used": { "type": "array", "items": { "type": "string" } },
+            "when_not_used": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "submission": {
+      "type": "object",
+      "required": ["required_files"],
+      "properties": {
+        "required_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "format"],
+            "properties": {
+              "role": { "type": "string" },
+              "pattern": { "type": "string" },
+              "format": { "type": "string" }
+            }
+          }
+        },
+        "support_zip": {
+          "type": "object",
+          "properties": {
+            "policy": { "type": "string" },
+            "max_size_mb": { "type": "number" },
+            "include_clean_code": { "type": "boolean" },
+            "include_processed_data": { "type": "boolean" },
+            "exclude_patterns": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object"
+    }
+  }
+}

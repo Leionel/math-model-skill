@@ -14,7 +14,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import rel_path, resolve_path, sha256_file, write_json  # noqa: E402
+from _common import load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
 
 
 def run_check(label: str, command: list[str]) -> dict[str, Any]:
@@ -32,11 +32,19 @@ def run_check(label: str, command: list[str]) -> dict[str, Any]:
     }
 
 
+def _run_id_from_manifest(raw_path: str, root: Path) -> str:
+    manifest = load_structured(resolve_path(raw_path, root).resolve())
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("run_id"), str):
+        raise ValueError("run_manifest must contain a string run_id")
+    return manifest["run_id"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-contract", required=True)
     parser.add_argument("--run-manifest", required=True)
     parser.add_argument("--frozen-results", required=True)
+    parser.add_argument("--derived-results")
     parser.add_argument("--evidence-registry", required=True)
     parser.add_argument("--paper-plan", required=True)
     parser.add_argument("--abstract", required=True)
@@ -46,11 +54,30 @@ def main() -> int:
     parser.add_argument("--bib")
     parser.add_argument("--check-figures", action="store_true")
     parser.add_argument("--figures-dir")
+    parser.add_argument("--diagram-spec", action="append", default=[], help="Structured concept-diagram spec; repeat for multiple formal diagrams.")
     parser.add_argument("--problem-snapshot")
     parser.add_argument("--data-contract", action="append", default=[])
     parser.add_argument("--implementation-map")
     parser.add_argument("--artifact-dag")
+    parser.add_argument("--sensitivity-experiment")
+    parser.add_argument("--oos-artifact")
+    parser.add_argument("--failure-evidence")
     parser.add_argument("--writer-package")
+    parser.add_argument(
+        "--require-first-draft-coverage",
+        action="store_true",
+        help="Require every planned formulation/result/validation/interpretation anchor in the writer package draft.",
+    )
+    parser.add_argument(
+        "--require-math-writing-coverage",
+        action="store_true",
+        help="Require model/equation/constraint/validation traceability, acyclic argument order, and draft locators.",
+    )
+    parser.add_argument(
+        "--require-derivation-integrity",
+        action="store_true",
+        help="Require equation metadata and derivation-graph integrity checks.",
+    )
     parser.add_argument("--claim-inventory-output")
     parser.add_argument("--style-check", action="store_true")
     parser.add_argument("--output", required=True)
@@ -61,6 +88,12 @@ def main() -> int:
     root = Path(args.project_root).resolve()
     if bool(args.tex) != bool(args.bib):
         print("ERROR: --tex and --bib must be supplied together", file=sys.stderr)
+        return 2
+    if args.require_first_draft_coverage and not args.writer_package:
+        print("ERROR: --require-first-draft-coverage requires --writer-package", file=sys.stderr)
+        return 2
+    if args.require_math_writing_coverage and not args.writer_package:
+        print("ERROR: --require-math-writing-coverage requires --writer-package", file=sys.stderr)
         return 2
 
     contract_args = [
@@ -82,10 +115,22 @@ def main() -> int:
         "--conclusion", args.conclusion,
         "--strict",
     ]
+    if args.derived_results:
+        consistency_args.extend(["--derived-results", args.derived_results])
     if args.figures_dir:
         consistency_args.extend(["--figures-dir", args.figures_dir])
+    math_semantics_args = [
+        "--project-root", str(root),
+        "--model-contract", args.model_contract,
+        "--frozen-results", args.frozen_results,
+        "--abstract", args.abstract,
+        "--paper", args.paper,
+        "--conclusion", args.conclusion,
+        "--strict",
+    ]
     checks = [
         run_check("contracts", [sys.executable, str(SCRIPT_DIR / "validate_contracts.py"), *contract_args]),
+        run_check("math_semantics", [sys.executable, str(SCRIPT_DIR / "check_math_semantics.py"), *math_semantics_args]),
         run_check(
             "contest_safety",
             [
@@ -98,6 +143,18 @@ def main() -> int:
         ),
         run_check("consistency", [sys.executable, str(SCRIPT_DIR / "check_consistency.py"), *consistency_args]),
     ]
+    if args.require_derivation_integrity or args.require_math_writing_coverage:
+        derivation_args = [
+            "--project-root", str(root),
+            "--model-contract", args.model_contract,
+            "--strict",
+        ]
+        if args.require_derivation_integrity or args.require_math_writing_coverage:
+            derivation_args.append("--require-metadata")
+        checks.append(run_check(
+            "derivation_integrity",
+            [sys.executable, str(SCRIPT_DIR / "check_derivation_integrity.py"), *derivation_args],
+        ))
     if args.problem_snapshot:
         checks.append(run_check(
             "problem_coverage",
@@ -121,6 +178,17 @@ def main() -> int:
                 "--strict",
             ],
         ))
+    for index, diagram_spec in enumerate(args.diagram_spec, start=1):
+        checks.append(run_check(
+            f"diagram_spec_{index}",
+            [
+                sys.executable, str(SCRIPT_DIR.parent / "figures" / "check_diagram_spec.py"),
+                "--project-root", str(root),
+                "--spec", diagram_spec,
+                "--strict",
+                "--require-reviewed",
+            ],
+        ))
     if args.implementation_map:
         checks.append(run_check(
             "implementation_map",
@@ -142,16 +210,72 @@ def main() -> int:
                 "--strict",
             ],
         ))
+    if args.sensitivity_experiment:
+        checks.append(run_check(
+            "sensitivity_experiment",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_sensitivity_experiment.py"),
+                "--project-root", str(root),
+                "--experiment", args.sensitivity_experiment,
+                "--run-id", _run_id_from_manifest(args.run_manifest, root),
+                "--strict",
+            ],
+        ))
+    if args.oos_artifact:
+        checks.append(run_check(
+            "oos_artifact",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_oos_artifact.py"),
+                "--project-root", str(root),
+                "--artifact", args.oos_artifact,
+                "--run-id", _run_id_from_manifest(args.run_manifest, root),
+                "--strict",
+            ],
+        ))
+    if args.failure_evidence:
+        checks.append(run_check(
+            "failure_evidence",
+            [
+                sys.executable, str(SCRIPT_DIR / "check_failure_evidence.py"),
+                "--project-root", str(root),
+                "--artifact", args.failure_evidence,
+                "--frozen-results", args.frozen_results,
+                "--run-id", _run_id_from_manifest(args.run_manifest, root),
+                "--strict",
+            ],
+        ))
     if args.writer_package:
+        writer_check_args = [
+            "--project-root", str(root),
+            "--writer-package", args.writer_package,
+            "--draft", args.paper,
+            "--strict",
+        ]
+        if args.require_first_draft_coverage:
+            writer_check_args.append("--require-first-draft-coverage")
         checks.append(run_check(
             "writer_package",
             [
                 sys.executable, str(SCRIPT_DIR / "check_writer_package.py"),
-                "--project-root", str(root),
-                "--writer-package", args.writer_package,
-                "--draft", args.paper,
-                "--strict",
+                *writer_check_args,
             ],
+        ))
+    if args.require_math_writing_coverage:
+        math_writing_args = [
+            "--project-root", str(root),
+            "--model-contract", args.model_contract,
+            "--paper-plan", args.paper_plan,
+            "--frozen-results", args.frozen_results,
+            "--writer-package", args.writer_package,
+            "--draft", args.paper,
+            "--require-coverage",
+            "--strict",
+        ]
+        if args.derived_results:
+            math_writing_args.extend(["--derived-results", args.derived_results])
+        checks.append(run_check(
+            "math_writing",
+            [sys.executable, str(SCRIPT_DIR / "check_math_writing.py"), *math_writing_args],
         ))
     if args.claim_inventory_output:
         checks.append(run_check(
@@ -198,14 +322,24 @@ def main() -> int:
         "paper": args.paper,
         "conclusion": args.conclusion,
     }
+    if args.derived_results:
+        input_paths["derived_results"] = args.derived_results
     if args.problem_snapshot:
         input_paths["problem_snapshot"] = args.problem_snapshot
     for index, data_contract in enumerate(args.data_contract, start=1):
         input_paths[f"data_contract_{index}"] = data_contract
+    for index, diagram_spec in enumerate(args.diagram_spec, start=1):
+        input_paths[f"diagram_spec_{index}"] = diagram_spec
     if args.implementation_map:
         input_paths["implementation_map"] = args.implementation_map
     if args.artifact_dag:
         input_paths["artifact_dag"] = args.artifact_dag
+    if args.sensitivity_experiment:
+        input_paths["sensitivity_experiment"] = args.sensitivity_experiment
+    if args.oos_artifact:
+        input_paths["oos_artifact"] = args.oos_artifact
+    if args.failure_evidence:
+        input_paths["failure_evidence"] = args.failure_evidence
     if args.writer_package:
         input_paths["writer_package"] = args.writer_package
     inputs: list[dict[str, str]] = []

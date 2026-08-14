@@ -1,0 +1,28 @@
+\documentclass[12pt]{mcmthesis}
+\mcmsetup{CTeX = false,
+        tstyle = \bfseries,
+        problem = \ProblemLetter,
+        sheet = true,
+        titleinsheet = true,
+        keywordsinsheet = true,
+        titlepage = false}
+
+\input{metadata.tex}
+
+\begin{document}
+
+\begin{abstract}
+\input{sections/abstract.tex}
+\begin{keywords}
+\PaperKeywords
+\end{keywords}
+\end{abstract}
+
+\maketitle
+
+\input{sections/body.tex}
+
+\AImatter
+\input{sections/ai_report.tex}
+
+\end{document}

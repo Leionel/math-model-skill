@@ -88,6 +88,21 @@ def main() -> int:
     leakage = contract.get("leakage_policy", {}) if isinstance(contract.get("leakage_policy"), dict) else {}
     if leakage.get("status") not in {"pass", "not_applicable"}:
         errors.append(f"leakage_policy.status is not promotable: {leakage.get('status')}")
+    column_by_name = {row.get("name"): row for row in columns if isinstance(row, dict)}
+    target_columns = leakage.get("target_columns", []) if isinstance(leakage.get("target_columns"), list) else []
+    for target in target_columns:
+        if target not in column_by_name:
+            errors.append(f"leakage_policy.target_columns references missing column: {target}")
+        elif column_by_name[target].get("role") != "target":
+            errors.append(f"leakage_policy.target_columns column is not role=target: {target}")
+    forbidden_features = leakage.get("forbidden_features", []) if isinstance(leakage.get("forbidden_features"), list) else []
+    for feature in forbidden_features:
+        if feature not in column_by_name:
+            errors.append(f"leakage_policy.forbidden_features references missing column: {feature}")
+        elif feature in target_columns:
+            errors.append(f"leakage_policy.forbidden_features must name a feature, not target: {feature}")
+    if leakage.get("status") == "pass" and not (leakage.get("split_keys") or leakage.get("time_boundary")):
+        errors.append("leakage_policy.status=pass requires split_keys or time_boundary")
     if contract.get("status") != "validated":
         errors.append("data_contract.status must be validated")
     if not table.get("primary_key"):

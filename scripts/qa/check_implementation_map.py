@@ -57,6 +57,14 @@ def main() -> int:
         for row in model.get("models", [])
         if isinstance(row, dict) and isinstance(row.get("model_id"), str)
     }
+    contract_equations_by_model: dict[str, set[str]] = {}
+    for model_id, model_row in models.items():
+        details = model_row.get("plan_details") if isinstance(model_row.get("plan_details"), dict) else {}
+        contract_equations_by_model[model_id] = {
+            row.get("equation_id")
+            for row in details.get("equation_plan", [])
+            if isinstance(row, dict) and isinstance(row.get("equation_id"), str)
+        }
     questions = {row.get("question_id") for row in model.get("questions", []) if isinstance(row, dict)}
     symbols = [row for row in mapping.get("symbols", []) if isinstance(row, dict)]
     symbol_ids = [row.get("symbol_id") for row in symbols]
@@ -86,11 +94,26 @@ def main() -> int:
             errors.append(f"{owner} does not exist: {ref.get('path')}")
         elif ref.get("sha256") != sha256_file(path):
             errors.append(f"{owner} hash drift: {ref.get('path')}")
+        elif isinstance(ref.get("symbol"), str):
+            try:
+                source_text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                errors.append(f"{owner} cannot be read: {exc}")
+            else:
+                if ref["symbol"] not in source_text:
+                    errors.append(
+                        f"{owner} declares missing code symbol {ref['symbol']!r} in {ref.get('path')}"
+                    )
 
     for equation in equations:
         equation_id = equation.get("equation_id")
         if equation.get("model_id") not in models:
             errors.append(f"equation {equation_id} references unknown model_id {equation.get('model_id')}")
+        elif equation_id not in contract_equations_by_model.get(equation.get("model_id"), set()):
+            errors.append(
+                f"equation {equation_id} is not declared in model_contract.plan_details.equation_plan "
+                f"for model {equation.get('model_id')}"
+            )
         if equation.get("question_id") not in questions:
             errors.append(f"equation {equation_id} references unknown question_id {equation.get('question_id')}")
         missing_symbols = set(equation.get("symbol_ids", [])) - symbol_set
@@ -110,6 +133,16 @@ def main() -> int:
     missing_models = set(models) - mapped_models
     if missing_models:
         errors.append(f"model(s) have no mapped equation: {sorted(missing_models)}")
+    mapped_equations_by_model: dict[str, set[str]] = {}
+    for row in equations:
+        if isinstance(row.get("model_id"), str) and isinstance(row.get("equation_id"), str):
+            mapped_equations_by_model.setdefault(row["model_id"], set()).add(row["equation_id"])
+    for model_id, declared_equations in contract_equations_by_model.items():
+        missing_equations = sorted(declared_equations - mapped_equations_by_model.get(model_id, set()))
+        if missing_equations:
+            errors.append(
+                f"model {model_id} has contract equations with no implementation mapping: {missing_equations}"
+            )
 
     ok = not errors and (not args.strict or not warnings)
     print(json.dumps({

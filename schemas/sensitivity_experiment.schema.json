@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/sensitivity-experiment.schema.json",
+  "title": "Sensitivity Experiment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "experiment_id", "run_id", "question_id", "status", "parameter", "baseline", "grid", "rerun_policy", "metrics", "results_artifact", "runs", "generated_at"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "experiment_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+    "status": {"type": "string", "enum": ["planned", "completed", "failed"]},
+    "parameter": {"type": "string", "minLength": 1},
+    "baseline": {"type": "number"},
+    "grid": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "number"}},
+    "rerun_policy": {"type": "string", "enum": ["full_reoptimization", "refit", "recompute", "other"]},
+    "rerun_policy_detail": {"type": "string", "minLength": 1},
+    "metrics": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/metric"}},
+    "results_artifact": {"$ref": "#/$defs/file_ref"},
+    "runs": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/run"}},
+    "generated_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_id", "unit", "definition"],
+      "properties": {
+        "metric_id": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "definition": {"type": "string", "minLength": 1},
+        "direction": {"type": "string", "enum": ["higher_is_better", "lower_is_better", "descriptive"]},
+        "similarity_definition": {"type": "string", "minLength": 1}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grid_value", "status", "artifact"],
+      "properties": {
+        "grid_value": {"type": "number"},
+        "status": {"type": "string", "enum": ["PASS", "FAIL", "ERROR"]},
+        "artifact": {"$ref": "#/$defs/file_ref"}
+      }
+    }
+  }
+}

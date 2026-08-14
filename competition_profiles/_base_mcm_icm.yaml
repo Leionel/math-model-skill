@@ -1,0 +1,45 @@
+# competition_profiles/_base_mcm_icm.yaml
+# 美国大学生数学建模竞赛 (MCM/ICM) 基础画像与通用规则底座
+
+competition_family: "mcm_icm"
+language: "en-US"
+default_engine: "pdflatex"
+base_template: "mcm-icm-2026"
+
+rules:
+  page_limit: 25
+  min_pages: 15
+  abstract_pages: 1
+  cover_page: "summary_sheet"
+  max_pages_excludes_ai_report: true
+  anonymous_mode: true
+  anonymous_rules:
+    forbid_team_number_in_body: true
+    forbid_school_name_in_body: true
+    forbid_student_names_in_body: true
+    forbid_advisor_names_in_body: true
+    strip_pdf_metadata: true
+
+ai_disclosure:
+  policy: "required_when_used"
+  format: "in_paper_section"  # COMAP: 25页正文主体之后的独立 AI Report 章节，不占 25 页限制
+  manual_checks:
+    when_used:
+      - "ai_inline_citations"
+      - "ai_tool_in_references"
+      - "ai_report_in_paper"
+      - "ai_report_position"
+    when_not_used: []
+
+submission:
+  required_files:
+    - role: "paper"
+      pattern: "{control_number}.pdf"
+      format: "pdf"
+  support_zip:
+    policy: "prohibited"  # COMAP 不允许独立上传支撑材料压缩包
+
+validation:
+  strict_units: true
+  enforce_independent_validator: true
+  max_refl_rounds: 3

@@ -19,7 +19,9 @@
     "nonresearch_numeric_literals": {"type": "array", "items": {"$ref": "#/$defs/nonresearch_numeric_literal"}},
     "terminology": {"type": "array", "items": {"$ref": "#/$defs/term"}},
     "figures": {"type": "array", "items": {"$ref": "#/$defs/figure"}},
+    "figure_references": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/figure_reference"}},
     "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}},
+    "draft_coverage": {"$ref": "#/$defs/draft_coverage"},
     "readiness": {"$ref": "#/$defs/readiness"},
     "canonical_recommendation": {"type": "object", "additionalProperties": false, "required": ["text", "evidence_ids"], "properties": {"text": {"type": "string", "minLength": 1}, "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}},
     "status": {"type": "string", "enum": ["draft", "ready", "superseded"]}
@@ -83,13 +85,16 @@
         "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "derived_result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "section": {"type": "string", "minLength": 1},
         "boundary": {"type": "string", "minLength": 1},
         "support_level": {"type": "string", "enum": ["direct", "qualified", "tentative"]},
         "comparison": {"$ref": "#/$defs/comparison"},
         "contradicting_evidence_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "alternative_explanations": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "precondition_claim_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "precondition_claim_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "inference_strength": {"type": "string", "enum": ["descriptive", "associational", "mechanistic", "causal"]},
+        "causal_design": {"type": "string", "minLength": 1}
       }
     },
     "comparison": {
@@ -124,9 +129,37 @@
         "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "prerequisite_unit_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "model_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "equation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "constraint_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "validation_obligation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "derived_result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "math_locators": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "expected_reader_judgment": {"type": "string", "minLength": 1},
         "boundary": {"type": "string", "minLength": 1},
         "target_words": {"type": "integer", "minimum": 40}
+      }
+    },
+    "draft_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "anchors"],
+      "properties": {
+        "status": {"type": "string", "enum": ["planned", "verified"]},
+        "anchors": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/draft_anchor"}}
+      }
+    },
+    "draft_anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchor_id", "unit_id", "question_id", "patterns", "minimum_words"],
+      "properties": {
+        "anchor_id": {"type": "string", "minLength": 1},
+        "unit_id": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "patterns": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "minimum_words": {"type": "integer", "minimum": 20}
       }
     },
     "depth_budget": {
@@ -180,6 +213,18 @@
         "forbidden_variants": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     },
+    "figure_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_id", "figure_id", "reference_role", "section_id"],
+      "properties": {
+        "reference_id": {"type": "string", "minLength": 1},
+        "figure_id": {"type": "string", "minLength": 1},
+        "reference_role": {"type": "string", "enum": ["methodology_overview", "data_flow", "model_structure", "result_comparison", "sensitivity", "validation", "recommendation"]},
+        "section_id": {"type": "string", "minLength": 1},
+        "text_locator": {"type": "string", "minLength": 1}
+      }
+    },
     "figure": {
       "type": "object",
       "additionalProperties": false,
@@ -187,6 +232,8 @@
       "properties": {
         "figure_id": {"type": "string", "minLength": 1},
         "kind": {"type": "string", "enum": ["data", "concept"]},
+        "semantic_type": {"type": "string", "minLength": 1},
+        "diagram": {"$ref": "#/$defs/diagram_artifact"},
         "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "purpose": {"type": "string", "minLength": 1},
@@ -212,6 +259,24 @@
           }
         },
         "qa_status": {"type": "string", "enum": ["pending", "passed", "failed"]}
+      }
+    },
+    "diagram_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spec_path", "source_format", "source_editability", "text_policy", "rendered_paths", "status", "human_review_required"],
+      "properties": {
+        "spec_path": {"type": "string", "minLength": 1},
+        "source_format": {"type": "string", "enum": ["drawio", "svg", "figma", "pptx"]},
+        "source_path": {"type": ["string", "null"]},
+        "delivery_mode": {"type": "string", "enum": ["vector_preferred", "raster_allowed", "raster_only"]},
+        "source_editability": {"type": "string", "enum": ["editable_source", "vector_only"]},
+        "text_policy": {"type": "string", "enum": ["native_text", "outlined_text", "raster_text"]},
+        "raster_dpi": {"type": ["integer", "null"], "minimum": 72},
+        "rendered_paths": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "style_profile": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["brief", "draft", "rendered", "reviewed"]},
+        "human_review_required": {"type": "boolean", "const": true}
       }
     },
     "table": {
