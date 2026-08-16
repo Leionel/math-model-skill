@@ -16,6 +16,10 @@ from _common import rel_path, resolve_path  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
 
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+
 STAGE_RANK = {"outline": 0, "technical_draft": 1, "content_ready": 2}
 ROLE_GROUPS = {
     "formulation_unit_ids": {"model_choice", "mechanism_derivation", "parameter_evidence"},
@@ -23,6 +27,100 @@ ROLE_GROUPS = {
     "validation_unit_ids": {"validation"},
     "interpretation_unit_ids": {"interpretation", "boundary", "recommendation"},
 }
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    lowered = text.casefold()
+    return any(needle.casefold() in lowered for needle in needles)
+
+
+def _completeness_item(status: str, evidence: list[str], action: str) -> dict[str, Any]:
+    return {"status": status, "evidence": evidence, "action": action}
+
+
+def presentation_completeness(plan: dict[str, Any]) -> dict[str, Any]:
+    """Give a soft, explainable presentation checklist without adding a gate.
+
+    This is intentionally plan-level: it can recommend a missing rhetorical move,
+    but it cannot prove that the rendered prose actually contains that move.  The
+    strict readiness checks remain the source of truth for technical coverage.
+    """
+
+    sections = [row for row in plan.get("sections", []) if isinstance(row, dict)]
+    units = [row for row in plan.get("argument_units", []) if isinstance(row, dict)]
+    coverage = [row for row in (plan.get("readiness") or {}).get("question_coverage", []) if isinstance(row, dict)]
+    question_ids = sorted({row.get("question_id") for row in coverage if isinstance(row.get("question_id"), str)})
+    purposes = " ".join(str(row.get("purpose", "")) for row in sections)
+    roles = {row.get("rhetorical_role") for row in units}
+
+    def all_nonempty(field: str) -> bool:
+        return bool(question_ids) and all(bool(row.get(field)) for row in coverage)
+
+    validation_units = [row for row in units if row.get("rhetorical_role") == "validation"]
+    validation_locators = [
+        str(locator)
+        for row in validation_units
+        for locator in row.get("math_locators", [])
+        if locator
+    ]
+    model_sections = [
+        str(row.get("purpose", ""))
+        for row in sections
+        if _contains_any(str(row.get("purpose", "")), ("评价", "评估", "检验", "模型性能", "evaluation", "validation"))
+    ]
+
+    checks = {
+        "problem_analysis": _completeness_item(
+            "RECOMMENDED" if "problem_tension" in roles or _contains_any(purposes, ("问题", "题意", "背景", "problem", "question")) else "MISSING",
+            ["argument role problem_tension" if "problem_tension" in roles else "section purpose keyword scan"],
+            "在正式模型前补一段题意、决策对象、约束和待回答输出的分析。",
+        ),
+        "assumptions_before_model": _completeness_item(
+            "RECOMMENDED" if "parameter_evidence" in roles or _contains_any(purposes, ("假设", "assumption", "参数来源")) else "MISSING",
+            ["parameter_evidence argument unit" if "parameter_evidence" in roles else "section purpose keyword scan"],
+            "在模型公式前显式列出关键假设、参数来源、单位和失效边界。",
+        ),
+        "symbols": _completeness_item(
+            "RECOMMENDED" if any(row.get("equation_ids") for row in units) or any(row.get("symbol") for row in plan.get("terminology", []) if isinstance(row, dict)) else "MISSING",
+            ["equation_ids or symbol-bearing terminology"],
+            "建立符号表，并让符号、含义、单位和定义域在模型前可定位。",
+        ),
+        "question_formulation": _completeness_item(
+            "RECOMMENDED" if all_nonempty("formulation_unit_ids") else "MISSING",
+            [f"questions={question_ids}"],
+            "为每个子问题先写清数学化目标、变量、约束和输出。",
+        ),
+        "question_solution": _completeness_item(
+            "RECOMMENDED" if all_nonempty("result_unit_ids") else "MISSING",
+            [f"questions={question_ids}"],
+            "为每个子问题登记求解方法及其与模型输出的对应关系。",
+        ),
+        "question_result": _completeness_item(
+            "RECOMMENDED" if all_nonempty("result_unit_ids") else "MISSING",
+            [f"questions={question_ids}"],
+            "为每个子问题给出可追溯的冻结结果、单位、比较口径和解释。",
+        ),
+        "question_interpretation": _completeness_item(
+            "RECOMMENDED" if all_nonempty("interpretation_unit_ids") else "MISSING",
+            [f"questions={question_ids}"],
+            "结果之后补充机理解释、适用边界和对题目决策的含义。",
+        ),
+        "validation_locator": _completeness_item(
+            "RECOMMENDED" if validation_units and len(validation_locators) >= len(validation_units) else "MISSING",
+            [f"validation_units={len(validation_units)}", f"math_locators={len(validation_locators)}"],
+            "把验证方法、验收标准和结果定位器紧跟在对应模型结果之后。",
+        ),
+        "model_evaluation": _completeness_item(
+            "RECOMMENDED" if model_sections else "NOT_APPLICABLE",
+            model_sections or ["没有显式模型评价章节；这不是默认硬性要求"],
+            "若模型比较或验证需要集中讨论，可增加模型评价小节；否则在各问中就地呈现。",
+        ),
+    }
+    return {
+        "status_vocabulary": ["RECOMMENDED", "MISSING", "NOT_APPLICABLE"],
+        "checks": checks,
+        "note": "这是软性呈现完整性审阅，不替代正文渲染后的人工阅读，也不因缺少模型评价章节而失败。",
+    }
 
 
 def evaluate_readiness(
@@ -150,6 +248,7 @@ def evaluate_readiness(
         "questions": sorted(question_ids),
         "planned_words_by_question": unit_words_by_question,
         "used_units": sorted(used_units),
+        "presentation_completeness": presentation_completeness(plan),
     }
     return errors, warnings, details
 

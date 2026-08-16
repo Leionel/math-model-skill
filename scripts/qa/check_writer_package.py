@@ -23,6 +23,51 @@ STRONG_CAUSAL_MARKERS = ("导致", "造成", "使得", "causes", "because")
 STRENGTH_MARKERS = ("最优", "显著", "稳健", "提升", "optimal", "significant", "robust", "improve")
 
 
+INPUT_RE = re.compile(r"\\(?:input|include)\{([^}]+)\}")
+
+
+def _strip_latex_comments(text: str) -> str:
+    """Remove TeX comments while retaining escaped percent signs."""
+    return re.sub(r"(?<!\\)%[^\r\n]*", "", text)
+
+
+def _load_tex_tree(path: Path, seen: set[Path] | None = None) -> str:
+    """Expand local input/include files for first-draft coverage checks."""
+    seen = set() if seen is None else seen
+    path = path.resolve()
+    if path in seen or not path.exists():
+        return ""
+    seen.add(path)
+    text = path.read_text(encoding="utf-8")
+
+    def replace(match: re.Match[str]) -> str:
+        target = match.group(1).strip()
+        child = (path.parent / target)
+        if child.suffix.lower() != ".tex":
+            child = child.with_suffix(".tex")
+        return "\n" + _load_tex_tree(child, seen) + "\n"
+
+    return INPUT_RE.sub(replace, text)
+
+
+def _strength_marker_is_qualified(text: str, marker: str) -> bool:
+    """Allow explicit boundary language such as ``不宣称全局最优``."""
+    if marker != "最优":
+        return False
+    folded = text.casefold()
+    needle = marker.casefold()
+    start = 0
+    while True:
+        position = folded.find(needle, start)
+        if position < 0:
+            return True
+        context = text[max(0, position - 32):position + len(marker) + 8]
+        if "全局最优" in context and any(token in context for token in ("不", "不能", "不是", "无")):
+            start = position + len(marker)
+            continue
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--writer-package", required=True)
@@ -44,6 +89,8 @@ def main() -> int:
     try:
         package = load_structured(package_path)
         draft = draft_path.read_text(encoding="utf-8")
+        coverage_draft = _load_tex_tree(draft_path)
+        numeric_draft = _strip_latex_comments(draft)
         if not isinstance(package, dict) or package.get("schema_version") != "1.0":
             raise ValueError("writer package must have schema_version=1.0")
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -56,19 +103,23 @@ def main() -> int:
         for result in claim.get("results", [])
         if isinstance(result, dict) and result.get("display_value") is not None
     }
-    unregistered = sorted({match.group(0) for match in NUMBER_RE.finditer(draft) if match.group(0) not in allowed_numbers})
+    # The root file contains Harness locator comments such as A-Q2 and R-Q2.
+    # They are metadata, not research prose.  Numeric scope is therefore
+    # checked on the comment-stripped root, while coverage is checked on the
+    # recursively expanded TeX tree so \input sections count as draft text.
+    unregistered = sorted({match.group(0) for match in NUMBER_RE.finditer(numeric_draft) if match.group(0) not in allowed_numbers})
     if unregistered:
         errors.append(f"draft contains research numeric token(s) absent from writer package: {', '.join(unregistered)}")
     claims = [claim for claim in package.get("claims", []) if isinstance(claim, dict)]
     has_non_observation = any(claim.get("claim_type") != "observation" for claim in claims)
-    if not has_non_observation and any(marker.casefold() in draft.casefold() for marker in CAUSAL_MARKERS):
+    if not has_non_observation and any(marker.casefold() in coverage_draft.casefold() for marker in CAUSAL_MARKERS):
         errors.append("draft uses causal/explanatory language without an approved inference or recommendation claim")
     declared_strengths = {
         claim.get("inference_strength")
         for claim in claims
         if isinstance(claim.get("inference_strength"), str)
     }
-    if any(marker.casefold() in draft.casefold() for marker in STRONG_CAUSAL_MARKERS) and "causal" not in declared_strengths:
+    if any(marker.casefold() in coverage_draft.casefold() for marker in STRONG_CAUSAL_MARKERS) and "causal" not in declared_strengths:
         errors.append("draft uses strong causal language without an approved causal inference_strength")
     approved_strength = {
         marker
@@ -78,7 +129,7 @@ def main() -> int:
         if marker.casefold() in str(claim.get("approved_text", "")).casefold()
     }
     for marker in STRENGTH_MARKERS:
-        if marker.casefold() in draft.casefold() and marker not in approved_strength:
+        if marker.casefold() in coverage_draft.casefold() and marker not in approved_strength and not _strength_marker_is_qualified(coverage_draft, marker):
             warnings.append(f"draft uses strength marker {marker!r} without an approved comparative claim")
     if args.require_first_draft_coverage:
         coverage = package.get("draft_coverage")
@@ -89,23 +140,30 @@ def main() -> int:
             if coverage.get("status") not in {"planned", "verified"} or not anchors:
                 errors.append("writer_package.draft_coverage must contain planned or verified anchors")
             else:
-                folded_draft = draft.casefold()
+                folded_draft = coverage_draft.casefold()
                 matches: list[tuple[int, int] | None] = []
                 cursor = 0
                 for anchor in anchors:
                     patterns = [pattern for pattern in anchor.get("patterns", []) if isinstance(pattern, str) and pattern]
-                    candidates = [
-                        (folded_draft.find(pattern.casefold(), cursor), len(pattern))
-                        for pattern in patterns
-                    ]
-                    candidates = [candidate for candidate in candidates if candidate[0] >= 0]
-                    if not candidates:
+                    # Patterns are ordered from the canonical section heading
+                    # to fallbacks. Select the first matching pattern so a
+                    # repeated result value in the abstract cannot steal the
+                    # body span for this argument unit.
+                    candidate = next(
+                        (
+                            (folded_draft.find(pattern.casefold(), cursor), len(pattern))
+                            for pattern in patterns
+                            if folded_draft.find(pattern.casefold(), cursor) >= 0
+                        ),
+                        None,
+                    )
+                    if candidate is None:
                         errors.append(
                             f"draft is missing first-draft anchor {anchor.get('anchor_id')} for unit {anchor.get('unit_id')}"
                         )
                         matches.append(None)
                         continue
-                    position, length = min(candidates, key=lambda item: item[0])
+                    position, length = candidate
                     matches.append((position, length))
                     cursor = position + length
                 for index, match in enumerate(matches):
@@ -113,8 +171,8 @@ def main() -> int:
                         continue
                     anchor = anchors[index]
                     next_positions = [row[0] for row in matches[index + 1:] if row is not None]
-                    end = min(next_positions) if next_positions else len(draft)
-                    content = draft[match[0] + match[1]:end]
+                    end = min(next_positions) if next_positions else len(coverage_draft)
+                    content = coverage_draft[match[0] + match[1]:end]
                     word_count = len(WORD_RE.findall(content)) + len(CJK_CHAR_RE.findall(content))
                     minimum_words = anchor.get("minimum_words", 0)
                     if word_count < minimum_words:

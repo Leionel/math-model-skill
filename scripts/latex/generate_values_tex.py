@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -25,7 +25,14 @@ def format_value(result: dict[str, object], entry: dict[str, object]) -> str:
             value = Decimal(str(result.get("value"))) * scale
             digits = int(entry.get("digits", result.get("precision", 0)))
             quantum = Decimal(1).scaleb(-digits)
-            display = f"{value.quantize(quantum, rounding=ROUND_HALF_UP):.{digits}f}"
+            rounding_mode = {
+                "floor": ROUND_FLOOR,
+                "ceil": ROUND_CEILING,
+                "half_up": ROUND_HALF_UP,
+                "significant_figures": ROUND_HALF_UP,
+                "none": ROUND_HALF_UP,
+            }.get(str(entry.get("rounding")), ROUND_HALF_UP)
+            display = f"{value.quantize(quantum, rounding=rounding_mode):.{digits}f}"
         except (InvalidOperation, TypeError, ValueError):
             raise ValueError(f"cannot format result {result.get('result_id')}")
     elif kind == "percentage" and entry.get("rounding") == "frozen_display_value" and scale != 1:

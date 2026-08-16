@@ -22,6 +22,7 @@ def main() -> int:
     parser.add_argument("--model-contract", required=True)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--require-objective-binding", action="store_true")
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
@@ -58,6 +59,7 @@ def main() -> int:
         if isinstance(row, dict) and isinstance(row.get("model_id"), str)
     }
     contract_equations_by_model: dict[str, set[str]] = {}
+    objective_by_model: dict[str, dict[str, Any]] = {}
     for model_id, model_row in models.items():
         details = model_row.get("plan_details") if isinstance(model_row.get("plan_details"), dict) else {}
         contract_equations_by_model[model_id] = {
@@ -65,6 +67,8 @@ def main() -> int:
             for row in details.get("equation_plan", [])
             if isinstance(row, dict) and isinstance(row.get("equation_id"), str)
         }
+        if isinstance(model_row.get("objective_contract"), dict):
+            objective_by_model[model_id] = model_row["objective_contract"]
     questions = {row.get("question_id") for row in model.get("questions", []) if isinstance(row, dict)}
     symbols = [row for row in mapping.get("symbols", []) if isinstance(row, dict)]
     symbol_ids = [row.get("symbol_id") for row in symbols]
@@ -125,6 +129,30 @@ def main() -> int:
             verify_ref(f"equation {equation_id} tests[{index}]", test)
             if isinstance(test, dict) and test.get("status") != "pass":
                 errors.append(f"equation {equation_id} test {test.get('test_id')} is not PASS")
+        if equation.get("kind") == "objective" and (args.require_objective_binding or equation.get("model_id") in objective_by_model):
+            binding = equation.get("objective_binding")
+            objective = objective_by_model.get(equation.get("model_id"), {})
+            if not isinstance(binding, dict):
+                errors.append(f"objective equation {equation_id} requires objective_binding")
+            else:
+                if binding.get("objective_id") != objective.get("objective_id"):
+                    errors.append(f"objective equation {equation_id} objective_binding does not match model objective_id")
+                test_by_id = {
+                    row.get("test_id"): row
+                    for row in equation.get("tests", [])
+                    if isinstance(row, dict)
+                }
+                independent_ids = set(binding.get("independent_test_ids", []))
+                if not independent_ids or not independent_ids.issubset(test_by_id):
+                    errors.append(f"objective equation {equation_id} objective_binding references unknown tests")
+                if not any(test_by_id.get(test_id, {}).get("purpose") in {"oracle", "regression"} for test_id in independent_ids):
+                    errors.append(f"objective equation {equation_id} requires an oracle/regression test")
+                code_paths = {row.get("path") for row in equation.get("code_refs", []) if isinstance(row, dict)}
+                test_paths = {test_by_id.get(test_id, {}).get("path") for test_id in independent_ids}
+                if code_paths & test_paths:
+                    errors.append(f"objective equation {equation_id} oracle/regression test must be independent of code_refs")
+                if binding.get("status") != "verified":
+                    errors.append(f"objective equation {equation_id} objective_binding.status must be verified")
         if equation.get("status") != "verified":
             errors.append(f"equation {equation_id} status is not verified")
     if mapping.get("status") != "verified":

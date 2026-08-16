@@ -15,9 +15,13 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
-from validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # noqa: E402
-from validation.obligations import file_ref, verify_validation_report  # noqa: E402
+from _common import child_env, load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
+try:  # Support both direct CLI execution and package-level test imports.
+    from validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # type: ignore  # noqa: E402
+    from validation.obligations import file_ref, verify_validation_report  # type: ignore  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - exercised by package imports.
+    from qa.validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # noqa: E402
+    from scripts.validation.obligations import file_ref, verify_validation_report  # noqa: E402
 
 
 GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
@@ -43,13 +47,27 @@ def checkpoint_is_confirmed(row: dict[str, Any]) -> bool:
     return row.get("decision") in {"confirm", "pass"}
 
 
+def strict_math_profile(manifest: dict[str, Any]) -> bool:
+    """Return whether this run opted into the mathematical correctness profile."""
+
+    return manifest.get("math_correctness_profile", "baseline") == "strict"
+
+
+def strict_editorial_profile(manifest: dict[str, Any]) -> bool:
+    """Return whether the run opted into the writing/figure semantic profile."""
+
+    return manifest.get("editorial_semantics_profile", "baseline") == "strict"
+
+
 def rerun_enhanced_deterministic_qa(
     *,
     root: Path,
     manifest_path: Path,
     report: dict[str, Any],
+    require_strict_math: bool = False,
+    require_editorial_semantics: bool = False,
 ) -> tuple[bool, str]:
-    """Recompute enhanced QA from the report's declared inputs without overwriting it."""
+    """Recompute enhanced or strict-math QA from declared inputs without overwriting it."""
     input_rows = report.get("inputs", [])
     input_paths = {
         row.get("role"): row.get("path")
@@ -60,9 +78,34 @@ def rerun_enhanced_deterministic_qa(
         "model_contract", "frozen_results", "evidence_registry", "paper_plan",
         "abstract", "paper", "conclusion", "writer_package",
     }
+    if require_strict_math:
+        required.update({"presentation_contract", "pdf", "pdf_source"})
+        try:
+            model_doc = load_structured(resolve_path(input_paths.get("model_contract", ""), root).resolve())
+        except (OSError, ValueError, TypeError):
+            model_doc = {}
+        predictive_models = [
+            row for row in model_doc.get("models", [])
+            if isinstance(row, dict)
+            and (
+                "machine_learning" in row.get("characteristics", [])
+                or row.get("problem_type") in {"prediction", "classification", "time_series", "statistical_inference"}
+            )
+        ] if isinstance(model_doc, dict) else []
+        if predictive_models:
+            required.add("oos_artifact")
+        if isinstance(model_doc, dict) and model_doc.get("data_sources"):
+            required.add("data_contract_1")
+        try:
+            plan_doc = load_structured(resolve_path(input_paths.get("paper_plan", ""), root).resolve())
+        except (OSError, ValueError, TypeError):
+            plan_doc = {}
+        if isinstance(plan_doc, dict) and (plan_doc.get("figures") or plan_doc.get("tables")):
+            required.add("artifact_dag")
     missing = sorted(role for role in required if role not in input_paths)
     if missing:
-        return False, f"enhanced deterministic QA recheck missing input roles: {missing}"
+        profile = "strict math" if require_strict_math else "enhanced"
+        return False, f"{profile} deterministic QA recheck missing input roles: {missing}"
 
     command = [
         sys.executable,
@@ -81,6 +124,36 @@ def rerun_enhanced_deterministic_qa(
         "--require-math-writing-coverage",
         "--require-derivation-integrity",
     ]
+    if require_strict_math:
+        command.extend([
+            "--require-scope-contract",
+            "--require-formula-replay",
+            "--require-replay-bindings",
+            "--require-figure-lineage",
+            "--require-pdf-math-consistency",
+            "--require-objective-contract",
+            "--require-objective-binding",
+        ])
+        if any(role.startswith("data_contract_") for role in input_paths):
+            command.extend([
+                "--require-observation-structure",
+                "--require-decision-context",
+                "--require-statistical-design",
+            ])
+        if "oos_artifact" in input_paths:
+            command.append("--require-oos-design")
+        if "artifact_dag" in input_paths:
+            command.append("--require-canonical-source")
+    if require_editorial_semantics:
+        command.extend([
+            "--require-answer-contract",
+            "--require-abstract-backcheck",
+            "--require-figure-semantics",
+            "--style-check",
+            "--judge-scan",
+        ])
+    if require_strict_math:
+        command.append("--require-inference-role-consistency")
     optional_args = {
         "derived_results": "--derived-results",
         "problem_snapshot": "--problem-snapshot",
@@ -93,11 +166,30 @@ def rerun_enhanced_deterministic_qa(
     for role, flag in optional_args.items():
         if role in input_paths:
             command.extend([flag, str(resolve_path(input_paths[role], root).resolve())])
+    if "pdf" in input_paths:
+        command.extend(["--pdf", str(resolve_path(input_paths["pdf"], root).resolve())])
+        command.extend(["--pdf-source", str(resolve_path(input_paths["pdf_source"], root).resolve())])
+    if "presentation_contract" in input_paths:
+        command.extend([
+            "--presentation-contract",
+            str(resolve_path(input_paths["presentation_contract"], root).resolve()),
+        ])
+    if "tex" in input_paths and "bib" in input_paths:
+        command.extend([
+            "--tex", str(resolve_path(input_paths["tex"], root).resolve()),
+            "--bib", str(resolve_path(input_paths["bib"], root).resolve()),
+        ])
+        if require_strict_math:
+            command.append("--require-verified-bibliography")
+    if require_strict_math and "sensitivity_experiment" in input_paths:
+        command.extend(["--require-sensitivity-execution", "--require-parameter-binding"])
     for role in sorted(input_paths):
         if role.startswith("data_contract_"):
             command.extend(["--data-contract", str(resolve_path(input_paths[role], root).resolve())])
         if role.startswith("diagram_spec_"):
             command.extend(["--diagram-spec", str(resolve_path(input_paths[role], root).resolve())])
+        if role.startswith("extremum_certificate_"):
+            command.extend(["--extremum-certificate", str(resolve_path(input_paths[role], root).resolve())])
     temp_output: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(prefix="math-harness-qa-", suffix=".json", delete=False) as handle:
@@ -109,6 +201,8 @@ def rerun_enhanced_deterministic_qa(
             text=True,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
+            env=child_env(),
             check=False,
         )
         if result.returncode != 0:
@@ -164,6 +258,8 @@ def main() -> int:
         text=True,
         capture_output=True,
         encoding="utf-8",
+        errors="replace",
+        env=child_env(),
         check=False,
     )
     if safety_check.returncode != 0:
@@ -198,7 +294,12 @@ def main() -> int:
         errors.append("run_manifest.artifacts must be an array")
         artifacts = []
 
-    integrity_mode = manifest.get("integrity_mode", "dev")
+    integrity_mode = manifest.get("integrity_mode", "research")
+    enhanced_profile = manifest.get("enhanced_integrity_profile") is True
+    strict_math = strict_math_profile(manifest)
+    editorial_profile = strict_editorial_profile(manifest)
+    math_profile = enhanced_profile or strict_math
+    quality_profile = math_profile or editorial_profile
     enforce_file_existence = manifest.get("status") == "frozen" or any(
         status == "pass" for status in statuses.values()
     )
@@ -316,6 +417,8 @@ def main() -> int:
             text=True,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
+            env=child_env(),
             check=False,
         )
         if check.returncode == 0:
@@ -352,9 +455,9 @@ def main() -> int:
                 errors.append(
                     f"{owner} report does not contain passing contracts/contest_safety/consistency/citations checks"
                 )
-            if manifest.get("enhanced_integrity_profile") is True and "writer_package" not in labels:
+            if quality_profile and "writer_package" not in labels:
                 errors.append(f"{owner} report must contain a passing writer_package first-draft check")
-            if manifest.get("enhanced_integrity_profile") is True:
+            if quality_profile:
                 if "math_writing" not in labels:
                     errors.append(f"{owner} report must contain a passing math_writing traceability check")
                 if "derivation_integrity" not in labels:
@@ -379,23 +482,37 @@ def main() -> int:
                     math_report = math_checks[-1].get("report")
                     if not isinstance(math_report, dict) or math_report.get("coverage_required") is not True:
                         errors.append(f"{owner} math_writing check did not require formal coverage")
+            if strict_math:
+                required_math_labels = {
+                    "scope_consistency",
+                    "formula_replay",
+                    "presentation_safety",
+                    "pdf_math_consistency",
+                }
+                missing_math_labels = sorted(required_math_labels - labels)
+                if missing_math_labels:
+                    errors.append(f"{owner} strict math report is missing passing checks: {missing_math_labels}")
             inputs = report.get("inputs", [])
             if not isinstance(inputs, list) or not inputs:
                 errors.append(f"{owner} report has no hashed inputs")
             else:
                 input_roles = {ref.get("role") for ref in inputs if isinstance(ref, dict)}
                 required_roles = {"model_contract", "frozen_results", "evidence_registry", "paper_plan", "abstract", "paper", "conclusion"}
-                if manifest.get("enhanced_integrity_profile") is True:
+                if quality_profile:
                     required_roles.add("writer_package")
+                if strict_math:
+                    required_roles.update({"presentation_contract", "pdf", "pdf_source"})
                 if not required_roles.issubset(input_roles):
                     errors.append(f"{owner} report is missing required hashed input roles")
                 for index, ref in enumerate(inputs):
                     verify_file_ref(f"{owner}.inputs[{index}]", ref)
-                if manifest.get("enhanced_integrity_profile") is True:
+                if quality_profile:
                     fresh_ok, fresh_message = rerun_enhanced_deterministic_qa(
                         root=root,
                         manifest_path=manifest_path,
                         report=report,
+                        require_strict_math=strict_math,
+                        require_editorial_semantics=editorial_profile,
                     )
                     if not fresh_ok:
                         errors.append(f"{owner} independent recheck: {fresh_message}")
@@ -431,7 +548,7 @@ def main() -> int:
         required_refs: list[dict[str, Any]] = []
         if stage == "m1" and isinstance(manifest.get("model_contract"), dict):
             required_refs.append(manifest["model_contract"])
-            if integrity_mode in {"research", "submission"}:
+            if integrity_mode in {"research", "submission"} or strict_math:
                 required_refs.extend(artifacts_for_role(manifest, "evidence_registry"))
         if stage == "p2":
             required_refs.extend(artifacts_for_role(manifest, "frozen_results"))
@@ -445,7 +562,7 @@ def main() -> int:
 
     if statuses["m1"] == "pass":
         m1_checkpoint = require_human_checkpoint("m1")
-        if integrity_mode in {"research", "submission"}:
+        if integrity_mode in {"research", "submission"} or strict_math:
             required_manual_checks = {
                 "problem_mechanism_fit",
                 "candidate_comparison_fairness",
@@ -484,6 +601,8 @@ def main() -> int:
                         # profiles add further artifact checks below, but the
                         # formal M1 evidence-linkage gate applies to both modes.
                         modeling_plan_command.extend(["--formal", "--strict"])
+                        if strict_math:
+                            modeling_plan_command.extend(["--require-scope-contract", "--require-critical-sensitivity"])
                         run_json_checker(
                             "M1 research-first modeling plan",
                             modeling_plan_command,
@@ -522,14 +641,21 @@ def main() -> int:
                 errors.append("artifact_dag.run_id does not match run_manifest.run_id")
             if model_contract_path is not None:
                 for index, (_, data_path) in enumerate(data_contracts):
+                    data_check_args = [
+                        str(SCRIPT_DIR / "check_data_contract.py"),
+                        "--project-root", str(root),
+                        "--data-contract", str(data_path),
+                        "--model-contract", str(model_contract_path),
+                    ]
+                    if strict_math:
+                        data_check_args.extend([
+                            "--require-observation-structure",
+                            "--require-decision-context",
+                            "--require-statistical-design",
+                        ])
                     run_json_checker(
                         f"M1 data_contract[{index}] check",
-                        [
-                            str(SCRIPT_DIR / "check_data_contract.py"),
-                            "--project-root", str(root),
-                            "--data-contract", str(data_path),
-                            "--model-contract", str(model_contract_path),
-                        ],
+                        data_check_args,
                     )
                 implementation_rows = artifacts_for_role(manifest, "implementation_map")
                 if implementation_rows:
@@ -542,6 +668,7 @@ def main() -> int:
                                 "--project-root", str(root),
                                 "--implementation-map", str(implementation_path),
                                 "--model-contract", str(model_contract_path),
+                                *( ["--require-objective-binding"] if strict_math else [] ),
                             ],
                         )
             dag_rows = artifacts_for_role(manifest, "artifact_dag")
@@ -601,6 +728,44 @@ def main() -> int:
         if not successful_commands(commands, "freeze"):
             errors.append("P2 pass requires a successful freeze command")
         _, frozen_path = single_artifact("frozen_results")
+        # run_index consumption: if a run ledger is registered, the frozen run
+        # must be a run the ledger actually selected under its declared policy
+        # (anti best-seed reporting). Values only — no hash involvement.
+        index_rows = artifacts_for_role(manifest, "run_index")
+        if len(index_rows) > 1:
+            errors.append("at most one run_index artifact is allowed")
+        elif len(index_rows) == 1:
+            index_path = resolve_path(str(index_rows[0].get("path", "")), root).resolve()
+            if index_path.is_file():
+                try:
+                    run_index = load_structured(index_path)
+                except (OSError, ValueError, TypeError) as exc:
+                    errors.append(f"cannot inspect run_index: {exc}")
+                    run_index = None
+                if isinstance(run_index, dict):
+                    policy = run_index.get("selection_policy")
+                    if not isinstance(policy, str) or not policy.strip():
+                        errors.append("run_index.selection_policy must be a non-empty pre-declared rule")
+                    runs = run_index.get("runs")
+                    if not isinstance(runs, list) or not runs:
+                        errors.append("run_index.runs must be a non-empty array")
+                    else:
+                        selected_runs = [
+                            row for row in runs
+                            if isinstance(row, dict) and row.get("selected") is True
+                            and row.get("run_id") == manifest.get("run_id")
+                        ]
+                        if not selected_runs:
+                            errors.append(
+                                "run_index does not mark the current run as selected; freezing a run "
+                                "that the pre-declared selection policy did not choose is blocked (best-seed guard)"
+                            )
+                        else:
+                            failed_selected = [r for r in selected_runs if r.get("exit_code") != 0]
+                            if failed_selected:
+                                errors.append("run_index marks a failed run (exit_code != 0) as selected")
+            else:
+                errors.append(f"run_index path does not exist: {index_rows[0].get('path')}")
         if frozen_path:
             try:
                 frozen = load_structured(frozen_path)
@@ -760,7 +925,7 @@ def main() -> int:
                 errors.append(f"cannot inspect frozen_results for W1: {exc}")
         _, registry_path = single_artifact("evidence_registry")
         _, plan_path = single_artifact("paper_plan")
-        if integrity_mode in {"research", "submission"} and registry_path and plan_path:
+        if (integrity_mode in {"research", "submission"} or strict_math) and registry_path and plan_path:
             run_json_checker(
                 "W1 technical-first-draft readiness",
                 [
@@ -771,7 +936,7 @@ def main() -> int:
                     "--minimum-stage", "technical_draft",
                 ],
             )
-        if manifest.get("enhanced_integrity_profile") is True:
+        if math_profile:
             presentation_contract = require_structured_artifact(
                 "presentation_contract",
                 schema_name="presentation_contract.schema.json",
@@ -860,7 +1025,7 @@ def main() -> int:
                 errors.append(f"cannot inspect W1 artifacts: {exc}")
     if statuses["w2"] == "pass":
         w2_checkpoint = require_human_checkpoint("w2")
-        if manifest.get("enhanced_integrity_profile") is True:
+        if math_profile:
             required_math_checks = {
                 "math_formula_correctness",
                 "equation_constraint_mapping",
@@ -944,7 +1109,7 @@ def main() -> int:
                             "--integrity-mode", integrity_mode,
                         ],
                     )
-        if manifest.get("enhanced_integrity_profile") is True:
+        if quality_profile:
             writer_rows = artifacts_for_role(manifest, "writer_package")
             if len(writer_rows) != 1:
                 errors.append(f"enhanced W2 requires exactly one writer_package artifact, found {len(writer_rows)}")

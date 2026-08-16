@@ -15,6 +15,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
+from qa.presentation_semantics import (  # noqa: E402
+    evaluate_figure_semantics,
+    evaluate_required_answer_coverage,
+    evaluate_terminology_consistency,
+)
 from qa.validate_contracts import _validate_document  # noqa: E402
 
 
@@ -26,6 +31,32 @@ FIGURE_ROLE_SEMANTIC_TYPES = {
     "sensitivity": {"sensitivity", "sensitivity_curve", "tornado"},
     "validation": {"validation", "residual", "diagnostic", "validation_curve"},
     "recommendation": {"recommendation", "decision_boundary", "comparison"},
+}
+
+COUNT_SCOPE_TOKENS = {
+    "raw_records": ("raw record", "raw records", "raw sample", "原始记录", "原始样本"),
+    "valid_records": ("valid record", "valid records", "valid sample", "有效记录", "有效样本"),
+    "included_records": ("included record", "included records", "included sample", "纳入记录", "纳入样本"),
+    "excluded_records": ("excluded record", "excluded records", "excluded sample", "排除记录", "排除样本"),
+}
+
+PRIMARY_INFERENCE_TOKENS = (
+    "primary inference", "main inference", "primary analysis", "main analysis", "main model",
+    "主要推断", "主要分析", "主要模型", "首要推断",
+)
+SECONDARY_INFERENCE_TOKENS = (
+    "sensitivity", "sensitivity analysis", "robustness", "secondary analysis", "secondary model",
+    "敏感性", "敏感性分析", "稳健性", "次要分析", "次要模型",
+)
+ORDINARY_INFERENCE_TOKENS = (
+    "ordinary least squares", "ordinary ols", "ordinary regression", "ols", "普通最小二乘", "普通ols", "普通回归",
+)
+INFERENCE_METHOD_TOKENS = {
+    "mixed_effects": ("mixed effects", "mixed-effects", "mixed model", "mixedlm", "mixed linear", "混合效应", "混合模型"),
+    "GEE": ("generalized estimating equation", "gee", "广义估计方程"),
+    "cluster_robust_SE": ("cluster-robust", "cluster robust", "clustered standard error", "聚类稳健"),
+    "subject_level_aggregation": ("subject-level aggregation", "entity-level aggregation", "subject-level", "个体层面", "实体层面"),
+    "grouped_bootstrap": ("grouped bootstrap", "cluster bootstrap", "分组bootstrap", "分层自助法"),
 }
 
 
@@ -47,9 +78,112 @@ def read_text(path: Path, label: str, errors: list[str]) -> str | None:
         return None
 
 
+def _sentence_rows(text: str) -> list[str]:
+    return [row.casefold() for row in re.split(r"(?<=[.!?。！？])\s*", text) if row.strip()]
+
+
+def evaluate_metric_semantics(
+    results: list[dict[str, Any]],
+    text_sources: dict[str, str],
+) -> tuple[list[str], dict[str, Any]]:
+    """Reject a count whose population is changed in prose.
+
+    This extends the existing frozen-result/display-value binding.  It is not
+    a general NLP claim parser: only an explicitly declared record-count
+    population is checked, and only when the displayed count occurs in a
+    sentence containing a conflicting population label.
+    """
+
+    errors: list[str] = []
+    details: dict[str, Any] = {"checked": [], "mismatches": []}
+    for result in results:
+        semantics = result.get("metric_semantics") if isinstance(result, dict) else None
+        if not isinstance(semantics, dict) or semantics.get("metric_type") != "record_count":
+            continue
+        result_id = str(result.get("result_id", ""))
+        display = str(result.get("display_value", "")).strip()
+        population = semantics.get("population")
+        expected_tokens = COUNT_SCOPE_TOKENS.get(str(population), ())
+        if not result_id or not display or not expected_tokens:
+            continue
+        details["checked"].append({"result_id": result_id, "population": population})
+        conflicting_populations = {
+            other_population: tokens
+            for other_population, tokens in COUNT_SCOPE_TOKENS.items()
+            if other_population != population
+        }
+        for label, text in text_sources.items():
+            for sentence in _sentence_rows(text):
+                if display.casefold() not in sentence:
+                    continue
+                for other_population, tokens in conflicting_populations.items():
+                    if any(token.casefold() in sentence for token in tokens):
+                        message = (
+                            f"METRIC_SEMANTIC_MISMATCH: {label} assigns result {result_id} "
+                            f"population={other_population} although frozen metric_semantics.population={population}"
+                        )
+                        errors.append(message)
+                        details["mismatches"].append({"result_id": result_id, "label": label, "sentence": sentence})
+                        break
+    return errors, details
+
+
+def evaluate_inference_role_consistency(
+    model_contract: dict[str, Any],
+    text_sources: dict[str, str],
+    *,
+    require: bool = False,
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Keep the declared primary repeated-measure inference method primary in prose."""
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    details: dict[str, Any] = {"checked_models": [], "role_conflicts": []}
+    text = "\n".join(text_sources.get(label, "") for label in ("paper", "conclusion", "abstract"))
+    sentences = _sentence_rows(text)
+    if not sentences:
+        return errors, warnings, details
+    for model in model_contract.get("models", []):
+        if not isinstance(model, dict):
+            continue
+        design = model.get("statistical_design")
+        if not isinstance(design, dict) or design.get("role") != "primary_inference":
+            continue
+        methods = [str(method) for method in design.get("methods", [])]
+        declared_tokens = tuple(
+            token
+            for method in methods
+            for token in INFERENCE_METHOD_TOKENS.get(method, ())
+        )
+        if not declared_tokens:
+            continue
+        details["checked_models"].append({"model_id": model.get("model_id"), "methods": methods})
+        ordinary_primary = any(
+            any(token.casefold() in sentence for token in ORDINARY_INFERENCE_TOKENS)
+            and any(token.casefold() in sentence for token in PRIMARY_INFERENCE_TOKENS)
+            for sentence in sentences
+        )
+        declared_secondary = any(
+            any(token.casefold() in sentence for token in declared_tokens)
+            and any(token.casefold() in sentence for token in SECONDARY_INFERENCE_TOKENS)
+            for sentence in sentences
+        )
+        if not ordinary_primary and not declared_secondary:
+            continue
+        conflict = (
+            f"PRIMARY_INFERENCE_ROLE_DRIFT: model {model.get('model_id')} declares "
+            f"{methods} as primary inference, but the paper assigns ordinary OLS/OLS "
+            "the primary role or assigns the declared method only to sensitivity/secondary analysis"
+        )
+        details["role_conflicts"].append({"model_id": model.get("model_id"), "ordinary_primary": ordinary_primary, "declared_method_secondary": declared_secondary})
+        (errors if require else warnings).append(conflict)
+    return errors, warnings, details
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--paper-plan", required=True)
+    parser.add_argument("--model-contract")
     parser.add_argument("--frozen-results", required=True)
     parser.add_argument("--evidence-registry", required=True)
     parser.add_argument("--derived-results")
@@ -57,6 +191,17 @@ def main() -> int:
     parser.add_argument("--paper")
     parser.add_argument("--conclusion")
     parser.add_argument("--figures-dir")
+    parser.add_argument("--require-figure-lineage", action="store_true")
+    parser.add_argument("--artifact-dag")
+    parser.add_argument("--require-canonical-source", action="store_true")
+    parser.add_argument("--require-answer-contract", action="store_true")
+    parser.add_argument("--require-abstract-backcheck", action="store_true")
+    parser.add_argument("--require-figure-semantics", action="store_true")
+    parser.add_argument(
+        "--require-inference-role-consistency",
+        action="store_true",
+        help="Reject prose that reverses a model contract's declared primary repeated-measure inference method.",
+    )
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
@@ -67,6 +212,39 @@ def main() -> int:
     registry_path = resolve_path(args.evidence_registry, root).resolve()
     errors: list[str] = []
     warnings: list[str] = []
+    model_contract: dict[str, Any] = {}
+    required_answer_details: dict[str, Any] = {}
+    terminology_details: dict[str, Any] = {}
+    figure_semantic_details: dict[str, Any] = {}
+    figure_semantic_issues: list[dict[str, Any]] = []
+    metric_semantic_details: dict[str, Any] = {}
+    inference_role_details: dict[str, Any] = {}
+    if args.model_contract:
+        model_path = resolve_path(args.model_contract, root).resolve()
+        try:
+            loaded_model = load_structured(model_path)
+            if not isinstance(loaded_model, dict):
+                errors.append("model-contract must be an object")
+            else:
+                model_contract = loaded_model
+        except (OSError, ValueError, TypeError) as exc:
+            errors.append(f"model-contract cannot be loaded: {exc}")
+    elif args.require_answer_contract or args.require_abstract_backcheck:
+        errors.append("required answer coverage needs --model-contract")
+    dag_nodes: dict[str, dict[str, Any]] = {}
+    if args.artifact_dag:
+        dag_path = resolve_path(args.artifact_dag, root).resolve()
+        try:
+            dag_doc = load_structured(dag_path)
+        except (OSError, ValueError, TypeError) as exc:
+            dag_doc = None
+            errors.append(f"artifact DAG cannot be loaded: {exc}")
+        if isinstance(dag_doc, dict):
+            for node in dag_doc.get("nodes", []):
+                if isinstance(node, dict) and isinstance(node.get("node_id"), str):
+                    dag_nodes[node["node_id"]] = node
+    elif args.require_canonical_source:
+        errors.append("--require-canonical-source requires --artifact-dag")
     try:
         plan = load_structured(plan_path)
         frozen = load_structured(frozen_path)
@@ -319,6 +497,46 @@ def main() -> int:
                 if unit not in context:
                     errors.append(f"abstract result {result_id} is missing unit {unit!r} near {display}")
 
+    if model_contract:
+        answer_errors, _, required_answer_details = evaluate_required_answer_coverage(
+            model_contract,
+            plan,
+            frozen,
+            abstract_text=text_sources.get("abstract"),
+            require=args.require_answer_contract or args.require_abstract_backcheck,
+        )
+        errors.extend(answer_errors)
+        terminology_errors, terminology_details = evaluate_terminology_consistency(
+            model_contract,
+            plan,
+            text_sources,
+        )
+        errors.extend(terminology_errors)
+    else:
+        terminology_errors, terminology_details = evaluate_terminology_consistency(
+            None,
+            plan,
+            text_sources,
+        )
+        errors.extend(terminology_errors)
+
+    metric_semantic_errors, metric_semantic_details = evaluate_metric_semantics(results, text_sources)
+    errors.extend(metric_semantic_errors)
+    if model_contract:
+        inference_errors, inference_warnings, inference_role_details = evaluate_inference_role_consistency(
+            model_contract,
+            text_sources,
+            require=args.require_inference_role_consistency,
+        )
+        errors.extend(inference_errors)
+        warnings.extend(inference_warnings)
+
+    figure_semantic_errors, figure_semantic_issues, figure_semantic_details = evaluate_figure_semantics(
+        plan,
+        require=args.require_figure_semantics,
+    )
+    errors.extend(figure_semantic_errors)
+
     registered_numbers = {str(result.get("display_value")) for result in result_by_id.values()}
     registered_numbers.update(str(row.get("display_value")) for row in derived_by_id.values())
     number_pattern = re.compile(r"(?<![A-Za-z0-9_])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?![A-Za-z0-9_])")
@@ -360,6 +578,80 @@ def main() -> int:
                     errors.append(message)
                 else:
                     warnings.append(message)
+        if args.require_figure_lineage and figure.get("kind") == "data":
+            lineage = figure.get("data_lineage")
+            if not isinstance(lineage, dict):
+                errors.append(f"data figure {figure_id} requires data_lineage before formal QA")
+                continue
+            if lineage.get("synthetic") is not False:
+                errors.append(f"data figure {figure_id} must explicitly set data_lineage.synthetic=false")
+            if lineage.get("status") != "verified":
+                errors.append(f"data figure {figure_id} data_lineage.status must be verified")
+            output_artifact = lineage.get("output_artifact")
+            if output_artifact not in figure.get("data_artifacts", []):
+                errors.append(f"data figure {figure_id} lineage output_artifact must be listed in data_artifacts")
+            if isinstance(output_artifact, str) and not output_artifact.startswith(("http://", "https://", "s3://", "artifact://")):
+                if not resolve_path(output_artifact, root).resolve().is_file():
+                    errors.append(f"data figure {figure_id} lineage output artifact does not exist: {output_artifact}")
+            for input_artifact in lineage.get("input_artifacts", []):
+                if not isinstance(input_artifact, str) or input_artifact.startswith(("http://", "https://", "s3://", "artifact://")):
+                    continue
+                if not resolve_path(input_artifact, root).resolve().is_file():
+                    errors.append(f"data figure {figure_id} lineage input artifact does not exist: {input_artifact}")
+            command_text = " ".join(str(part) for part in lineage.get("generator_command", [])).casefold()
+            if any(token in command_text for token in ("synthetic", "hardcoded", "fake_data", "demo_data")):
+                errors.append(f"data figure {figure_id} generator command looks synthetic; use a real artifact-producing run")
+
+        if figure.get("kind") == "illustration":
+            illustration = figure.get("illustration")
+            if not isinstance(illustration, dict):
+                errors.append(
+                    f"illustration figure {figure_id} requires an illustration block "
+                    "(generator, prompt_path, raster_dpi>=300, text_policy=raster_text, review_status)"
+                )
+            else:
+                for field in ("generator", "prompt_path"):
+                    if not isinstance(illustration.get(field), str) or not illustration.get(field):
+                        errors.append(f"illustration figure {figure_id} requires a non-empty {field}")
+                dpi = illustration.get("raster_dpi")
+                if not isinstance(dpi, (int, float)) or isinstance(dpi, bool) or dpi < 300:
+                    errors.append(f"illustration figure {figure_id} raster_dpi must be >= 300")
+                if illustration.get("text_policy") != "raster_text":
+                    errors.append(f"illustration figure {figure_id} text_policy must be raster_text")
+                if illustration.get("review_status") != "reviewed":
+                    errors.append(f"illustration figure {figure_id} requires visual review (review_status=reviewed) before formal QA")
+            caption = str(figure.get("caption_claim", ""))
+            if not any(token in caption for token in ("示意", "illustrative", "schematic", "非精确", "不承载")):
+                errors.append(
+                    f"illustration figure {figure_id} caption must declare it is a schematic that carries no numeric conclusions"
+                )
+
+        if figure.get("kind") == "concept" and isinstance(figure.get("illustration"), dict):
+            # AI 位图作为正式框架/流程图成品：仍必须保留可编辑源，并记录后端对比择优。
+            illustration = figure["illustration"]
+            if not isinstance(figure.get("diagram"), dict):
+                errors.append(
+                    f"concept figure {figure_id} rendered by an AI bitmap must keep its editable diagram block (spec + source)"
+                )
+            dpi = illustration.get("raster_dpi")
+            if not isinstance(dpi, (int, float)) or isinstance(dpi, bool) or dpi < 300:
+                errors.append(f"concept figure {figure_id} AI-rendered bitmap raster_dpi must be >= 300")
+            if illustration.get("review_status") != "reviewed":
+                errors.append(f"concept figure {figure_id} AI-rendered bitmap requires visual review (review_status=reviewed)")
+            comparison = illustration.get("backend_comparison")
+            if not isinstance(comparison, dict):
+                errors.append(
+                    f"concept figure {figure_id} AI-rendered bitmap requires backend_comparison "
+                    "(at least the editable backend as an alternative, plus selection_reason)"
+                )
+            else:
+                alternatives = comparison.get("alternatives")
+                if not isinstance(alternatives, list) or len([a for a in alternatives if isinstance(a, str) and a]) < 2:
+                    errors.append(f"concept figure {figure_id} backend_comparison must list at least two backends")
+                elif not any("drawio" in a or "editable" in a or "svg" in a for a in alternatives):
+                    errors.append(f"concept figure {figure_id} backend_comparison must include an editable-source backend")
+                if not isinstance(comparison.get("selection_reason"), str) or not comparison.get("selection_reason").strip():
+                    errors.append(f"concept figure {figure_id} backend_comparison requires a non-empty selection_reason")
 
     for table in plan.get("tables", []):
         if not isinstance(table, dict):
@@ -375,6 +667,106 @@ def main() -> int:
                 else:
                     warnings.append(message)
 
+    canonical_claim_sources: dict[str, set[str]] = {}
+    for collection_name in ("figures", "tables"):
+        for item in plan.get(collection_name, []):
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("figure_id", item.get("table_id", collection_name[:-1]))
+            source_id = item.get("canonical_source_id")
+            if args.require_canonical_source and item.get("data_artifacts") and not isinstance(source_id, str):
+                errors.append(f"{collection_name[:-1]} {item_id} requires canonical_source_id")
+                continue
+            if not isinstance(source_id, str):
+                continue
+            node = dag_nodes.get(source_id)
+            if not isinstance(node, dict):
+                errors.append(f"{collection_name[:-1]} {item_id} canonical_source_id is absent from artifact DAG: {source_id}")
+                continue
+            if node.get("status") != "current":
+                errors.append(f"{collection_name[:-1]} {item_id} canonical source is not current: {source_id}")
+            output_paths = {
+                str(ref.get("path")) for ref in node.get("outputs", [])
+                if isinstance(ref, dict) and isinstance(ref.get("path"), str)
+            }
+            if not output_paths.intersection(set(item.get("data_artifacts", []))):
+                errors.append(f"{collection_name[:-1]} {item_id} canonical source does not produce a listed data artifact")
+            for claim_id in item.get("claim_ids", []):
+                canonical_claim_sources.setdefault(str(claim_id), set()).add(source_id)
+    for claim_id, source_ids in canonical_claim_sources.items():
+        if len(source_ids) > 1:
+            errors.append(f"claim {claim_id} is rendered from multiple canonical sources: {sorted(source_ids)}")
+
+    # Figure binding for LaTeX delivery: every image the paper actually
+    # includes must be registered by a planned figure, and each formal
+    # diagram/illustration's declared renders should be the ones included
+    # (closes the "AI bitmap swapped in for the declared drawio render" hole).
+    if getattr(args, "paper", None) and str(getattr(args, "paper", "")).endswith(".tex"):
+        import re as _re
+
+        tex_path = resolve_path(args.paper, root).resolve()
+        if tex_path.is_file():
+            collected: set[str] = set()
+            visited: set[Path] = set()
+            stack: list[Path] = [tex_path]
+            while stack and len(visited) < 50:
+                current = stack.pop()
+                if current in visited or not current.is_file():
+                    continue
+                visited.add(current)
+                try:
+                    content = current.read_text(encoding="utf-8", errors="replace")
+                except OSError as exc:
+                    warnings.append(f"cannot read tex file for figure binding: {current} ({exc})")
+                    continue
+                for match in _re.finditer(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", content):
+                    collected.add(match.group(1).strip())
+                for match in _re.finditer(r"\\input\{([^}]+)\}", content):
+                    target = match.group(1).strip()
+                    if not target.endswith(".tex"):
+                        target += ".tex"
+                    stack.append((current.parent / target).resolve())
+            registered: set[str] = set()
+            planned_render_roots: dict[str, set[str]] = {}
+            for figure in plan.get("figures", []):
+                if not isinstance(figure, dict):
+                    continue
+                fig_id = str(figure.get("figure_id", "figure"))
+                candidates: set[str] = set()
+                diagram = figure.get("diagram")
+                if isinstance(diagram, dict):
+                    candidates.update(str(p) for p in diagram.get("rendered_paths", []) if isinstance(p, str))
+                for artifact in figure.get("data_artifacts", []):
+                    if isinstance(artifact, str):
+                        candidates.add(artifact)
+                planned_render_roots[fig_id] = candidates
+                registered.update(candidates)
+
+            def _matches_any_registered(image_path: str) -> bool:
+                if image_path in registered:
+                    return True
+                for cand in registered:
+                    if cand and (image_path.endswith(cand) or cand.endswith(image_path)):
+                        return True
+                return False
+
+            for image_path in sorted(collected):
+                if not _matches_any_registered(image_path):
+                    warnings.append(
+                        f"paper includes an image not registered by any planned figure: {image_path} "
+                        "(register it in paper_plan.figures[].diagram.rendered_paths or data_artifacts); "
+                        "this becomes blocking under --strict"
+                    )
+            for fig_id, candidates in planned_render_roots.items():
+                if not candidates:
+                    continue
+                if not any(_matches_any_registered(image) for image in collected):
+                    warnings.append(
+                        f"figure {fig_id} declares rendered artifacts but none appear in the paper's includegraphics set"
+                    )
+        else:
+            warnings.append(f"--paper tex path does not exist, figure binding skipped: {getattr(args, 'paper', None)}")
+
     ok = not errors and (not args.strict or not warnings)
     report = {
         "ok": ok,
@@ -388,6 +780,14 @@ def main() -> int:
         "checked_texts": sorted(text_sources),
         "checked_results": len(result_by_id),
         "checked_evidence": len(evidence_by_id),
+        "required_answer_coverage": required_answer_details,
+        "terminology_semantics": terminology_details,
+        "metric_semantics": metric_semantic_details,
+        "inference_role_review": inference_role_details,
+        "figure_semantic_review": {
+            "issues": figure_semantic_issues,
+            "details": figure_semantic_details,
+        },
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if ok else 1

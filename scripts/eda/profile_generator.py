@@ -152,6 +152,7 @@ def generate_data_contract(
             "time_min": time_min,
             "time_max": time_max,
         },
+        "observation_structure_candidates": eda.get("observation_structure_candidates", []),
         "status": contract_status,
     }
 

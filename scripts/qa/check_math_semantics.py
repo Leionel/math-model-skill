@@ -46,7 +46,50 @@ def _model_text(model: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def evaluate_contract_semantics(contract: dict[str, Any]) -> tuple[list[str], list[str]]:
+def _check_objective_semantics(model: dict[str, Any], *, require: bool, errors: list[str]) -> None:
+    model_id = str(model.get("model_id", ""))
+    objective = model.get("objective_contract")
+    optimization_like = model.get("problem_type") == "optimization" or "objective" in str(model.get("objective", "")).casefold()
+    if not isinstance(objective, dict):
+        if require and optimization_like:
+            errors.append(f"model {model_id} requires objective_contract for formal mathematical QA")
+        return
+    if objective.get("equivalence_status") != "verified":
+        errors.append(f"model {model_id} objective declared_form/implemented_form equivalence is not verified")
+    if not str(objective.get("declared_form", "")).strip() or not str(objective.get("implemented_form", "")).strip():
+        errors.append(f"model {model_id} objective contract must contain declared and implemented forms")
+    if objective.get("uniqueness_claim") == "unique":
+        diagnostics = objective.get("objective_diagnostics")
+        if not isinstance(diagnostics, dict) or diagnostics.get("status") != "verified":
+            errors.append(f"model {model_id} claims a unique optimum without a verified degeneracy diagnostic")
+        elif diagnostics.get("candidate_count", 0) > 1 and diagnostics.get("objective_spread", 0) <= diagnostics.get("tolerance", 0):
+            errors.append(f"model {model_id} claims a unique optimum although multiple tied candidates were diagnosed")
+    diagnostics = objective.get("objective_diagnostics")
+    if isinstance(diagnostics, dict) and diagnostics.get("candidate_count", 0) > 1 and objective.get("uniqueness_claim") == "unique":
+        errors.append(f"model {model_id} uniqueness_claim conflicts with objective_diagnostics.candidate_count")
+    partitions = objective.get("piecewise_partitions", [])
+    if partitions:
+        coverage = objective.get("piecewise_coverage")
+        if not isinstance(coverage, dict):
+            errors.append(f"model {model_id} piecewise objective requires piecewise_coverage")
+        else:
+            partition_ids = {str(row.get("partition_id")) for row in partitions if isinstance(row, dict)}
+            declared_ids = set(coverage.get("partition_ids", []))
+            if partition_ids != declared_ids:
+                errors.append(f"model {model_id} piecewise coverage partition_ids do not match declared partitions")
+            if coverage.get("coverage_status") != "verified" or coverage.get("overlap_status") != "verified":
+                errors.append(f"model {model_id} piecewise domain coverage/overlap is not verified")
+            for row in partitions:
+                if isinstance(row, dict) and (row.get("status") != "verified" or row.get("boundary_status") not in {"verified", "not_applicable"}):
+                    errors.append(f"model {model_id} piecewise partition {row.get('partition_id')} is not boundary-verified")
+    identity = model.get("identity")
+    if isinstance(identity, dict) and identity.get("composition_type") == "ensemble":
+        composition_text = " ".join(str(part) for part in (model.get("algorithm", ""), model.get("rationale", ""), model.get("objective", ""))).casefold()
+        if not any(token in composition_text for token in ("ensemble", "blend", "stack", "vote", "集成", "融合", "投票")):
+            errors.append(f"model {model_id} is labeled ensemble but no ensemble composition is declared in its mechanism")
+
+
+def evaluate_contract_semantics(contract: dict[str, Any], *, require_objective_contract: bool = False) -> tuple[list[str], list[str]]:
     """Contract-level semantic obligations; safe to run before any code exists."""
 
     errors: list[str] = []
@@ -112,6 +155,7 @@ def evaluate_contract_semantics(contract: dict[str, Any]) -> tuple[list[str], li
             continue
         model_id = str(model.get("model_id", ""))
         text = _model_text(model)
+        _check_objective_semantics(model, require=require_objective_contract, errors=errors)
         identity = model.get("identity")
         if RISK_FAMILY_RE.search(text) and not isinstance(identity, dict):
             errors.append(
@@ -298,6 +342,7 @@ def main() -> int:
     parser.add_argument("--conclusion")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--require-objective-contract", action="store_true")
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
@@ -308,7 +353,10 @@ def main() -> int:
         contract = load_structured(contract_path)
         if not isinstance(contract, dict):
             raise ValueError("model contract must be an object")
-        contract_errors, contract_warnings = evaluate_contract_semantics(contract)
+        contract_errors, contract_warnings = evaluate_contract_semantics(
+            contract,
+            require_objective_contract=args.require_objective_contract,
+        )
         errors.extend(contract_errors)
         warnings.extend(contract_warnings)
 

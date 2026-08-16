@@ -4,8 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+
+def child_env() -> dict[str, str]:
+    """Environment for child Python checkers.
+
+    Windows children default to a legacy console encoding for piped stdout,
+    which turns non-ASCII report text into UnicodeEncodeError inside the child.
+    Forcing UTF-8 on both ends keeps parent/child JSON round-trips stable.
+    """
+
+    env = dict(os.environ)
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
+    return env
 
 
 def sha256_file(path: Path) -> str:

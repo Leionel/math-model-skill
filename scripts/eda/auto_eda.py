@@ -259,6 +259,49 @@ def audit_leakage(
     }
 
 
+def infer_entity_key_candidates(
+    df: pd.DataFrame,
+    explicit_keys: list[str] | None = None,
+    excluded_columns: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Suggest statistical-unit candidates without selecting one automatically."""
+
+    explicit = [key for key in (explicit_keys or []) if key in df.columns]
+    excluded = set(excluded_columns or [])
+    candidates: list[dict[str, Any]] = []
+    row_count = len(df)
+    name_hints = ("subject", "patient", "person", "entity", "athlete", "team", "group", "school", "country", "region", "id", "code", "编号")
+    for column in df.columns:
+        name = str(column)
+        if name in excluded or name in {"target", "label", "time", "date", "timestamp"}:
+            continue
+        series = df[column]
+        nonmissing = series.dropna()
+        unique_count = int(nonmissing.nunique())
+        if row_count == 0 or unique_count < 1 or unique_count >= row_count:
+            continue
+        counts = nonmissing.value_counts()
+        max_rows = int(counts.max()) if not counts.empty else 1
+        if max_rows < 2:
+            continue
+        normalized = _normalized_name(name)
+        hinted = any(token in normalized.split("_") or token in normalized for token in name_hints)
+        repeated_measure = max_rows > 1
+        repeat_ratio = min(1.0, max(0.0, (row_count - unique_count) / max(1, row_count - 1)))
+        score = 0.55 * repeat_ratio + (0.35 if hinted else 0.0) + (0.1 if name in explicit else 0.0)
+        rationale = [f"{unique_count} observed entities across {row_count} rows", f"maximum rows per entity={max_rows}"]
+        if hinted:
+            rationale.append("column name resembles an entity/group key")
+        if name in explicit:
+            rationale.append("explicitly supplied as a split key")
+        candidates.append({
+            "key_columns": [name], "repeated_measure": repeated_measure, "entity_count": unique_count,
+            "max_rows_per_entity": max_rows, "score": round(min(1.0, score), 4), "rationale": rationale, "status": "candidate",
+        })
+    candidates.sort(key=lambda row: (-float(row["score"]), row["key_columns"]))
+    return candidates
+
+
 def analyze_dataframe(
     df: pd.DataFrame,
     source_name: str = "dataset",
@@ -281,10 +324,11 @@ def analyze_dataframe(
     high_correlations = []
     if numeric_df.shape[1] >= 2 and len(numeric_df) > 5:
         corr_matrix = numeric_df.corr().abs()
-        np.fill_diagonal(corr_matrix.values, 0)
+        corr_values = np.array(corr_matrix, copy=True)
+        np.fill_diagonal(corr_values, 0)
         for i in range(len(corr_matrix.columns)):
             for j in range(i + 1, len(corr_matrix.columns)):
-                val = corr_matrix.iloc[i, j]
+                val = corr_values[i, j]
                 if not math.isnan(val) and val > 0.85:
                     c1, c2 = corr_matrix.columns[i], corr_matrix.columns[j]
                     high_correlations.append({
@@ -327,6 +371,11 @@ def analyze_dataframe(
         recommendations.append("Small sample size (N < 100): Prioritize analytical, Bayesian, or exact mathematical optimization over deep learning.")
 
     leakage_audit = audit_leakage(df, target_columns, split_keys, time_boundary)
+    observation_structure_candidates = infer_entity_key_candidates(
+        df,
+        explicit_keys=split_keys,
+        excluded_columns=target_columns,
+    )
     if leakage_audit["status"] == "not_run":
         recommendations.append("Leakage audit is not promotable yet: declare a split key/time boundary and inspect feature construction before modeling.")
     elif leakage_audit["status"] == "fail":
@@ -343,6 +392,7 @@ def analyze_dataframe(
         "high_correlations": high_correlations,
         "time_series_info": time_series_info,
         "leakage_audit": leakage_audit,
+        "observation_structure_candidates": observation_structure_candidates,
         "recommendations": recommendations,
     }
 
@@ -397,6 +447,16 @@ def generate_markdown_report(eda_result: dict[str, Any]) -> str:
         ])
         for rec in eda_result["recommendations"]:
             lines.append(f"- {rec}")
+
+    candidates = eda_result.get("observation_structure_candidates", [])
+    if candidates:
+        lines.extend(["", "## Observation-Unit Candidates", "", "These are candidates only; confirm the statistical unit before modeling.", ""])
+        lines.append("| Candidate key | Entities | Max rows/entity | Score | Rationale |")
+        lines.append("|---|---:|---:|---:|---|")
+        for candidate in candidates[:10]:
+            lines.append(
+                f"| `{','.join(candidate['key_columns'])}` | {candidate['entity_count']} | {candidate['max_rows_per_entity']} | {candidate['score']:.3f} | {'; '.join(candidate['rationale'])} |"
+            )
 
     return "\n".join(lines) + "\n"
 

@@ -174,6 +174,12 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--model-contract", required=True)
     parser.add_argument("--command", required=True)
+    parser.add_argument(
+        "--command-receipt",
+        help="Process-captured receipt from run_and_record.py proving --command actually executed. "
+        "Verifies exit_code==0 and argv match without any hash comparison; dev mode may omit it "
+        "(explicit downgrade), research mode expects it.",
+    )
     parser.add_argument("--seed", type=int)
     parser.add_argument("--input", action="append", default=[], help="input artifact; repeatable")
     parser.add_argument("--code", action="append", required=True, help="code artifact; repeatable")
@@ -209,6 +215,34 @@ def main() -> int:
                     raise ValueError(f"artifact does not exist: {path}")
                 output_refs.append({"path": rel_path(path, root), "sha256": sha256_file(path)})
             return output_refs
+
+        command_receipt_block = None
+        if args.command_receipt:
+            receipt_path = resolve_path(args.command_receipt, root).resolve()
+            if not receipt_path.is_file():
+                raise ValueError(f"command receipt does not exist: {receipt_path}")
+            receipt = load_structured(receipt_path)
+            if not isinstance(receipt, dict):
+                raise ValueError("command receipt must be an object")
+            if receipt.get("exit_code") != 0:
+                raise ValueError(
+                    f"command receipt shows a failed run (exit_code={receipt.get('exit_code')}); "
+                    "only successful runs may be frozen"
+                )
+            receipt_argv = [str(part) for part in receipt.get("argv", [])]
+            declared = args.command.split()
+            argv_matched = receipt_argv == declared
+            if not argv_matched:
+                raise ValueError(
+                    "command receipt argv does not match --command:\n"
+                    f"  receipt: {receipt_argv}\n  declared: {declared}"
+                )
+            command_receipt_block = {
+                "path": rel_path(receipt_path, root),
+                "command_id": str(receipt.get("command_id", "")),
+                "exit_code": int(receipt.get("exit_code", -1)),
+                "argv_matched": argv_matched,
+            }
 
         validation_snapshot, validation_obligations, overall_verdict = inspect_validation_reports(
             args.validation, root, model_contract, model_contract_path
@@ -249,6 +283,8 @@ def main() -> int:
             "results_sha256": sha256_json(results),
             "results": results,
         }
+        if command_receipt_block is not None:
+            frozen["command_receipt"] = command_receipt_block
         write_json(output, frozen)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

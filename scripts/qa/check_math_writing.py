@@ -53,6 +53,7 @@ ROLE_RANK = {
 MATH_FIELDS = (
     "model_ids",
     "equation_ids",
+    "replay_case_ids",
     "constraint_ids",
     "validation_obligation_ids",
     "result_ids",
@@ -133,6 +134,7 @@ def evaluate_math_writing(
     derived: dict[str, Any] | None = None,
     writer_package: dict[str, Any] | None = None,
     require_coverage: bool = False,
+    require_replay_bindings: bool = False,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -157,6 +159,14 @@ def evaluate_math_writing(
             for row in details.get("equation_plan", [])
             if isinstance(row, dict) and isinstance(row.get("equation_id"), str)
         }
+        replay_case_ids = {
+            str(case.get("case_id"))
+            for row in details.get("equation_plan", [])
+            if isinstance(row, dict)
+            and isinstance(row.get("verification"), dict)
+            for case in row["verification"].get("numeric_replay", [])
+            if isinstance(case, dict) and isinstance(case.get("case_id"), str)
+        }
         constraints = {
             str(row.get("constraint_id"))
             for row in model.get("constraints", [])
@@ -169,6 +179,7 @@ def evaluate_math_writing(
         }
         model_items[model_id] = {
             "equation_ids": equations,
+            "replay_case_ids": replay_case_ids,
             "constraint_ids": constraints,
             "validation_obligation_ids": obligations,
         }
@@ -289,6 +300,18 @@ def evaluate_math_writing(
             unit.get("equation_ids") or unit.get("constraint_ids")
         ):
             errors.append(f"mechanism_derivation unit {unit_id} must declare equation_ids or constraint_ids")
+        if require_replay_bindings and role == "mechanism_derivation":
+            required_replay_ids = {
+                replay_id
+                for model_id in selected_model_ids
+                for replay_id in model_items.get(model_id, {}).get("replay_case_ids", set())
+            }
+            declared_replay_ids = set(unit.get("replay_case_ids", []))
+            missing_replay_ids = sorted(required_replay_ids - declared_replay_ids)
+            if missing_replay_ids:
+                errors.append(
+                    f"mechanism_derivation unit {unit_id} must bind numeric replay case(s): {missing_replay_ids}"
+                )
         if role in RESULT_ROLES and not (unit.get("result_ids") or unit.get("derived_result_ids")):
             errors.append(f"result unit {unit_id} must declare result_ids or derived_result_ids")
         if role in VALIDATION_ROLES and not unit.get("validation_obligation_ids"):
@@ -298,6 +321,8 @@ def evaluate_math_writing(
 
         for equation_id in unit.get("equation_ids", []):
             _check_reference(errors, unit_id, "equation_ids", equation_id, selected_models, model_items)
+        for replay_case_id in unit.get("replay_case_ids", []):
+            _check_reference(errors, unit_id, "replay_case_ids", replay_case_id, selected_models, model_items)
         for constraint_id in unit.get("constraint_ids", []):
             _check_reference(errors, unit_id, "constraint_ids", constraint_id, selected_models, model_items)
         for obligation_id in unit.get("validation_obligation_ids", []):
@@ -355,6 +380,7 @@ def evaluate_math_writing(
                     locator_positions[unit_id] = position
             for reference in (
                 list(unit.get("equation_ids", []))
+                + list(unit.get("replay_case_ids", []))
                 + list(unit.get("constraint_ids", []))
                 + list(unit.get("validation_obligation_ids", []))
             ):
@@ -415,6 +441,7 @@ def main() -> int:
     parser.add_argument("--derived-results")
     parser.add_argument("--writer-package")
     parser.add_argument("--require-coverage", action="store_true")
+    parser.add_argument("--require-replay-bindings", action="store_true")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
@@ -471,6 +498,7 @@ def main() -> int:
             derived=derived,
             writer_package=writer_package,
             require_coverage=args.require_coverage,
+            require_replay_bindings=args.require_replay_bindings,
         )
         errors.extend(math_errors)
         warnings.extend(math_warnings)

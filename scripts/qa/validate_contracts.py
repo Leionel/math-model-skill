@@ -175,7 +175,7 @@ def _cross_references(
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
-    require_hashes = manifest.get("integrity_mode", "dev") == "submission"
+    require_hashes = manifest.get("integrity_mode", "research") == "submission"
 
     def unique(label: str, values: list[Any]) -> set[Any]:
         if len(values) != len(set(values)):

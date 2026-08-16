@@ -16,6 +16,8 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 from _common import rel_path, resolve_path  # noqa: E402
 from qa.check_derivation_integrity import evaluate_derivation_integrity  # noqa: E402
 from qa.check_math_semantics import evaluate_contract_semantics  # noqa: E402
+from qa.check_scope_consistency import evaluate_scope_consistency  # noqa: E402
+from qa.presentation_semantics import evaluate_required_answer_declarations  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
 
 
@@ -48,6 +50,9 @@ def evaluate_modeling_plan(
     evidence_registry: dict[str, Any],
     *,
     require_reasonableness: bool = False,
+    require_scope_contract: bool = False,
+    require_critical_sensitivity: bool = False,
+    require_answer_contract: bool = False,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     """Return errors, warnings, and coverage details for the research-to-plan chain."""
 
@@ -58,6 +63,11 @@ def evaluate_modeling_plan(
         for row in model_contract.get("questions", [])
         if isinstance(row, dict) and isinstance(row.get("question_id"), str)
     }
+    answer_errors, answer_details = evaluate_required_answer_declarations(
+        model_contract,
+        require=require_answer_contract,
+    )
+    errors.extend(answer_errors)
     research = model_contract.get("research_basis")
     if not isinstance(research, dict):
         return ["model_contract.research_basis is required before M1 can pass"], [], {}
@@ -184,6 +194,21 @@ def evaluate_modeling_plan(
                 errors.append(
                     f"model {model.get('model_id')} inputs lack typed parameter provenance: {uncovered_inputs}"
                 )
+            for parameter in details.get("parameter_plan", []):
+                if not isinstance(parameter, dict):
+                    continue
+                provenance = parameter.get("provenance") if isinstance(parameter.get("provenance"), dict) else {}
+                impact_class = parameter.get("impact_class")
+                assumed_high = provenance.get("type") == "ASSUMED" and impact_class in {"high", "critical"}
+                if require_critical_sensitivity and (impact_class in {"high", "critical"} or assumed_high):
+                    if not isinstance(parameter.get("parameter_id"), str) or not parameter.get("parameter_id"):
+                        errors.append(
+                            f"model {model.get('model_id')} high-impact parameter {parameter.get('parameter')} requires parameter_id"
+                        )
+                    if not parameter.get("sensitivity_experiment_ids"):
+                        errors.append(
+                            f"model {model.get('model_id')} high-impact parameter {parameter.get('parameter')} requires sensitivity_experiment_ids"
+                        )
         for obligation in model.get("validation_obligations", []):
             if not isinstance(obligation, dict):
                 continue
@@ -312,6 +337,13 @@ def evaluate_modeling_plan(
     else:
         derivation_details = {"status": "NOT_APPLICABLE", "reason": "no enhanced equation contract requested"}
 
+    scope_errors, scope_warnings, scope_details = evaluate_scope_consistency(
+        model_contract,
+        require_contract=require_scope_contract,
+    )
+    errors.extend(scope_errors)
+    warnings.extend(scope_warnings)
+
     coverage = {
         "reasonableness_check": (
             "L1_completeness_evidence_linkage" if require_reasonableness else "L0_standard_contract_check"
@@ -323,6 +355,8 @@ def evaluate_modeling_plan(
             [row for row in evidence_by_id.values() if row.get("verification_status") == "verified"]
         ),
         "derivation_integrity": derivation_details,
+        "scope_contract": scope_details,
+        "required_answers": answer_details,
     }
     return errors, warnings, coverage
 
@@ -337,6 +371,21 @@ def main() -> int:
         "--formal",
         action="store_true",
         help="Enable formal M1 completeness/evidence-linkage checks; this is still not a semantic proof of model validity.",
+    )
+    parser.add_argument(
+        "--require-scope-contract",
+        action="store_true",
+        help="Require a ready question-scoped parameter/event contract in addition to the standard M1 checks.",
+    )
+    parser.add_argument(
+        "--require-critical-sensitivity",
+        action="store_true",
+        help="Require high/critical or assumed-high parameters to bind a sensitivity experiment.",
+    )
+    parser.add_argument(
+        "--require-answer-contract",
+        action="store_true",
+        help="Require each modeled question to declare a structured required_answer before M1.",
     )
     args = parser.parse_args()
 
@@ -360,7 +409,12 @@ def main() -> int:
         if contract.get("run_id") != registry.get("run_id"):
             errors.append("model_contract and evidence_registry must share one run_id")
         plan_errors, plan_warnings, coverage = evaluate_modeling_plan(
-            contract, registry, require_reasonableness=args.formal
+            contract,
+            registry,
+            require_reasonableness=args.formal,
+            require_scope_contract=args.require_scope_contract,
+            require_critical_sensitivity=args.require_critical_sensitivity,
+            require_answer_contract=args.require_answer_contract,
         )
         errors.extend(plan_errors)
         warnings.extend(plan_warnings)

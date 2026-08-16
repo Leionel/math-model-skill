@@ -43,6 +43,8 @@ def main() -> int:
     parser.add_argument("--figure", required=True)
     parser.add_argument("--profile", required=True)
     parser.add_argument("--target-width-inch", type=float)
+    parser.add_argument("--paper-plan", help="Optional paper_plan containing the figure's final_size_qa contract.")
+    parser.add_argument("--require-final-size", action="store_true", help="Require a reviewed final-size contract for this formal figure.")
     parser.add_argument("--output", required=True)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--force", action="store_true")
@@ -54,6 +56,7 @@ def main() -> int:
     output_path = resolve_path(args.output, root).resolve()
     errors: list[str] = []
     warnings: list[str] = []
+    final_size_review: dict[str, object] = {"checked": False, "manual_font_check_required": False}
     profile, schema_errors, _ = _validate_document(
         profile_path, Path(__file__).resolve().parents[2] / "schemas" / "visual_profile.schema.json"
     )
@@ -62,6 +65,25 @@ def main() -> int:
         profile = {}
     if not figure_path.is_file():
         errors.append(f"figure does not exist: {args.figure}")
+    figure_contract = None
+    if args.paper_plan:
+        plan_path = resolve_path(args.paper_plan, root).resolve()
+        plan, plan_errors, _ = _validate_document(
+            plan_path, Path(__file__).resolve().parents[2] / "schemas" / "paper_plan.schema.json"
+        )
+        errors.extend(f"paper_plan schema: {message}" for message in plan_errors)
+        if isinstance(plan, dict):
+            figure_contract = next(
+                (row for row in plan.get("figures", []) if isinstance(row, dict) and row.get("figure_id") == args.figure_id),
+                None,
+            )
+            if figure_contract is None:
+                errors.append(f"paper_plan has no figure_id={args.figure_id!r}")
+    final_size = figure_contract.get("final_size_qa") if isinstance(figure_contract, dict) else None
+    if args.target_width_inch is None and isinstance(final_size, dict):
+        contract_width = final_size.get("target_width_inch")
+        if isinstance(contract_width, (int, float)) and contract_width > 0:
+            args.target_width_inch = float(contract_width)
     suffix = figure_path.suffix.lower()
     width_px = height_px = None
     effective_dpi = None
@@ -107,6 +129,33 @@ def main() -> int:
     if profile.get("figures", {}).get("colorblind_review_required"):
         warnings.append("color-vision accessibility requires visual review")
 
+    if args.require_final_size:
+        if not isinstance(final_size, dict):
+            errors.append(f"figure {args.figure_id} requires paper_plan.final_size_qa")
+        elif final_size.get("status") != "reviewed":
+            errors.append(f"figure {args.figure_id} final_size_qa.status must be reviewed")
+    if isinstance(final_size, dict):
+        final_size_review = {
+            "checked": True,
+            "target_width_inch": final_size.get("target_width_inch"),
+            "target_height_inch": final_size.get("target_height_inch"),
+            "expected_scale": final_size.get("expected_scale"),
+            "min_effective_font_pt": final_size.get("min_effective_font_pt"),
+            "raster_dpi_declared": final_size.get("raster_dpi"),
+            "manual_font_check_required": True,
+            "status": final_size.get("status"),
+        }
+        contract_width = final_size.get("target_width_inch")
+        if suffix == ".png" and isinstance(width_px, int) and isinstance(contract_width, (int, float)) and contract_width > 0:
+            final_size_review["effective_dpi_from_contract"] = width_px / float(contract_width)
+        if final_size.get("raster_dpi", 0) < 300:
+            errors.append(f"figure {args.figure_id} final_size_qa.raster_dpi must be at least 300")
+        if final_size.get("readability") == "fail" or final_size.get("cropping") == "fail":
+            errors.append(f"figure {args.figure_id} final_size_qa reports failed readability or cropping")
+        warnings.append(
+            f"figure {args.figure_id} effective font size ({final_size.get('min_effective_font_pt')} pt minimum) requires rendered final-size review; raster metadata cannot prove it"
+        )
+
     report = {
         "schema_version": "1.0",
         "figure_id": args.figure_id,
@@ -123,6 +172,7 @@ def main() -> int:
             "warnings": warnings,
             "errors": errors,
         },
+        "final_size_review": final_size_review,
         "manual_review_required": True,
         "ok": not errors,
     }

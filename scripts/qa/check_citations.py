@@ -13,7 +13,7 @@ from typing import Iterable
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import rel_path, resolve_path  # noqa: E402
+from _common import load_structured, rel_path, resolve_path  # noqa: E402
 
 
 def unique_duplicates(items: Iterable[str]) -> dict[str, int]:
@@ -82,12 +82,16 @@ def main() -> int:
     parser.add_argument("--bib", required=True)
     parser.add_argument("--check-figures", action="store_true")
     parser.add_argument("--figures-dir")
+    parser.add_argument("--evidence-registry")
+    parser.add_argument("--require-verified-bibliography", action="store_true")
     parser.add_argument("--project-root", default=".")
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
     errors: list[str] = []
     warnings: list[str] = []
+    if args.require_verified_bibliography and not args.evidence_registry:
+        errors.append("--require-verified-bibliography requires --evidence-registry")
     if args.tex:
         main_tex = resolve_path(args.tex, root).resolve()
         try:
@@ -145,6 +149,50 @@ def main() -> int:
     if unused_bib:
         warnings.append("unused BibTeX entries: " + ", ".join(unused_bib))
 
+    verified_citation_count = 0
+    if args.evidence_registry:
+        registry_path = resolve_path(args.evidence_registry, root).resolve()
+        try:
+            registry = load_structured(registry_path)
+        except (OSError, ValueError, TypeError) as exc:
+            registry = None
+            errors.append(f"cannot read evidence registry: {exc}")
+        evidence_rows = registry.get("evidence", []) if isinstance(registry, dict) else []
+        cited_registry: dict[str, list[dict]] = {}
+        for row in evidence_rows:
+            if not isinstance(row, dict) or row.get("type") != "citation":
+                continue
+            citation = row.get("citation") if isinstance(row.get("citation"), dict) else {}
+            bib_key = citation.get("bib_key")
+            if isinstance(bib_key, str):
+                cited_registry.setdefault(bib_key, []).append(row)
+        if args.require_verified_bibliography:
+            placeholders = re.compile(r"赵某某|张三|李四|placeholder|todo|unknown author|test citation", re.IGNORECASE)
+            for key in sorted(cite_set):
+                rows = cited_registry.get(key, [])
+                verified = [
+                    row for row in rows
+                    if row.get("verification_status") == "verified"
+                    and isinstance(row.get("citation"), dict)
+                    and row["citation"].get("metadata_verified") is True
+                    and row["citation"].get("content_verified") is True
+                    and row["citation"].get("publication_status_checked") is True
+                    and isinstance(row["citation"].get("locator"), str)
+                    and bool(row["citation"].get("locator").strip())
+                ]
+                if not verified:
+                    errors.append(f"citation {key} has no verified, locator-backed evidence_registry record")
+                else:
+                    verified_citation_count += 1
+            for key in sorted(cite_set & bib_set):
+                entry_match = re.search(
+                    rf"@\w+\s*[{{(]\s*{re.escape(key)}\s*,(.*?)(?=\n@\w+\s*[{{(]|\Z)",
+                    bib,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+                if entry_match and placeholders.search(entry_match.group(1)):
+                    errors.append(f"BibTeX entry {key} contains placeholder author/title text")
+
     if args.check_figures:
         figure_dir = resolve_path(args.figures_dir, root).resolve() if args.figures_dir else (tex_files[0].parent if tex_files else root)
         for figure in figure_refs:
@@ -167,6 +215,7 @@ def main() -> int:
         "labels_defined": len(label_set),
         "references_used": len(set(refs)),
         "figure_references": len(figure_refs),
+        "verified_citations": verified_citation_count,
         "errors": errors,
         "warnings": warnings,
     }
