@@ -53,6 +53,8 @@ python scripts/qa/check_math_semantics.py `
 
 冻结结果声明了 `display_label`/`display_unit`（如"百万元"）后，摘要/正文/结论中同一 `display_value` 紧邻出现其他货币量级词（元/万元/亿元等）即 FAIL。同一数字的 canonical value、展示值与量纲必须来自同一份冻结语义。
 
+记录数还可以在 `frozen_results.results[].metric_semantics` 中声明 `population`。例如 `raw_records` 不能在同一句被写成 `valid_records`；`check_consistency.py` 会报告 `METRIC_SEMANTIC_MISMATCH`。
+
 ### 8. 论断强度
 
 `paper_plan.claims[].inference_strength` 用来防止 Writer 把观察自动改写成机制或因果：
@@ -63,6 +65,21 @@ python scripts/qa/check_math_semantics.py `
 - `causal`：默认不从普通优化结果推出，除非 claim 额外登记了 `causal_design` 因果研究设计。
 
 Observation 不能标成 `mechanistic` 或 `causal`。没有登记时，Writer package 采用保守默认：observation 为 descriptive，inference/recommendation 为 mechanistic，并保留原边界。
+
+### 9. 重复测量的主要推断角色
+
+当 `model_contract.models[].statistical_design.role=primary_inference` 且方法为 mixed-effects、GEE、cluster-robust SE 等时，论文不得把普通 OLS 写成主要推断、把合同方法降为 sensitivity/secondary。正式模式使用：
+
+```powershell
+python scripts/qa/check_consistency.py `
+  --model-contract model_contract.json `
+  --paper-plan paper_plan.json `
+  --frozen-results results/frozen_results.json `
+  --evidence-registry evidence_registry.json `
+  --paper paper/main.tex `
+  --require-inference-role-consistency `
+  --strict
+```
 
 ## 对应失败卡
 

@@ -5,15 +5,18 @@
 | 证据任务 | 优先图型 | 必须声明 |
 |---|---|---|
 | 时间变化/预测 | 折线 + 区间带 + 训练/测试分界 | 时间范围、窗口、样本外定义、区间口径 |
-| 方案比较 | 点图、排序条形图、small multiples | baseline 身份、共同尺度、方向、差值/区间 |
-| 分布/异常 | ECDF、直方/密度、箱线/小提琴 | 样本量、异常值处理、统计定义 |
+| 方案比较 | 点图、排序条形图、small multiples、slope chart（两时点对比）、dumbbell（区间端点对比） | baseline 身份、共同尺度、方向、差值/区间 |
+| 分布/异常 | ECDF、直方/密度、箱线/小提琴、beeswarm（小样本逐点） | 样本量、异常值处理、统计定义 |
 | 变量关系 | 散点 + 合理拟合/残差 | 相关不等于因果、过绘制处理、置信范围 |
 | 参数/敏感性 | 响应曲线、热力图、tornado | 改变量、固定条件、参数范围、失效区 |
 | Pareto/多目标 | 目标空间散点 + 非支配标记 | 目标方向、场景、容差、机器重算结果 |
 | 空间关系 | 地图、分区/网格 | CRS、比例尺、空间分辨率、缺失区域 |
 | 网络/路径 | 网络、路径高亮、流图 | 节点/边含义、布局与权重、是否筛边 |
+| 分布沿有序变量 | ridgeline/joyplot（多组密度沿轴堆叠） | 组序依据、带宽、重叠度，组数多时慎用 |
 
 正式图必须在 `paper_plan.figures[]` 声明 `message`、`comparison`、`visual_encoding` 与 `selection_rule`。精确查数优先表格；结构或趋势比较优先图；没有证据增益时使用文字。
+
+更多图型谱系可查本地锁定参考（见 `vendor/template_sources.json`，仅本地使用不随 Skill 分发）：`vendor/upstream/python-graph-gallery/`（按数据关系组织的 100+ 图型配方）、`vendor/upstream/scientific-visualization-book/`（配色、布局与感知规则）。底图瓦片如需在线获取（如 Contextily 类后端），必须先核对当届网络策略与 Contest Safety；优先使用本地 shapefile/geojson，离线或 live-contest 受限时禁止临时抓取 tiles，并声明 CRS 与 attribution。
 
 ## 受控模板入口
 

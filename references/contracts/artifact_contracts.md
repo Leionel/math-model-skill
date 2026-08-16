@@ -4,18 +4,18 @@
 
 新项目应在 `run_manifest.json` 设置 `enhanced_integrity_profile=true`。该 profile 不另建一套 Gate，而是在现有 M1/W1/W2 增加以下不可替代 artifact：
 
-| Artifact | Gate | 作用 |
-|---|---|---|
-| `problem_snapshot.json` | M1 | 题面/附件 hash、选题依据与逐 requirement 交付追踪 |
-| `data_contract.json`（每个权威数据集一份） | M1 | 列类型、单位、范围、主键、缺失、时间和泄漏语义 |
-| `implementation_map.json` | M1 | equation/symbol → contract item → code symbol → passing test |
-| `artifact_dag.json` | M1 | 输入/输出/命令/receipt 依赖图与 stale 传播真源 |
-| `presentation_contract.json` | W1 | 结果宏、舍入、单位、百分比与出现位置唯一真源 |
-| `claim_inventory.json` | W2 | 扫描正文中 plan 外数字与研究强词；由工具生成 |
-| `writer_package.json` | W2 | 只读写作输入；可绑定 `draft_coverage`，证明首稿不是只有结果流水账 |
-| `build_receipt.json` | W2 | 隔离 LaTeX build、禁 shell escape、源码前后 tree hash |
-| `pdf_visual_qa.json` | W2 | 实际 PDF 页数/纸张/字体/全页渲染 receipt |
-| `visual_review_receipt.json` | W2 | 最终尺寸人工/多模态逐页审查，绑定同一 PDF/hash |
+| Artifact | Gate | 作用 | 生成来源 | 校验入口 |
+|---|---|---|---|---|
+| `problem_snapshot.json` | M1 | 题面/附件 hash、选题依据与逐 requirement 交付追踪 | 人工/Agent 编写 | `check_problem_coverage.py` |
+| `data_contract.json`（每个权威数据集一份） | M1 | 列类型、单位、范围、主键、缺失、时间和泄漏语义 | `scripts/eda/profile_generator.py` 初稿 + 人工确认 | `check_data_contract.py` |
+| `implementation_map.json` | M1 | equation/symbol → contract item → code symbol → passing test | 人工/Agent 编写 | `check_implementation_map.py` |
+| `artifact_dag.json` | M1 | 输入/输出/命令/receipt 依赖图与 stale 传播真源 | 人工/Agent 编写 | `check_artifact_dag.py` |
+| `presentation_contract.json` | W1 | 结果宏、舍入、单位、百分比与出现位置唯一真源 | 人工/Agent 编写 | `check_presentation_safety.py`（strict 档）；`generate_values_tex.py` 消费 |
+| `claim_inventory.json` | W2 | 扫描正文中 plan 外数字与研究强词；由工具生成 | `scripts/claims/inventory_claims.py` / `run_deterministic_qa.py --claim-inventory-output` | W2 Gate 校验 `ok=true` |
+| `writer_package.json` | W2 | 只读写作输入；可绑定 `draft_coverage`，证明首稿不是只有结果流水账 | `scripts/claims/compile_writer_package.py` | `check_writer_package.py` |
+| `build_receipt.json` | W2 | 隔离 LaTeX build、禁 shell escape、源码前后 tree hash | `scripts/latex/safe_build.py` | W2 Gate（enhanced）校验 `source_unchanged=true` |
+| `pdf_visual_qa.json` | W2 | 实际 PDF 页数/纸张/字体/全页渲染 receipt | `scripts/pdf/check_pdf.py` | W2 Gate（enhanced）校验 `formal_ok=true` |
+| `visual_review_receipt.json` | W2 | 最终尺寸人工/多模态逐页审查，绑定同一 PDF/hash | 人工/多模态按 schema 生成 | W2 Gate（enhanced）校验 `verdict=pass` |
 
 默认 false 只用于 schema 1.1 项目的显式迁移窗口，不能据此声称已通过增强研究完整性门槛。
 
@@ -65,3 +65,21 @@ Competition Profile 嵌入 run manifest，避免新增一个常驻顶层 JSON；
 ```
 
 单位必须显式填写；无量纲量写 `dimensionless`。显示值必须等于 `value + precision` 的 ROUND_HALF_UP 结果，Writer 不得自行换算或重新舍入。`validation_status` 由总验证结论派生（`passed`/`failed`/`error`），`claimable` 必须等于冻结件的 `claimable`，不能由 Writer 或 Registry 自行提升。
+
+只有记录数结果才填写 `metric_semantics.metric_type=record_count`；`population` 用于区分 `raw_records`、`valid_records`、`included_records` 和 `excluded_records`。摘要、正文和结论不得把同一个冻结数字改写成另一种 population；`check_consistency.py` 会在同一句中发现这种语义漂移并报告 `METRIC_SEMANTIC_MISMATCH`。
+
+```json
+{
+  "result_id": "R-Q1-N",
+  "name": "valid record count",
+  "value": 1081,
+  "unit": "records",
+  "precision": 0,
+  "display_value": "1081",
+  "metric_semantics": {
+    "metric_type": "record_count",
+    "population": "valid_records",
+    "validity_rule": "rows passing the declared data-quality filter"
+  }
+}
+```

@@ -5,6 +5,8 @@
 - M1：除 ready model contract 外，必须有 confirmed problem snapshot、每个权威数据集的 validated data contract、verified implementation map 和当前 artifact DAG；Gate 会实际重算数据、代码映射、hash/digest 与 cycle，而不只检查 JSON 形状。
 - W1：必须有 ready presentation contract；摘要使用带选择原因的 `abstract_results[]`。
 - W2：必须有 `claim_inventory.ok=true`、安全构建 receipt、实际 PDF formal QA 与 visual review pass。Style lint 的普通重复/密度 warning 仍由人工裁决，不能覆盖 semantic FAIL。
+- W2 可显式升级写作/图表语义 profile：`--require-answer-contract`、`--require-abstract-backcheck`、`--require-figure-semantics`。它们分别复核题目答案覆盖、摘要事实回查和图表语义/最终尺寸；未启用时只报告迁移问题，不把经验性固定图数、固定句式或固定文献数变成默认 Gate。
+- 若希望由 `check_gates.py` 在 W2 独立重跑这三项，可在 `run_manifest.json` 写入 `"editorial_semantics_profile": "strict"`；默认值为 `baseline`，旧项目不会静默升级。
 - F1 后：如需要证明实际门户提交，人工建立 `submission_receipt.json`；Harness 不自动代替用户上传。
 
 Contest Safety 持续执行，不计为额外 Gate。主链保留六个有限决策点：
@@ -28,6 +30,10 @@ flowchart LR
 
 增强 profile 的 W2 Gate 会从 deterministic QA 报告声明的输入重建一次临时 QA；它不覆盖原报告，重算失败不能通过手改 `ok=true` 绕过。
 
+边界说明：未开启 enhanced/strict profile 时（baseline），deterministic QA 报告与 reviewer 状态是 manifest 中的声明性输入——`check_gates.py` 校验其存在性、哈希绑定与必需 check 标签，但不会重算报告内容；防手改的独立重跑仅存在于 enhanced/strict 档。正式研究链建议开启 `enhanced_integrity_profile` 或 strict 档位。
+
+`judge_scan` 是 W2 的 issue-only 辅助审阅：检查 30 秒摘要可发现性、决定性结果、模型身份、验证定位和图后解释，并留下需要人工执行的渲染页速扫；它不产生总分，也不替代数学正确性、Semantic Critic 或最终 PDF 视觉复核。
+
 ## 回退
 
 - M1 → Modeling；Coder 不猜数学合同。
@@ -42,3 +48,6 @@ flowchart LR
 - `sprint`：Deterministic QA + 1 Semantic Critic。
 - `final_submission`：再加 1 个独立 Blind Reviewer。
 - `award_max`：只在成稿冻结、明确冲奖且有返修时间时使用 3 席；不把通用分数阈值写死。
+## Strict math correctness profile
+
+`run_manifest.math_correctness_profile` 默认为 `baseline`，保留旧 run 的迁移窗口。仅在 run 已完成迁移（题面作用域合同、数值回放案例、Writer 绑定、presentation contract 与最终 PDF 源映射）后才设为 `strict`。该档位在 M1/W1/W2 追加要求，并从 deterministic report 的声明输入独立重跑；它是 Gate 政策，不声称检查器已证明任何定理或模型假设。迁移清单与 non-claims 的唯一权威描述见 [math_correctness_profile](math_correctness_profile.md)。

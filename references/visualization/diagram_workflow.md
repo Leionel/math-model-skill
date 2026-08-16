@@ -6,7 +6,7 @@
 
 默认使用 draw.io/diagrams.net 作为可编辑源文件，保存 `.drawio` 或 `.xml`；正式交付优先导出 SVG/PDF。draw.io 的源文件包含完整图形结构，SVG/PDF 也可以选择嵌入源数据，便于后续编辑。Figma、PowerPoint 或其他矢量编辑器可以作为人工绘制后端，但必须保留等价的可编辑源文件。
 
-最终论文不直接使用 AI 生成的带文字位图。AI 可以帮助生成 `diagram_spec.json` 的节点、边、分区和布局建议，但模型、公式、结果数字和中文标签必须来自已登记的题面、model contract、frozen results 或 evidence registry。
+最终论文不直接使用未经约束的 AI 生成位图。AI 可以帮助生成 `diagram_spec.json` 的节点、边、分区和布局建议；AI 位图要成为正式图，必须走 [Figure Contract](figure_contract.md) 的 `illustration` 通道：`kind=illustration` 的概念/机理示意，或 `kind=concept` 附 `illustration` 块的后端对比择优（此时可编辑源仍必须保留）。模型、公式、结果数字和中文标签必须来自已登记的题面、model contract、frozen results 或 evidence registry。
 
 ## 两种交付模式
 

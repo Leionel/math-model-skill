@@ -13,7 +13,7 @@
 | 微分方程/数值计算 | 初边值条件、步长/网格敏感性、数值误差；适用时检查守恒 |
 | 统计推断 | 假设检查、效应量/不确定性、多重比较或抽样边界 |
 
-该表是触发器，不是固定清单。只声明会改变结论可信度的义务，避免几十个空检查。
+该表是触发器，不是固定清单。只声明会改变结论可信度的义务，避免几十个空检查。各模型族的展开规则（按特征追加的义务、常见失败与对应失败卡）见 [profiles/](profiles/)：[optimization](profiles/optimization.md)、[prediction](profiles/prediction.md)、[evaluation_ranking](profiles/evaluation_ranking.md)、[simulation](profiles/simulation.md)。跨问共享资源的问题（如多弹/多机调度）还应验证资源单调性：更多资源下的解不得劣于其子集问题。
 
 ## 有限比较合同
 

@@ -2,6 +2,19 @@
 
 在编码前建立 `model_contract.json`，让 Modeling 与 Coding 对数学定义使用同一权威源。正式 `research/submission` 运行必须先完成 [Research-first Model Planning](../research/model_planning.md)，不能把模型名和一句 rationale 当作建模计划。
 
+顶层字段速查（完整可复制示例见下，逐字段规则见“M1 规则”）：
+
+| 字段 | 作用 |
+|---|---|
+| `questions[]` | 逐题任务、输入/输出、conclusion type 与可选 `required_answer` |
+| `data_sources[]` | 数据来源、许可/条款、变换与质量检查 |
+| `assumptions[]` | 假设及其依据与敏感性计划 |
+| `assumption_forks[]` | 题意歧义预检：至少两种解释、判别检查、选定理由或 unresolved_risk |
+| `models[]` | 候选落点：变量、目标、约束、算法、验证义务与失败模式 |
+| `models[].plan_details` | equation plan、typed parameter plan、实现步骤、输出、验证策略、derivation graph |
+| `terminology[]` | canonical 术语与禁止变体 |
+| `status` | `draft` → `ready`；只有 `ready` 可过 M1 |
+
 ## 最小示例
 
 ```json
@@ -152,7 +165,9 @@
 - 关键公式应补充 `equation_type`、`math_risk`、`symbols`、`domains`、`unit_signature`、`preconditions` 和 `verification`；公式之间通过 `plan_details.derivation_graph` 记录中间量、输入、输出和目标终点。只写公式字符串不算推导链。
 - `problem_type` 之外还要声明 `characteristics`。例如场景随机多阶段模型必须触发 `uncertainty + scenario_generalization + nonanticipativity`，相关输入模拟必须触发 `correlation_validity`；不能只验证“标准差大于零”就声称随机模型可靠。
 - 明确每个子问题的 conclusion type、输入和输出；不要只写算法名称。
+- 如果题目对某问有明确交付答案，建议在 `questions[].required_answer` 登记 `answer_type`、`quantity`、`unit`、`scope`、`must_satisfy` 和 `reporting_semantics`，必要时补 `output_names`。它是“题目要求的答案”与“模型实际输出”的桥，不是另一个 `answer_contract.json`，也不规定所有题目必须输出同一种类型。
 - `models[].inputs` 中的每个输入都必须在 `plan_details.parameter_plan[]` 出现，并使用 typed provenance；不能只在数据源列表里声明一次就算完成参数解释。
+- `plan_details.scaffold_entry`（可选）把选型结论绑定到 `scripts/scaffold/` 的具体入口（如 `scripts/scaffold/opt_milp.py`），让编码从已审计的脚手架开始，而不是空白文件；候选比较时应把它作为"实现成本"的一个信号。
 - 为变量填写含义、单位、定义域和角色；无量纲量显式写 `dimensionless`。
 - 把约束写成可定位的 `constraint_id + expression + meaning`。
 - 为 smoke/full 指定可判断成败的 acceptance；“结果合理”不是验收标准。
@@ -160,6 +175,18 @@
 - `sensitivity` 义务必须声明 `artifact_role=sensitivity_experiment`；`out_of_sample` 义务必须声明 `artifact_role=oos_artifact`。P2 要求对应 artifact 绑定当前 `run_id` 并通过语义检查，不能只把“敏感性分析/OOS”写在 validation 文本里。
 - 数据源必须记录 origin、许可/条款、变换和质量检查；外部数据的来源页面也应固定快照。`dev/research` 不要求处处填写 SHA-256，`submission` 才将最终引用全部哈希化；结果冻结仍可独立保留上游哈希。
 - 写明风险和回退方案；模型变化后创建新 run，不能沿用旧 P1/P2 状态。
+
+### Required Answer 与术语身份
+
+`required_answer` 的推荐链条是：
+
+```text
+official question -> required_answer -> model output -> frozen/derived result -> abstract answer
+```
+
+`check_modeling_plan.py --require-answer-contract` 只在显式启用时把这条链升级为阻断；默认仍允许迁移中的旧合同。答案的单位、范围和报告口径必须与冻结结果一致，`quantity` 应能在模型输入/输出或 `plan_details` 中找到对应实体。
+
+已有 `terminology[]` 可选增加 `semantic_id`、`canonical_zh`、`canonical_en`、`symbol`、`unit` 和 `allowed_aliases`。这是既有模型身份与符号 QA 的元数据，不是第二套词典；禁止变体仍写在同一条术语记录中。
 
 ### Equation Contract 与 Derivation DAG
 

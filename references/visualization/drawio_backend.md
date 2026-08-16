@@ -76,11 +76,13 @@ python scripts/figures/generate_drawio.py `
   --force
 ```
 
+需要正式论文常用的 PDF 矢量输出时，把 `--export-format svg` 换为 `--export-format pdf`（生成器同样支持 `png`）。
+
 没有 Desktop CLI 时，生成器仍然交付 `.drawio`；在 `app.diagrams.net` 打开后手动导出。导出 PNG 时，必须把 `raster_only`、`raster_text` 和 `raster_dpi` 写入 spec，并用 `check_figure.py` 检查最终尺寸的有效 DPI。
 
 ## 不做的事
 
 - 不用 Mermaid 转成概念图；
 - 不用 matplotlib/Python 绘制最终图形；Python 这里只生成 native draw.io XML；
-- 不把 image_gen 或其他图像模型的文字位图当作正式图；它们最多用于构图参考；
-- 不从自然语言自动捏造节点、箭头、公式或结果；没有 `source_refs` 的节点会被检查器阻断。
+- 不从自然语言自动捏造节点、箭头、公式或结果；没有 `source_refs` 的节点会被检查器阻断；
+- AI 图像模型的位图不经 [Figure Contract](../contracts/figure_contract.md) 的 `illustration` 通道（对比择优 + ≥300 DPI + 人工复核 + caption 声明）不得作为正式图；draw.io 可编辑源在此通道中仍须保留。

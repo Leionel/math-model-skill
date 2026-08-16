@@ -175,6 +175,20 @@
 - 年份、题号、章节号等非研究数字如会被 claim inventory 扫描，可登记到 `nonresearch_numeric_literals[]` 并写明理由；不能用它放行结果、百分比或参数。
 - 将同一推荐方案的唯一文字版本放入 `canonical_recommendation`；若题型不需要推荐，可省略该字段。
 
+## 摘要事实回查与逐问答案
+
+摘要采用 Draft → Fact Backcheck → Final：先从 writer package 起草，再把模型身份、决定性数字、单位、比较关系、验证和边界回查到已冻结证据。`abstract_results[]` 可选填写 `question_id`、`method_ids`、`validation_ids`、`abstract_span`、`boundary` 与 `fact_check`；`fact_check.status=passed` 只能由实际回查后登记，不能把“已经写过摘要”当作通过。摘要不要求固定句式、固定数字数量或每个结果都带 baseline。
+
+若 `model_contract.questions[]` 声明了 `required_answer`，W2 应能从官方问题走到 required answer、模型输出、冻结结果，再走到摘要中可定位的答案。运行 `check_consistency.py --require-answer-contract --require-abstract-backcheck` 时，这条链才成为显式阻断；默认模式只报告迁移提示。
+
+## 研究顺序与论文呈现
+
+研究顺序通常是问题 → 调研/文献 → 候选与选型 → 模型 → 代码 → 结果 → 验证；论文呈现顺序通常是问题重述 → 分析/假设 → 符号 → 模型 → 求解 → 结果 → 验证 → 解释/边界。`paper_plan` 只负责把后者编译成可追溯的论证单元，不要求每题使用相同篇幅或单独设置模型评价章节。
+
+`check_paper_readiness.py` 会给出软性 `presentation_completeness` 清单，状态为 `RECOMMENDED`、`MISSING` 或 `NOT_APPLICABLE`；它用于提醒问题分析、假设、符号、逐问结果/解释和验证定位，不会因为缺少经验性章节而替代核心 Gate。
+
+若在 `run_manifest.json` 中显式设置 `"editorial_semantics_profile": "strict"`，`check_gates.py` 会在 W2 从 deterministic QA 的声明输入独立重跑 required answer、摘要 backcheck 和 Figure Semantics；这仍不把 `judge_scan` 的人工 issue 变成自动评分。
+
 ## 编译写作包
 
 ```powershell

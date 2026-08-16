@@ -13,4 +13,6 @@
 
 `supports` 写原文真正能支持的命题，`boundary` 写不能外推到哪里。不要保存长段原文，也不要让 citation evidence 证明本队计算出来的数值。
 
+全文获取优先开放获取渠道（arXiv、出版社 OA 页、机构仓储镜像）；被反爬或付费墙阻挡时，诚实地把该条降级为 abstract 级（`content_verified=false`），并改用其他可全文核验的来源满足 formal M1 的全文门槛——不得把摘要页当全文，也不得因一条被挡就放宽三状态核验。
+
 Crossref 官方说明其检索数据主要是成员提交的 metadata，并非全文：[Metadata Retrieval](https://www.crossref.org/documentation/retrieve-metadata/)。撤稿状态入口：[Retraction Watch](https://www.crossref.org/documentation/retrieve-metadata/retraction-watch/)。
