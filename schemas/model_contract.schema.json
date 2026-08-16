@@ -17,11 +17,76 @@
     "assumptions": {"type": "array", "items": {"$ref": "#/$defs/assumption"}},
     "assumption_forks": {"type": "array", "items": {"$ref": "#/$defs/assumption_fork"}},
     "research_basis": {"$ref": "#/$defs/research_basis"},
+    "scope_contract": {"$ref": "#/$defs/scope_contract"},
     "models": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/model"}},
     "terminology": {"type": "array", "items": {"$ref": "#/$defs/term"}},
     "status": {"type": "string", "enum": ["draft", "ready", "superseded"]}
   },
   "$defs": {
+    "scope_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "status", "scopes", "events"],
+      "properties": {
+        "schema_version": {"type": "string", "const": "1.0"},
+        "status": {"type": "string", "enum": ["draft", "ready", "superseded"]},
+        "scopes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scope_definition"}},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event_definition"}},
+        "notes": {"type": "string"}
+      }
+    },
+    "scope_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_id", "question_id", "title", "parameters", "paper_section_markers"],
+      "properties": {
+        "scope_id": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "title": {"type": "string", "minLength": 1},
+        "parameters": {"type": "array", "items": {"$ref": "#/$defs/scope_parameter"}},
+        "event_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "paper_section_markers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "required_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "forbidden_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "coordinate_frame": {"type": "string", "minLength": 1},
+        "time_origin": {"type": "string", "minLength": 1},
+        "source_locator": {"type": "string", "minLength": 1}
+      }
+    },
+    "scope_parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameter_id", "symbol", "meaning", "unit", "value", "source_locator"],
+      "properties": {
+        "parameter_id": {"type": "string", "minLength": 1},
+        "symbol": {"type": "string", "minLength": 1},
+        "meaning": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "value": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}]},
+        "source_locator": {"type": "string", "minLength": 1},
+        "aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "required_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "forbidden_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "event_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "question_id", "title", "definition", "paper_section_markers"],
+      "properties": {
+        "event_id": {"type": "string", "minLength": 1},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "title": {"type": "string", "minLength": 1},
+        "definition": {"type": "string", "minLength": 1},
+        "event_type": {"type": "string", "minLength": 1},
+        "coordinate_frame": {"type": "string", "minLength": 1},
+        "time_origin": {"type": "string", "minLength": 1},
+        "paper_section_markers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "required_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "forbidden_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "source_locator": {"type": "string", "minLength": 1}
+      }
+    },
     "question": {
       "type": "object",
       "additionalProperties": false,
@@ -32,7 +97,22 @@
         "conclusion_type": {"type": "string", "minLength": 1},
         "inputs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "outputs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "depends_on": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^q[1-9][0-9]*$"}}
+        "depends_on": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^q[1-9][0-9]*$"}},
+        "required_answer": {"$ref": "#/$defs/required_answer"}
+      }
+    },
+    "required_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["answer_type", "quantity", "unit", "scope", "must_satisfy", "reporting_semantics"],
+      "properties": {
+        "answer_type": {"type": "string", "enum": ["minimum_feasible_parameter", "maximum_allowed_parameter", "ranking", "prediction", "classification", "evaluation", "trajectory", "quantity", "feasible_plan", "comparison", "recommendation", "other"]},
+        "quantity": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "must_satisfy": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "reporting_semantics": {"type": "string", "minLength": 1},
+        "output_names": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     },
     "data_source": {
@@ -253,6 +333,7 @@
         "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
         "name": {"type": "string", "minLength": 1},
         "problem_type": {"type": "string", "enum": ["optimization", "prediction", "classification", "time_series", "evaluation", "simulation", "differential_equation", "statistical_inference", "graph_network", "other"]},
+        "problem_family": {"type": "string", "enum": ["optimization", "prediction", "evaluation", "classification_clustering", "mechanistic_dynamic", "other"]},
         "characteristics": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["deterministic", "stochastic", "scenario_based", "correlated_inputs", "multi_stage", "time_dependent", "spatial", "multiobjective", "causal", "machine_learning"]}},
         "rationale": {"type": "string", "minLength": 1},
         "variables": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/variable"}},
@@ -267,8 +348,13 @@
         "fallback": {"type": "string", "minLength": 1},
         "rejected_alternatives": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "identity": {"$ref": "#/$defs/model_identity"},
+        "objective_contract": {"$ref": "#/$defs/objective_contract"},
         "risk_semantics": {"$ref": "#/$defs/risk_semantics"},
         "correlation_spec": {"$ref": "#/$defs/correlation_spec"},
+        "decision_context": {"$ref": "#/$defs/decision_context"},
+        "statistical_design": {"$ref": "#/$defs/statistical_design"},
+        "scope_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "event_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "plan_details": {"$ref": "#/$defs/model_plan_details"}
       }
     },
@@ -277,6 +363,7 @@
       "additionalProperties": false,
       "required": ["selected_candidate_id", "mechanism", "equation_plan", "parameter_plan", "implementation_steps", "output_artifacts", "validation_strategy", "failure_modes"],
       "properties": {
+        "scaffold_entry": {"type": "string", "description": "Optional entry point in scripts/scaffold/ (e.g. scripts/scaffold/opt_milp.py) that the selected candidate binds to, so coding starts from the audited scaffold instead of a blank file."},
         "selected_candidate_id": {"type": "string", "minLength": 1},
         "mechanism": {"type": "string", "minLength": 1},
         "equation_plan": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/equation_plan"}},
@@ -316,8 +403,11 @@
       "required": ["parameter", "provenance", "unit", "uncertainty_or_range"],
       "properties": {
         "parameter": {"type": "string", "minLength": 1},
+        "parameter_id": {"type": "string", "minLength": 1},
         "provenance": {"$ref": "#/$defs/parameter_provenance"},
         "semantic_role": {"type": "string", "minLength": 1},
+        "impact_class": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+        "sensitivity_experiment_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "unit": {"type": "string", "minLength": 1},
         "uncertainty_or_range": {"type": "string", "minLength": 1}
       }
@@ -366,7 +456,27 @@
         "symbolic_check": {"$ref": "#/$defs/verification_status"},
         "property_test_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "semantic_test_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "tiny_oracle_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "tiny_oracle_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "numeric_replay": {"type": "array", "items": {"$ref": "#/$defs/numeric_replay_case"}}
+      }
+    },
+    "numeric_replay_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "expression", "substitutions", "expected", "unit", "abs_tolerance", "rel_tolerance", "source_locator"],
+      "properties": {
+        "case_id": {"type": "string", "minLength": 1},
+        "expression": {"type": "string", "minLength": 1},
+        "substitutions": {"type": "object", "additionalProperties": {"type": "number"}},
+        "expected": {"type": "number"},
+        "unit": {"type": "string", "minLength": 1},
+        "abs_tolerance": {"type": "number", "minimum": 0},
+        "rel_tolerance": {"type": "number", "minimum": 0},
+        "source_locator": {"type": "string", "minLength": 1},
+        "paper_section_markers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "paper_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "forbidden_tokens": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "notes": {"type": "string"}
       }
     },
     "verification_status": {
@@ -454,7 +564,63 @@
         "mathematical_class": {"type": "string", "minLength": 1},
         "objective_form": {"type": "string", "minLength": 1},
         "forbidden_aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "defining_equations": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "defining_equations": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "composition_type": {"type": "string", "enum": ["single_objective", "lexicographic", "weighted_sum", "epsilon_constraint", "pareto_front", "ensemble", "comparison_only", "other"]}
+      }
+    },
+    "objective_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective_id", "direction", "declared_form", "implemented_form", "equivalence_status", "recompute_test_ids", "uniqueness_claim"],
+      "properties": {
+        "objective_id": {"type": "string", "minLength": 1},
+        "direction": {"type": "string", "enum": ["minimize", "maximize", "feasibility_only"]},
+        "declared_form": {"type": "string", "minLength": 1},
+        "implemented_form": {"type": "string", "minLength": 1},
+        "equivalence_status": {"type": "string", "enum": ["verified", "failed", "unverified"]},
+        "recompute_test_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "uniqueness_claim": {"type": "string", "enum": ["unique", "non_unique", "not_claimed", "unknown"]},
+        "objective_diagnostics": {"$ref": "#/$defs/objective_diagnostics"},
+        "piecewise_partitions": {"type": "array", "items": {"$ref": "#/$defs/piecewise_partition"}},
+        "piecewise_coverage": {"$ref": "#/$defs/piecewise_coverage"},
+        "notes": {"type": "string"}
+      }
+    },
+    "objective_diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "tolerance", "candidate_count", "objective_spread", "status"],
+      "properties": {
+        "method": {"type": "string", "minLength": 1},
+        "tolerance": {"type": "number", "minimum": 0},
+        "candidate_count": {"type": "integer", "minimum": 0},
+        "objective_spread": {"type": "number", "minimum": 0},
+        "status": {"type": "string", "enum": ["verified", "not_run", "failed"]},
+        "artifact": {"type": "string", "minLength": 1}
+      }
+    },
+    "piecewise_partition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["partition_id", "condition", "boundary_status", "status"],
+      "properties": {
+        "partition_id": {"type": "string", "minLength": 1},
+        "condition": {"type": "string", "minLength": 1},
+        "boundary_status": {"type": "string", "enum": ["verified", "not_applicable", "failed", "not_run"]},
+        "status": {"type": "string", "enum": ["verified", "failed", "not_run"]},
+        "notes": {"type": "string"}
+      }
+    },
+    "piecewise_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain", "partition_ids", "coverage_status", "overlap_status"],
+      "properties": {
+        "domain": {"type": "string", "minLength": 1},
+        "partition_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "coverage_status": {"type": "string", "enum": ["verified", "failed", "not_run"]},
+        "overlap_status": {"type": "string", "enum": ["verified", "failed", "not_run"]},
+        "proof_locator": {"type": "string", "minLength": 1}
       }
     },
     "risk_semantics": {
@@ -490,13 +656,42 @@
         }
       }
     },
+    "decision_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_time_column", "feature_policy", "target_horizon"],
+      "properties": {
+        "decision_time_column": {"type": "string", "minLength": 1},
+        "feature_policy": {"type": "string", "enum": ["known_at_decision", "strict_pre_cutoff", "not_applicable"]},
+        "target_horizon": {"type": "string", "minLength": 1},
+        "cutoff_rule": {"type": "string", "minLength": 1},
+        "forbidden_future_features": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "statistical_design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "methods"],
+      "properties": {
+        "role": {"type": "string", "enum": ["primary_inference", "exploratory", "predictive_validation", "not_applicable"]},
+        "methods": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["mixed_effects", "GEE", "cluster_robust_SE", "subject_level_aggregation", "grouped_bootstrap", "GroupKFold", "StratifiedGroupKFold", "GroupShuffleSplit", "row_split", "other"]}},
+        "waiver_reason": {"type": ["string", "null"]},
+        "unit_of_inference": {"type": "string", "minLength": 1}
+      }
+    },
     "term": {
       "type": "object",
       "additionalProperties": false,
       "required": ["canonical", "forbidden_variants"],
       "properties": {
         "canonical": {"type": "string", "minLength": 1},
-        "forbidden_variants": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "forbidden_variants": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "semantic_id": {"type": "string", "minLength": 1},
+        "canonical_zh": {"type": "string", "minLength": 1},
+        "canonical_en": {"type": "string", "minLength": 1},
+        "symbol": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "allowed_aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     }
   }

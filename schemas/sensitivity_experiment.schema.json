@@ -12,6 +12,10 @@
     "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
     "status": {"type": "string", "enum": ["planned", "completed", "failed"]},
     "parameter": {"type": "string", "minLength": 1},
+    "parameter_id": {"type": "string", "minLength": 1},
+    "label": {"type": "string", "minLength": 1},
+    "model_id": {"type": "string", "minLength": 1},
+    "impact_class": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
     "baseline": {"type": "number"},
     "grid": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "number"}},
     "rerun_policy": {"type": "string", "enum": ["full_reoptimization", "refit", "recompute", "other"]},
@@ -50,7 +54,24 @@
       "properties": {
         "grid_value": {"type": "number"},
         "status": {"type": "string", "enum": ["PASS", "FAIL", "ERROR"]},
-        "artifact": {"$ref": "#/$defs/file_ref"}
+        "artifact": {"$ref": "#/$defs/file_ref"},
+        "execution": {"$ref": "#/$defs/execution_receipt"}
+      }
+    },
+    "execution_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "command", "exit_code", "started_at", "finished_at", "input_parameter", "input_value", "receipt"],
+      "properties": {
+        "status": {"type": "string", "enum": ["completed", "failed"]},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "exit_code": {"type": "integer"},
+        "started_at": {"type": "string", "minLength": 1},
+        "finished_at": {"type": "string", "minLength": 1},
+        "input_parameter": {"type": "string", "minLength": 1},
+        "input_value": {"type": "number"},
+        "runner": {"type": "string", "minLength": 1},
+        "receipt": {"$ref": "#/$defs/file_ref"}
       }
     }
   }

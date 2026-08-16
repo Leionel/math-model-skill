@@ -131,6 +131,7 @@
         "prerequisite_unit_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "model_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "equation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "replay_case_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "constraint_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "validation_obligation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "result_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
@@ -192,7 +193,24 @@
         "priority": {"type": "string", "enum": ["primary", "secondary"]},
         "selection_reason": {"type": "string", "minLength": 1},
         "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "word_budget": {"type": "integer", "minimum": 8, "maximum": 100}
+        "word_budget": {"type": "integer", "minimum": 8, "maximum": 100},
+        "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+        "method_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "validation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "abstract_span": {"type": "string", "minLength": 1},
+        "boundary": {"type": "string", "minLength": 1},
+        "fact_check": {"$ref": "#/$defs/abstract_fact_check"}
+      }
+    },
+    "abstract_fact_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checked_fields", "source_ids"],
+      "properties": {
+        "status": {"type": "string", "enum": ["not_started", "passed", "needs_revision"]},
+        "checked_fields": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["question_id", "model_identity", "display_value", "unit", "comparison", "validation", "boundary"]}},
+        "source_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "notes": {"type": "string"}
       }
     },
     "nonresearch_numeric_literal": {
@@ -210,7 +228,13 @@
       "required": ["canonical", "forbidden_variants"],
       "properties": {
         "canonical": {"type": "string", "minLength": 1},
-        "forbidden_variants": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "forbidden_variants": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "semantic_id": {"type": "string", "minLength": 1},
+        "canonical_zh": {"type": "string", "minLength": 1},
+        "canonical_en": {"type": "string", "minLength": 1},
+        "symbol": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "allowed_aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     },
     "figure_reference": {
@@ -231,9 +255,12 @@
       "required": ["figure_id", "kind", "claim_ids", "evidence_ids", "purpose", "why_figure", "message", "comparison", "visual_encoding", "selection_rule", "data_artifacts", "panel_map", "statistical_definition", "paper_location", "caption_claim", "accessibility", "qa_status"],
       "properties": {
         "figure_id": {"type": "string", "minLength": 1},
-        "kind": {"type": "string", "enum": ["data", "concept"]},
+        "kind": {"type": "string", "enum": ["data", "concept", "illustration"], "description": "data=由冻结数据确定性生成；concept=总览/流程/框架等结构图（默认 diagram_spec→draw.io 可编辑源，AI 位图仅在附 illustration 块并记录 backend_comparison 时可作为正式成品）；illustration=AI 生成的概念/机理/场景示意图（不承载数值结论）。"},
         "semantic_type": {"type": "string", "minLength": 1},
         "diagram": {"$ref": "#/$defs/diagram_artifact"},
+        "illustration": {"$ref": "#/$defs/illustration_artifact"},
+        "data_lineage": {"$ref": "#/$defs/data_lineage"},
+        "canonical_source_id": {"type": "string", "minLength": 1},
         "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "purpose": {"type": "string", "minLength": 1},
@@ -247,6 +274,16 @@
         "statistical_definition": {"type": "string", "minLength": 1},
         "paper_location": {"type": "string", "minLength": 1},
         "caption_claim": {"type": "string", "minLength": 1},
+        "data_shape": {"type": "string", "enum": ["distribution", "ordered_categories", "unordered_categories", "time_series", "continuous_relationship", "correlation_matrix", "diverging_matrix", "grid_search", "spatial", "network", "uncertainty_interval", "grouped_distribution", "other"]},
+        "argument_intent": {"type": "string", "enum": ["distribution", "comparison", "relationship", "trend", "composition", "correlation", "uncertainty", "mechanism", "optimization_landscape", "process", "overview", "recommendation", "other"]},
+        "sample_regime": {"$ref": "#/$defs/sample_regime"},
+        "uncertainty_semantics": {"type": "string", "minLength": 1},
+        "color_semantic_center": {"type": ["number", "string"]},
+        "color_profile": {"type": "string", "enum": ["contest_default", "colorblind_safe", "muted", "high_contrast"]},
+        "candidate_displays": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/candidate_display"}},
+        "selected_display": {"type": "string", "minLength": 1},
+        "selection_reason": {"type": "string", "minLength": 1},
+        "final_size_qa": {"$ref": "#/$defs/final_size_qa"},
         "accessibility": {
           "type": "object",
           "additionalProperties": false,
@@ -259,6 +296,48 @@
           }
         },
         "qa_status": {"type": "string", "enum": ["pending", "passed", "failed"]}
+      }
+    },
+    "sample_regime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "n_total": {"type": "integer", "minimum": 0},
+        "n_per_group": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "groups": {"type": "integer", "minimum": 0},
+        "ordered": {"type": "boolean"},
+        "repeated_unit": {"type": "string", "minLength": 1},
+        "grid_is_discrete": {"type": "boolean"},
+        "notes": {"type": "string"}
+      }
+    },
+    "candidate_display": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_id", "display_type", "argument_fit", "risk_notes"],
+      "properties": {
+        "display_id": {"type": "string", "minLength": 1},
+        "display_type": {"type": "string", "minLength": 1},
+        "argument_fit": {"type": "string", "minLength": 1},
+        "risk_notes": {"type": "string", "minLength": 1}
+      }
+    },
+    "final_size_qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_width_inch", "target_height_inch", "expected_scale", "min_effective_font_pt", "raster_dpi", "line_width_pt", "marker_size_pt", "readability", "cropping", "status"],
+      "properties": {
+        "target_width_inch": {"type": "number", "exclusiveMinimum": 0},
+        "target_height_inch": {"type": "number", "exclusiveMinimum": 0},
+        "expected_scale": {"type": "string", "minLength": 1},
+        "min_effective_font_pt": {"type": "number", "minimum": 1},
+        "raster_dpi": {"type": "integer", "minimum": 72},
+        "line_width_pt": {"type": "number", "exclusiveMinimum": 0},
+        "marker_size_pt": {"type": "number", "exclusiveMinimum": 0},
+        "readability": {"type": "string", "enum": ["not_reviewed", "pass", "needs_review", "fail"]},
+        "cropping": {"type": "string", "enum": ["not_reviewed", "pass", "needs_review", "fail"]},
+        "status": {"type": "string", "enum": ["declared", "reviewed", "failed"]},
+        "notes": {"type": "string"}
       }
     },
     "diagram_artifact": {
@@ -279,6 +358,42 @@
         "human_review_required": {"type": "boolean", "const": true}
       }
     },
+    "illustration_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator", "prompt_path", "raster_dpi", "text_policy", "review_status"],
+      "properties": {
+        "generator": {"type": "string", "minLength": 1, "description": "生成工具/模型名，如 nano-banana / dalle-3；必须同步登记到 run_manifest.ai_usage[]"},
+        "prompt_path": {"type": "string", "minLength": 1, "description": "提示词与生成参数的落盘路径，供审计复现"},
+        "generation_record": {"type": "string", "description": "生成交互记录路径（可选）"},
+        "raster_dpi": {"type": "number", "description": "正式成品位图分辨率；check_consistency 强制 >= 300"},
+        "text_policy": {"type": "string", "enum": ["raster_text"]},
+        "review_status": {"type": "string", "enum": ["pending", "reviewed", "failed"], "description": "正式 QA 前必须为 reviewed（人工/多模态视觉复核）"},
+        "backend_comparison": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alternatives", "selection_reason"],
+          "properties": {
+            "alternatives": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}, "description": "参与对比的后端（至少含一个可编辑源后端，如 drawio）"},
+            "selection_reason": {"type": "string", "minLength": 1, "description": "择优理由；kind=concept 附 illustration 块时必填，由 checker 强制"},
+            "comparison_record": {"type": "string", "description": "对比记录文件路径（截图/评分），可选但建议"}
+          }
+        }
+      }
+    },
+    "data_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_kind", "generator_command", "input_artifacts", "output_artifact", "synthetic", "status"],
+      "properties": {
+        "source_kind": {"type": "string", "enum": ["solver_output", "frozen_result", "derived_result", "observed_data"]},
+        "generator_command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "input_artifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "output_artifact": {"type": "string", "minLength": 1},
+        "synthetic": {"type": "boolean", "const": false},
+        "status": {"type": "string", "enum": ["declared", "generated", "verified"]}
+      }
+    },
     "table": {
       "type": "object",
       "additionalProperties": false,
@@ -289,6 +404,7 @@
         "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "purpose": {"type": "string", "minLength": 1},
         "why_table": {"type": "string", "minLength": 1},
+        "canonical_source_id": {"type": "string", "minLength": 1},
         "data_artifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "columns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/table_column"}},
         "statistical_definition": {"type": "string", "minLength": 1},

@@ -32,12 +32,30 @@
         "macro": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$"},
         "format": {"type": "string", "enum": ["number", "percentage", "scientific", "currency", "interval", "text"]},
         "unit_display": {"type": "string"},
-        "rounding": {"type": "string", "enum": ["frozen_display_value", "half_up", "significant_figures", "none"]},
+        "rounding": {"type": "string", "enum": ["frozen_display_value", "half_up", "significant_figures", "floor", "ceil", "none"]},
         "digits": {"type": "integer", "minimum": 0, "maximum": 12},
         "scale": {"type": "number"},
         "prefix": {"type": "string"},
         "suffix": {"type": "string"},
+        "safe_side": {"type": "string", "enum": ["none", "lower_bound", "upper_bound", "exact"]},
+        "feasibility_recheck": {"$ref": "#/$defs/feasibility_recheck"},
         "locations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["abstract", "body", "caption", "table", "conclusion"]}}
+      }
+    },
+    "feasibility_recheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expression", "display_symbol", "operator", "limit", "unit", "abs_tolerance", "rel_tolerance"],
+      "properties": {
+        "expression": {"type": "string", "minLength": 1},
+        "display_symbol": {"type": "string", "minLength": 1},
+        "operator": {"type": "string", "enum": ["<", "<=", "==", ">=", ">"]},
+        "limit": {"type": "number"},
+        "substitutions": {"type": "object", "additionalProperties": {"type": "number"}},
+        "unit": {"type": "string", "minLength": 1},
+        "abs_tolerance": {"type": "number", "minimum": 0},
+        "rel_tolerance": {"type": "number", "minimum": 0},
+        "source_locator": {"type": "string", "minLength": 1}
       }
     }
   }

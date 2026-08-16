@@ -11,7 +11,7 @@
     "competition_profile_id": {"type": "string", "minLength": 1},
     "source_kind": {"type": "string", "enum": ["official", "community", "user_supplied", "local"]},
     "source_locator": {"type": "string", "minLength": 1},
-    "status": {"type": "string", "enum": ["draft", "verified"]},
+    "status": {"type": "string", "enum": ["draft", "verified"], "description": "draft=新导入或未验证；verified=模板身份/结构已对齐锁定快照并通过受控导入或初始化流程。verified 只证明模板身份与实际使用一致（check_template_usage.py 可复核），不等于当届官方格式合规；每场比赛仍须 check_pdf.py 按当届 profile 复核。"},
     "document_class": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
     "entrypoint": {"type": "string", "pattern": "^[^\\\\]*\\.tex$"},
     "required_files": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},

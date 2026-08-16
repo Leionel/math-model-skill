@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/extremum-certificate.schema.json",
+  "title": "Continuous Extremum Refinement Certificate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "certificate_id", "run_id", "question_id", "status", "objective", "variables", "domain", "grid", "refinement", "tolerance", "claim_level"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "certificate_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
+    "status": {"type": "string", "enum": ["draft", "completed", "failed"]},
+    "objective": {"type": "string", "enum": ["min", "max"]},
+    "variables": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "domain": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/interval"}},
+    "grid": {"$ref": "#/$defs/grid"},
+    "refinement": {"$ref": "#/$defs/refinement"},
+    "tolerance": {"$ref": "#/$defs/tolerance"},
+    "claim_level": {"type": "string", "enum": ["screening", "refined_candidate", "global"]},
+    "notes": {"type": "string"}
+  },
+  "$defs": {
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lower", "upper"],
+      "properties": {
+        "lower": {"type": "number"},
+        "upper": {"type": "number"}
+      }
+    },
+    "point": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "number"}
+    },
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["abs", "rel"],
+      "properties": {
+        "abs": {"type": "number", "minimum": 0},
+        "rel": {"type": "number", "minimum": 0}
+      }
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["points", "values", "best_index", "best_point", "best_value", "source_artifact"],
+      "properties": {
+        "points": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point"}},
+        "values": {"type": "array", "minItems": 2, "items": {"type": "number"}},
+        "best_index": {"type": "integer", "minimum": 0},
+        "best_point": {"$ref": "#/$defs/point"},
+        "best_value": {"type": "number"},
+        "source_artifact": {"type": "string", "minLength": 1},
+        "method": {"type": "string", "minLength": 1}
+      }
+    },
+    "refinement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "intervals", "point", "value", "evaluations", "source_artifact"],
+      "properties": {
+        "status": {"type": "string", "enum": ["completed", "not_run"]},
+        "intervals": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/interval"}},
+        "point": {"$ref": "#/$defs/point"},
+        "value": {"type": "number"},
+        "evaluations": {"type": "integer", "minimum": 0},
+        "source_artifact": {"type": "string", "minLength": 1},
+        "method": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

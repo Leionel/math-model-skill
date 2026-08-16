@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/command-receipt.schema.json",
+  "title": "Process-Captured Command Receipt",
+  "description": "Receipt for a real subprocess run: argv array, captured exit code, wall time and IO hashes. Verdicts and exit codes must never be hand-edited; regenerate by rerunning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "command_id", "stage", "argv", "cwd", "exit_code", "started_at", "finished_at", "stdout_path", "stderr_path", "input_refs", "output_refs"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "command_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "stage": {"type": "string", "enum": ["safety", "smoke", "full", "freeze", "evidence", "qa", "review", "submission"]},
+    "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "cwd": {"type": "string", "minLength": 1},
+    "exit_code": {"type": "integer"},
+    "started_at": {"type": "string", "minLength": 1},
+    "finished_at": {"type": "string", "minLength": 1},
+    "duration_s": {"type": "number"},
+    "seed": {"type": ["integer", "null"]},
+    "stdout_path": {"type": "string", "minLength": 1},
+    "stderr_path": {"type": "string", "minLength": 1},
+    "stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "input_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "output_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "existed_before"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "existed_before": {"type": "boolean"}
+        }
+      }
+    },
+    "env_note": {"type": "string"}
+  }
+}

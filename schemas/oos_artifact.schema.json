@@ -12,8 +12,10 @@
     "question_id": {"type": "string", "pattern": "^q[1-9][0-9]*$"},
     "status": {"type": "string", "const": "verified"},
     "split_rule": {"type": "string", "minLength": 1},
+    "split_mode": {"type": "string", "enum": ["scenario", "entity", "time", "entity_time", "spatial"]},
     "train_scenarios": {"$ref": "#/$defs/scenario_set"},
     "test_scenarios": {"$ref": "#/$defs/scenario_set"},
+    "membership": {"$ref": "#/$defs/membership"},
     "disjoint_check": {"type": "string", "const": "PASS"},
     "leakage_check": {"type": "string", "const": "PASS"},
     "metrics_artifact": {"$ref": "#/$defs/file_ref"},
@@ -38,6 +40,19 @@
         "hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
         "count": {"type": "integer", "minimum": 1},
         "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key_columns", "train", "test"],
+      "properties": {
+        "key_columns": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "time_column": {"type": ["string", "null"]},
+        "train": {"$ref": "#/$defs/file_ref"},
+        "test": {"$ref": "#/$defs/file_ref"},
+        "train_count": {"type": "integer", "minimum": 1},
+        "test_count": {"type": "integer", "minimum": 1}
       }
     }
   }

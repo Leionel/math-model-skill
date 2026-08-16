@@ -73,7 +73,19 @@
         "contract_item_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "code_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/code_ref"}},
         "tests": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/test_ref"}},
+        "objective_binding": {"$ref": "#/$defs/objective_binding"},
         "status": {"type": "string", "enum": ["verified", "failed", "not_run"]}
+      }
+    },
+    "objective_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective_id", "independent_test_ids", "status"],
+      "properties": {
+        "objective_id": {"type": "string", "minLength": 1},
+        "independent_test_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "status": {"type": "string", "enum": ["verified", "failed", "not_run"]},
+        "notes": {"type": "string"}
       }
     }
   }

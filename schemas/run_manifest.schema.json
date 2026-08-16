@@ -4,55 +4,219 @@
   "title": "Math Modeling Run Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "run_id", "status", "phase", "competition_profile", "safety", "ai_usage", "human_checkpoints", "model_contract", "enhanced_integrity_profile", "integrity_mode", "gates", "commands", "artifacts", "revision", "reviewer"],
+  "required": [
+    "schema_version",
+    "project_id",
+    "run_id",
+    "status",
+    "phase",
+    "competition_profile",
+    "safety",
+    "ai_usage",
+    "human_checkpoints",
+    "model_contract",
+    "enhanced_integrity_profile",
+    "integrity_mode",
+    "gates",
+    "commands",
+    "artifacts",
+    "revision",
+    "reviewer"
+  ],
   "properties": {
-    "schema_version": {"type": "string", "const": "1.2"},
-    "project_id": {"type": "string", "minLength": 1},
-    "run_id": {"type": "string", "minLength": 1},
-    "status": {"type": "string", "enum": ["active", "frozen", "content_ready", "submission_ready", "blocked"]},
-    "phase": {"type": "string", "enum": ["analysis", "coding", "results", "evidence", "paper", "review", "submission"]},
-    "competition_profile": {"$ref": "#/$defs/competition_profile"},
-    "safety": {"$ref": "#/$defs/safety"},
-    "ai_usage": {"type": "array", "items": {"$ref": "#/$defs/ai_usage"}},
-    "human_checkpoints": {"type": "array", "items": {"$ref": "#/$defs/human_checkpoint"}},
-    "model_contract": {"$ref": "#/$defs/file_ref"},
-    "enhanced_integrity_profile": {"type": "boolean", "default": false},
-    "integrity_mode": {"type": "string", "enum": ["dev", "research", "submission"], "default": "dev"},
-    "commands": {"type": "array", "items": {"$ref": "#/$defs/command"}},
-    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "schema_version": {
+      "type": "string",
+      "const": "1.2"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "frozen",
+        "content_ready",
+        "submission_ready",
+        "blocked"
+      ]
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "analysis",
+        "coding",
+        "results",
+        "evidence",
+        "paper",
+        "review",
+        "submission"
+      ]
+    },
+    "competition_profile": {
+      "$ref": "#/$defs/competition_profile"
+    },
+    "safety": {
+      "$ref": "#/$defs/safety"
+    },
+    "ai_usage": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ai_usage"
+      }
+    },
+    "human_checkpoints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/human_checkpoint"
+      }
+    },
+    "model_contract": {
+      "$ref": "#/$defs/file_ref"
+    },
+    "enhanced_integrity_profile": {
+      "type": "boolean",
+      "default": false,
+      "description": "增强完整性 profile：true 时 M1/W1/W2 追加题面快照、数据合同、实现映射、artifact DAG 与构建/PDF/视觉 receipts 检查；与哈希模式（integrity_mode）相互独立，不因开启本开关而要求本地哈希。"
+    },
+    "math_correctness_profile": {
+      "type": "string",
+      "enum": [
+        "baseline",
+        "strict"
+      ],
+      "default": "baseline",
+      "description": "数学正确性档位：baseline 为默认，保留旧 run 迁移窗口；strict 为显式 opt-in，M1 强制 scope contract，W1/W2 强制公式回放、数学写作追溯、展示值安全与源码—PDF 一致性，并由 Gate 独立重跑。见 references/workflow/math_correctness_profile.md。"
+    },
+    "editorial_semantics_profile": {
+      "type": "string",
+      "enum": [
+        "baseline",
+        "strict"
+      ],
+      "default": "baseline",
+      "description": "写作/图表语义档位：baseline 为默认；strict 使 check_gates 在 W2 从声明输入独立重跑 required answer、摘要事实回查与图表语义检查。"
+    },
+    "integrity_mode": {
+      "type": "string",
+      "enum": [
+        "dev",
+        "research",
+        "submission"
+      ],
+      "default": "research",
+      "description": "完整性档位（必填字段，缺失会被 schema 校验拒绝）：dev=本地探索，不触发 formal M1；research=正式研究链，新项目推荐默认；submission=提交冻结，强制全量最终引用哈希。"
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
     "gates": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["m1", "p1", "p2", "w1", "w2", "s1"],
+      "required": [
+        "m1",
+        "p1",
+        "p2",
+        "w1",
+        "w2",
+        "s1"
+      ],
       "properties": {
-        "m1": {"$ref": "#/$defs/gate"},
-        "p1": {"$ref": "#/$defs/gate"},
-        "p2": {"$ref": "#/$defs/gate"},
-        "w1": {"$ref": "#/$defs/gate"},
-        "w2": {"$ref": "#/$defs/gate"},
-        "s1": {"$ref": "#/$defs/gate"}
+        "m1": {
+          "$ref": "#/$defs/gate"
+        },
+        "p1": {
+          "$ref": "#/$defs/gate"
+        },
+        "p2": {
+          "$ref": "#/$defs/gate"
+        },
+        "w1": {
+          "$ref": "#/$defs/gate"
+        },
+        "w2": {
+          "$ref": "#/$defs/gate"
+        },
+        "s1": {
+          "$ref": "#/$defs/gate"
+        }
       }
     },
     "revision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["loop", "cap", "open_issue_ids"],
+      "required": [
+        "loop",
+        "cap",
+        "open_issue_ids"
+      ],
       "properties": {
-        "loop": {"type": "integer", "minimum": 0},
-        "cap": {"type": "integer", "minimum": 0, "maximum": 2},
-        "open_issue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "decision_memo": {"type": "string"}
+        "loop": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "open_issue_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "decision_memo": {
+          "type": "string"
+        }
       }
     },
     "reviewer": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "deterministic_qa", "semantic_critic", "blind_reviewers"],
+      "required": [
+        "profile",
+        "deterministic_qa",
+        "semantic_critic",
+        "blind_reviewers"
+      ],
       "properties": {
-        "profile": {"type": "string", "enum": ["sprint", "final_submission", "award_max"]},
-        "deterministic_qa": {"$ref": "#/$defs/review_status"},
-        "semantic_critic": {"$ref": "#/$defs/review_status"},
-        "blind_reviewers": {"type": "array", "items": {"$ref": "#/$defs/review_status"}}
+        "profile": {
+          "type": "string",
+          "enum": [
+            "sprint",
+            "final_submission",
+            "award_max"
+          ]
+        },
+        "deterministic_qa": {
+          "$ref": "#/$defs/review_status"
+        },
+        "semantic_critic": {
+          "$ref": "#/$defs/review_status"
+        },
+        "blind_reviewers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/review_status"
+          }
+        }
       }
     }
   },
@@ -60,201 +224,726 @@
     "file_ref": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        }
       }
     },
     "rule_snapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rule_id", "title", "url", "retrieved_at", "snapshot"],
+      "required": [
+        "rule_id",
+        "title",
+        "url",
+        "retrieved_at",
+        "snapshot"
+      ],
       "properties": {
-        "rule_id": {"type": "string", "minLength": 1},
-        "title": {"type": "string", "minLength": 1},
-        "url": {"type": "string", "pattern": "^https://"},
-        "retrieved_at": {"type": "string", "minLength": 1},
-        "effective_from": {"type": "string"},
-        "snapshot": {"$ref": "#/$defs/file_ref"}
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effective_from": {
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/file_ref"
+        }
       }
     },
     "submission_rules": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["paper_extensions", "max_paper_bytes", "page_count_scope", "support_policy", "ai_disclosure_policy", "required_manual_checks"],
+      "required": [
+        "paper_extensions",
+        "max_paper_bytes",
+        "page_count_scope",
+        "support_policy",
+        "ai_disclosure_policy",
+        "required_manual_checks"
+      ],
       "properties": {
-        "paper_extensions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^\\.[A-Za-z0-9]+$"}},
-        "max_paper_bytes": {"type": "integer", "minimum": 1},
-        "max_pages": {"type": ["integer", "null"], "minimum": 1},
-        "max_pages_excludes_ai_report": {"type": "boolean"},
-        "page_count_scope": {"type": "string", "minLength": 1},
-        "support_policy": {"type": "string", "enum": ["prohibited", "optional", "required"]},
-        "max_support_bytes": {"type": ["integer", "null"], "minimum": 1},
-        "ai_disclosure_policy": {"type": "string", "enum": ["prohibited", "optional", "required_when_used", "required_always"]},
-        "ai_disclosure_format": {"type": "string", "enum": ["separate_file", "in_paper_section", "both", "none"]},
-        "ai_manual_checks": {"$ref": "#/$defs/ai_manual_checks"},
-        "required_manual_checks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "paper_extensions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^\\.[A-Za-z0-9]+$"
+          }
+        },
+        "max_paper_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_pages": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_pages_excludes_ai_report": {
+          "type": "boolean"
+        },
+        "page_count_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "support_policy": {
+          "type": "string",
+          "enum": [
+            "prohibited",
+            "optional",
+            "required"
+          ]
+        },
+        "max_support_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "ai_disclosure_policy": {
+          "type": "string",
+          "enum": [
+            "prohibited",
+            "optional",
+            "required_when_used",
+            "required_always"
+          ]
+        },
+        "ai_disclosure_format": {
+          "type": "string",
+          "enum": [
+            "separate_file",
+            "in_paper_section",
+            "both",
+            "none"
+          ]
+        },
+        "ai_manual_checks": {
+          "$ref": "#/$defs/ai_manual_checks"
+        },
+        "required_manual_checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "ai_manual_checks": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["when_used", "when_not_used"],
+      "required": [
+        "when_used",
+        "when_not_used"
+      ],
       "properties": {
-        "when_used": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "when_not_used": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "when_used": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "when_not_used": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "competition_profile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile_id", "competition", "season", "mode", "retrieved_at", "official_rules", "official_submission_endpoints", "submission"],
+      "required": [
+        "profile_id",
+        "competition",
+        "season",
+        "mode",
+        "retrieved_at",
+        "official_rules",
+        "official_submission_endpoints",
+        "submission"
+      ],
       "properties": {
-        "profile_id": {"type": "string", "minLength": 1},
-        "competition": {"type": "string", "enum": ["cumcm", "comap_mcm_icm", "other"]},
-        "season": {"type": "string", "minLength": 1},
-        "mode": {"type": "string", "enum": ["pre_contest", "live_contest", "post_contest"]},
-        "problem_choice": {"type": "string", "minLength": 1},
-        "retrieved_at": {"type": "string", "minLength": 1},
-        "official_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule_snapshot"}},
-        "official_submission_endpoints": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^https://"}},
-        "submission": {"$ref": "#/$defs/submission_rules"}
+        "profile_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "competition": {
+          "type": "string",
+          "enum": [
+            "cumcm",
+            "comap_mcm_icm",
+            "other"
+          ]
+        },
+        "season": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "pre_contest",
+            "live_contest",
+            "post_contest"
+          ]
+        },
+        "problem_choice": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retrieved_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "official_rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/rule_snapshot"
+          }
+        },
+        "official_submission_endpoints": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^https://"
+          }
+        },
+        "submission": {
+          "$ref": "#/$defs/submission_rules"
+        }
       }
     },
-    "policy_value": {"type": "string", "enum": ["allow", "competition_specific", "ask", "deny"]},
+    "policy_value": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "competition_specific",
+        "ask",
+        "deny"
+      ]
+    },
     "network_policy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["interactive_human_help", "current_problem_discussion", "public_posting", "external_write", "static_reference_search", "ai_tool_use"],
+      "required": [
+        "interactive_human_help",
+        "current_problem_discussion",
+        "public_posting",
+        "external_write",
+        "static_reference_search",
+        "ai_tool_use"
+      ],
       "properties": {
-        "interactive_human_help": {"$ref": "#/$defs/policy_value"},
-        "current_problem_discussion": {"$ref": "#/$defs/policy_value"},
-        "public_posting": {"$ref": "#/$defs/policy_value"},
-        "external_write": {"$ref": "#/$defs/policy_value"},
-        "static_reference_search": {"$ref": "#/$defs/policy_value"},
-        "ai_tool_use": {"$ref": "#/$defs/policy_value"}
+        "interactive_human_help": {
+          "$ref": "#/$defs/policy_value"
+        },
+        "current_problem_discussion": {
+          "$ref": "#/$defs/policy_value"
+        },
+        "public_posting": {
+          "$ref": "#/$defs/policy_value"
+        },
+        "external_write": {
+          "$ref": "#/$defs/policy_value"
+        },
+        "static_reference_search": {
+          "$ref": "#/$defs/policy_value"
+        },
+        "ai_tool_use": {
+          "$ref": "#/$defs/policy_value"
+        }
       }
     },
     "safety_event": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["event_id", "action", "direction", "channel", "target", "decision", "recorded_at", "reason"],
+      "required": [
+        "event_id",
+        "action",
+        "direction",
+        "channel",
+        "target",
+        "decision",
+        "recorded_at",
+        "reason"
+      ],
       "properties": {
-        "event_id": {"type": "string", "minLength": 1},
-        "action": {"type": "string", "enum": ["interactive_human_help", "current_problem_discussion", "public_posting", "external_write", "static_reference_search", "ai_tool_use"]},
-        "direction": {"type": "string", "enum": ["read", "write", "interactive"]},
-        "channel": {"type": "string", "minLength": 1},
-        "target": {"type": "string", "minLength": 1},
-        "purpose": {"type": "string"},
-        "decision": {"type": "string", "enum": ["blocked", "executed"]},
-        "human_confirmed": {"type": "boolean"},
-        "recorded_at": {"type": "string", "minLength": 1},
-        "reason": {"type": "string", "minLength": 1}
+        "event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "interactive_human_help",
+            "current_problem_discussion",
+            "public_posting",
+            "external_write",
+            "static_reference_search",
+            "ai_tool_use"
+          ]
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write",
+            "interactive"
+          ]
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "blocked",
+            "executed"
+          ]
+        },
+        "human_confirmed": {
+          "type": "boolean"
+        },
+        "recorded_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "safety": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["official_rule", "local_conservative_policy", "events"],
+      "required": [
+        "official_rule",
+        "local_conservative_policy",
+        "events"
+      ],
       "properties": {
-        "official_rule": {"$ref": "#/$defs/network_policy"},
-        "local_conservative_policy": {"$ref": "#/$defs/network_policy"},
-        "events": {"type": "array", "items": {"$ref": "#/$defs/safety_event"}}
+        "official_rule": {
+          "$ref": "#/$defs/network_policy"
+        },
+        "local_conservative_policy": {
+          "$ref": "#/$defs/network_policy"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safety_event"
+          }
+        }
       }
     },
     "ai_verification": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "checked_by_role", "method", "checked_at"],
+      "required": [
+        "status",
+        "checked_by_role",
+        "method",
+        "checked_at"
+      ],
       "properties": {
-        "status": {"type": "string", "enum": ["pending", "verified", "rejected"]},
-        "checked_by_role": {"type": "string", "minLength": 1},
-        "method": {"type": "string", "minLength": 1},
-        "checked_at": {"type": "string", "minLength": 1}
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "verified",
+            "rejected"
+          ]
+        },
+        "checked_by_role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checked_at": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "ai_usage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["usage_id", "tool_name", "model", "provider", "used_at", "stage", "purpose", "prompt_summary", "output_use", "human_changes", "interaction_record", "verification"],
+      "required": [
+        "usage_id",
+        "tool_name",
+        "model",
+        "provider",
+        "used_at",
+        "stage",
+        "purpose",
+        "prompt_summary",
+        "output_use",
+        "human_changes",
+        "interaction_record",
+        "verification"
+      ],
       "properties": {
-        "usage_id": {"type": "string", "minLength": 1},
-        "tool_name": {"type": "string", "minLength": 1},
-        "model": {"type": "string", "minLength": 1},
-        "provider": {"type": "string", "minLength": 1},
-        "used_at": {"type": "string", "minLength": 1},
-        "stage": {"type": "string", "enum": ["analysis", "research", "modeling", "coding", "validation", "visualization", "writing", "review", "submission"]},
-        "purpose": {"type": "string", "minLength": 1},
-        "prompt_summary": {"type": "string", "minLength": 1},
-        "output_use": {"type": "string", "minLength": 1},
-        "human_changes": {"type": "string", "minLength": 1},
-        "interaction_record": {"$ref": "#/$defs/file_ref"},
-        "verification": {"$ref": "#/$defs/ai_verification"}
+        "usage_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "used_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "analysis",
+            "research",
+            "modeling",
+            "coding",
+            "validation",
+            "visualization",
+            "writing",
+            "review",
+            "submission"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt_summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_use": {
+          "type": "string",
+          "minLength": 1
+        },
+        "human_changes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interaction_record": {
+          "$ref": "#/$defs/file_ref"
+        },
+        "verification": {
+          "$ref": "#/$defs/ai_verification"
+        }
       }
     },
     "human_checkpoint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["checkpoint_id", "stage", "scope", "artifacts", "manual_checks", "reviewed_by_role", "decision", "checked_at"],
+      "required": [
+        "checkpoint_id",
+        "stage",
+        "scope",
+        "artifacts",
+        "manual_checks",
+        "reviewed_by_role",
+        "decision",
+        "checked_at"
+      ],
       "properties": {
-        "checkpoint_id": {"type": "string", "minLength": 1},
-        "stage": {"type": "string", "enum": ["m1", "p2", "w1", "w2", "s1", "f1"]},
-        "scope": {"type": "string", "minLength": 1},
-        "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/file_ref"}},
-        "manual_checks": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "reviewed_by_role": {"type": "string", "minLength": 1},
-        "decision": {"type": "string", "enum": ["confirm", "edit", "regenerate", "ask", "skip_with_reason", "abort", "pass", "fail"]},
-        "checked_at": {"type": "string", "minLength": 1},
-        "notes": {"type": "string"}
+        "checkpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "m1",
+            "p2",
+            "w1",
+            "w2",
+            "s1",
+            "f1"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/file_ref"
+          }
+        },
+        "manual_checks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reviewed_by_role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "confirm",
+            "edit",
+            "regenerate",
+            "ask",
+            "skip_with_reason",
+            "abort",
+            "pass",
+            "fail"
+          ]
+        },
+        "checked_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notes": {
+          "type": "string"
+        }
       }
     },
     "command": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["command_id", "stage", "command", "exit_code"],
+      "required": [
+        "command_id",
+        "stage",
+        "command",
+        "exit_code"
+      ],
       "properties": {
-        "command_id": {"type": "string", "minLength": 1},
-        "stage": {"type": "string", "enum": ["safety", "smoke", "full", "freeze", "evidence", "qa", "review", "submission"]},
-        "command": {"type": "string", "minLength": 1},
-        "exit_code": {"type": "integer"},
-        "started_at": {"type": "string"},
-        "finished_at": {"type": "string"},
-        "stdout_artifact": {"type": "string"},
-        "stderr_artifact": {"type": "string"}
+        "command_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "safety",
+            "smoke",
+            "full",
+            "freeze",
+            "evidence",
+            "qa",
+            "review",
+            "submission"
+          ]
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "stdout_artifact": {
+          "type": "string"
+        },
+        "stderr_artifact": {
+          "type": "string"
+        }
       }
     },
     "artifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "role"],
+      "required": [
+        "path",
+        "role"
+      ],
       "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
-        "role": {"type": "string", "enum": ["rule_snapshot", "problem_snapshot", "data_contract", "implementation_map", "artifact_dag", "presentation_contract", "template_contract", "claim_inventory", "writer_package", "ai_interaction", "frozen_results", "derived_results", "failure_evidence", "sensitivity_experiment", "oos_artifact", "evidence_registry", "paper_plan", "paper", "figure", "figure_qa", "table", "build_receipt", "pdf_visual_qa", "visual_review_receipt", "qa_report", "critic_report", "blind_report", "ai_disclosure", "support_package", "submission_qa", "submission_receipt", "other"]}
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "rule_snapshot",
+            "problem_snapshot",
+            "data_contract",
+            "implementation_map",
+            "artifact_dag",
+            "presentation_contract",
+            "template_contract",
+            "claim_inventory",
+            "writer_package",
+            "ai_interaction",
+            "frozen_results",
+            "run_index",
+            "derived_results",
+            "failure_evidence",
+            "sensitivity_experiment",
+            "oos_artifact",
+            "evidence_registry",
+            "paper_plan",
+            "paper",
+            "figure",
+            "figure_qa",
+            "table",
+            "build_receipt",
+            "pdf_visual_qa",
+            "visual_review_receipt",
+            "qa_report",
+            "critic_report",
+            "blind_report",
+            "ai_disclosure",
+            "support_package",
+            "submission_qa",
+            "submission_receipt",
+            "other"
+          ]
+        }
       }
     },
     "gate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "checked_at"],
+      "required": [
+        "status",
+        "checked_at"
+      ],
       "properties": {
-        "status": {"type": "string", "enum": ["pending", "pass", "fail", "blocked"]},
-        "checked_at": {"type": "string", "minLength": 1},
-        "evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "issue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pass",
+            "fail",
+            "blocked"
+          ]
+        },
+        "checked_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "issue_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "review_status": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
-        "status": {"type": "string", "enum": ["pending", "pass", "fail", "blocked"]},
-        "reviewer_id": {"type": "string", "minLength": 1},
-        "report": {"type": "string", "minLength": 1},
-        "report_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
-        "issue_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pass",
+            "fail",
+            "blocked"
+          ]
+        },
+        "reviewer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "report_sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "issue_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     }
   }
