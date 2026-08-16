@@ -48,7 +48,7 @@ flowchart TD
 
 ## 核心 artifact
 
-基础兼容 profile 维护五个核心 JSON。新项目默认使用 `integrity_mode=research`；只有最终提交切换到 `submission` 并强制全量文件哈希。新加入的派生/敏感性/OOS/失败辅助 artifact 在 dev/research 只需路径和语义绑定，已有哈希会被校验，但本地不必为每一步生成哈希。`enhanced_integrity_profile=true` 是额外的题面、数据、实现、呈现与 PDF receipts 检查，不应和哈希模式混为一谈：
+基础兼容 profile 长期维护五个核心 JSON。新项目默认使用 `integrity_mode=research`（必填字段，缺失会被 schema 校验拒绝）；只有最终提交切换到 `submission` 并强制全量文件哈希。新加入的派生/敏感性/OOS/失败辅助 artifact 在 dev/research 只需路径和语义绑定，已有哈希会被校验，但本地不必为每一步生成哈希。`enhanced_integrity_profile=true` 是额外的题面、数据、实现、呈现与 PDF receipts 检查，不应和哈希模式混为一谈：
 
 | 文件 | 作用 |
 |---|---|
@@ -57,7 +57,8 @@ flowchart TD
 | `frozen_results.json` | P2 可信结果与上游快照 |
 | `evidence_registry.json` | 唯一增量证据账本 |
 | `paper_plan.json` | W1 claim-evidence、章节、摘要和图表计划 |
-| `submission_manifest.json` | F1 最终不可变提交快照 |
+
+F1 阶段追加第六个不可变文件：`submission_manifest.json`（最终提交快照，`freeze_submission.py` 生成、禁止覆盖，不属于常规维护的五个合同）。
 
 增强 profile 另外要求：`problem_snapshot.json`、每个权威数据集的 `data_contract.json`、`implementation_map.json`、`artifact_dag.json`、`presentation_contract.json`、工具生成的 `claim_inventory.json`、`build_receipt.json`、`pdf_visual_qa.json` 与人工/多模态 `visual_review_receipt.json`。详见 [第二轮整合审计](docs/SECOND_ROUND_EDITORIAL_INTEGRATION_AUDIT_2026-08-13.md)。
 
@@ -104,6 +105,41 @@ vendor/template_sources.json     模板来源、锁定提交与许可证决策
 vendor/clone_templates.ps1       重建本地浅克隆（clone 目录不随 Skill 分发）
 ```
 
+## 调用示例（发给 Agent 的 prompt）
+
+标准场景——给定赛题，按 Harness 跑完整证据链与论文草稿。可直接复制后替换路径与比赛名：
+
+```text
+请用 math-modeling-skill-sion 完成 <比赛名，如 2025 国赛> A 题的建模全流程。
+
+题目与附件位于 <题目目录路径>；请在工作区新建 <项目目录，如 battle/YYYY-MM-DD/> 下运行，
+manifest 显式写入 integrity_mode=research，并按 SKILL.md 的 Gate 顺序推进：
+S0 画像/数据契约 → M1 研究、候选比较与模型合同（check_modeling_plan --formal --strict）
+→ P1 smoke → P2 独立重算并冻结结果 → W1 论文计划/数值宏 → W2 LaTeX 论文与确定性 QA
+→ 生成三个 result*.xlsx；不需要 S1/F1。
+
+硬性要求：
+1. 每个数值只能来自冻结结果或由 derive_results 计算；禁止手填或编造；
+2. 验证义务由 evaluate_obligations 独立重算，FAIL 保持 FAIL；
+3. 人工 checkpoint 如无真人复核，decision 保持 ask，不得代签；
+4. 正式图按 Figure Contract：数据图由冻结数据生成，框架图走 diagram_spec→draw.io，
+   如要用 AI 生成的重要示意图/框架图，走 illustration 通道（backend_comparison 择优、
+   ≥300 DPI、prompt 落盘、人工复核、caption 声明不承载数值结论）；
+5. 最后输出一份"问题与摩擦点清单"：哪些 Gate 失败、哪些能力缺失、哪些表述含糊。
+
+先读取 SKILL.md 与 references/safety/contest_safety.md，再开始执行。
+```
+
+精简版（已熟悉 Harness 时）：
+
+```text
+用 math-modeling-skill-sion 在 <目录> 按 Gate 顺序跑 <题目路径>，
+integrity_mode=research；数值只来自冻结链，AI 图走 illustration 通道，
+结束时给我 Gate 状态表和问题清单。
+```
+
+说明：`<比赛名>` 决定 Competition Profile（cumcm / mcm_icm / apmcm）；需要更强数学阻断时可让 manifest 追加 `"math_correctness_profile": "strict"`（见 [Strict Math Correctness Profile](references/workflow/math_correctness_profile.md)）；真实提交前才升级 `integrity_mode=submission` 并执行 S1/F1。
+
 ## 快速开始
 
 ### 0. 比赛前离线自检与模板锁定
@@ -118,6 +154,8 @@ python scripts/doctor.py --offline
 ```powershell
 python -m pip install -r requirements-dev.txt
 ```
+
+以下模板来源与许可证细节供赛前审计与分发合规使用，首次本地运行可先跳过：
 
 默认锁定 CUMCMThesis、mcmthesis、Eisvogel 和 SciencePlots。用户指定的三个 Overleaf 页面也逐项登记，但公开 Gallery 项目需要进入登录账户后才能导出 source ZIP，不能冒充 Git clone；manifest 将它们与可验证的兼容仓库明确分开。Scientific Visualization Book 与 Python Graph Gallery 需要显式传 `-IncludeLargeReferences` 才下载；当前已按稀疏路径锁定到指定提交，仅作为本地图形设计参考，整个 `vendor/upstream/` 已被 Git 忽略，禁止随 Skill 分发。所有社区上游都不是当届官方规则。CUMCMThesis 的当前审计快照没有仓库级 LICENSE，因此也禁止随 Skill 分发；具体页面、提交、稀疏路径和许可证见 `vendor/template_sources.json`。
 
@@ -253,6 +291,8 @@ python scripts/validation/evaluate_obligations.py `
   --output reports/full_validation.json
 ```
 
+求值报告生成后，冻结完整 run（PASS/FAIL/ERROR 均会冻结，供审计）：
+
 ```powershell
 python scripts/freeze_results.py `
   --source results/raw_results.json `
@@ -281,7 +321,7 @@ python scripts/register_evidence.py `
 
 ### 4. W2 确定性 QA
 
-先检查论文计划是否足以写技术首稿，再编译只读 writer package。正式编译默认要求每个子问题都有建模/推导、结果、验证、解释/边界和图表或豁免；只有本地检查轮廓时才显式使用 `--preview`。
+先检查论文计划是否足以写技术首稿，再编译只读 writer package。正式编译默认要求每个子问题都有建模/推导、结果、验证、解释/边界和图表或豁免；只有本地检查轮廓时才显式使用 `compile_writer_package.py --preview`。
 
 ```powershell
 python scripts/qa/check_paper_readiness.py `
@@ -464,7 +504,7 @@ python scripts/qa/check_submission_manifest.py `
 
 ## Figure / Reviewer 边界
 
-Figure Contract 现在要求 message、comparison、visual encoding、selection rule 与 accessibility。数据图继续由确定性绘图库生成；概念流程图/框架图使用 [Diagram Workflow](references/visualization/diagram_workflow.md) 的可编辑源和 `diagram_spec.json`。默认 SVG/PDF，另有 `raster_only` 选项时必须声明 `raster_text`、DPI 和源文件。`check_figure.py` 检查导出格式、PDF 字体和栅格有效 DPI，`check_diagram_spec.py` 检查节点/边/来源/编辑性，`check_pdf.py` 负责最终 PDF 全页渲染。灰度/色觉、视觉强调和可读性仍由 visual review receipt 裁决，不冒充纯自动审美评分。
+Figure Contract 现在要求 message、comparison、visual encoding、selection rule 与 accessibility。数据图继续由确定性绘图库生成；概念流程图/框架图使用 [Diagram Workflow](references/visualization/diagram_workflow.md) 的可编辑源和 `diagram_spec.json`，AI 位图可经 [Figure Contract](references/contracts/figure_contract.md) 的 `illustration` 通道成为正式图（框架图须与可编辑后端 `backend_comparison` 择优并保留可编辑源；一律 ≥300 DPI、prompt 落盘、人工复核、caption 声明不承载数值结论）。默认 SVG/PDF，另有 `raster_only` 选项时必须声明 `raster_text`、DPI 和源文件。`check_figure.py` 检查导出格式、PDF 字体和栅格有效 DPI，`check_diagram_spec.py` 检查节点/边/来源/编辑性，`check_pdf.py` 负责最终 PDF 全页渲染。灰度/色觉、视觉强调和可读性仍由 visual review receipt 裁决，不冒充纯自动审美评分。
 
 Reviewer 默认不堆 Agent：
 
@@ -475,6 +515,26 @@ Reviewer 默认不堆 Agent：
 | `award_max` | 冻结成稿后按需使用 3 个隔离盲席 |
 
 修订最多两轮，只处理稳定 issue ID 指向的问题；blocker/high 不下降时停止并写 decision memo。
+
+## Acknowledgement / 开源项目致谢
+
+本 Harness 的合同、审查、写作和绘图流程是在以下开源项目的公开设计与资料基础上融合、重写和本地化形成的。这里的“融合”表示吸收可验证的机制或作为本地参考入口，不表示把上游仓库整体复制进本项目；未声明为运行时依赖的资料不会自动注入模型上下文。逐仓裁决基于 2026-08-08 审计快照（commit 见 [开源机制整合审计](docs/HARNESS_INTEGRATION_ANALYSIS.md)）；上游演进后应按赛前复核节奏重审对应裁决，不把旧裁决当作长期有效。
+
+| 项目 | 实际吸收的部分 | 本项目的边界 |
+|---|---|---|
+| [XiaoMaColtAI/math-modeling-skill](https://github.com/XiaoMaColtAI/math-modeling-skill) | Model Contract、M1/P1/P2 短链和角色化建模流程 | 重写为本地 schema、Evidence Registry、冻结结果和 Gate；不把固定图数、默认哈希或自然语言合同当作强制规则 |
+| [sweetcornna/mathodology](https://github.com/sweetcornna/mathodology) | 有界修订（两轮定向返修 + decision memo）、稳定 issue ID、reviewer 分档（sprint/final_submission/award_max）与 handoff lint 思想 | 不搬九阶段逐段 Critic 与默认三盲席；盲审仍是隔离上下文的可选 profile，阈值按赛事校准 |
+| [jihe520/MathModelAgent](https://github.com/jihe520/MathModelAgent) | 题目分析—候选模型—代码接口、关键中间结果落盘和人工检查节点 | 不复制多 Agent 平行事实源；结果以 `frozen_results.json` 为唯一可声明数值源 |
+| [yuanchen-home/cumcm-step-review](https://github.com/yuanchen-home/cumcm-step-review) | 逐问审阅、研究顺序与呈现顺序分离、摘要 Draft→Fact Backcheck→Final、claim-first 图选择和 draw.io 工作流 | 不照搬固定摘要句式、固定图/表数量或上游语料；转化为可选 editorial profile 与本地 Figure Contract |
+| [Yuan1z0825/nature-skills](https://github.com/Yuan1z0825/nature-skills) | Claim-first Figure Contract、源码/导出/PDF 渲染分层 QA 和 consistency sweep | 不套用 Nature 的版心、字体和固定期刊规格；竞赛 profile 负责最终参数 |
+| [zLanqing/codex-claude-academic-skills](https://github.com/zLanqing/codex-claude-academic-skills) | 一个 Writer 按需加载章节规则、claim→evaluation 和证据边界 | 不拆成多个 Writer，不允许修辞覆盖冻结结果或数学合同 |
+| [lishix520/academic-paper-skills](https://github.com/lishix520/academic-paper-skills) | 写作前 Paper Strategy、贡献/论证顺序和 reviewer 视角 | 合并到 `paper_plan`，不引入固定样本数、文献数和多份平行报告 |
+| [lingzhi227/agent-research-skills](https://github.com/lingzhi227/agent-research-skills) | backward traceability、引用验证、渐进实验和 concern-driven revision | 采用证据链思想，不采用自动占位 BibTeX 或与竞赛无关的科研硬编码配额 |
+| [zhanwen/MathModel](https://github.com/zhanwen/MathModel)、[personqianduixue/Math_Model](https://github.com/personqianduixue/Math_Model)、[HuangCongQing/Algorithms_MathModels](https://github.com/HuangCongQing/Algorithms_MathModels)、[datawhalechina/intro-mathmodel](https://github.com/datawhalechina/intro-mathmodel) | 本地方法族、算法实现、教程和往届案例的检索入口 | 只用于候选发现和学习；候选必须回到题面、真实文献和独立验证，不把资料库内容自动当作本题 evidence |
+| [latexstudio/CUMCMThesis](https://github.com/latexstudio/CUMCMThesis) | `cumcmthesis` 类与完整模板结构作为国赛技术底座 | 用户模板/社区模板与当届官方规则分开锁定；不把未确认许可证的上游 class 随 Harness 分发 |
+| [garrettj403/SciencePlots](https://github.com/garrettj403/SciencePlots) | 科研绘图样式（science/ieee 风格）的设计参考 | 运行时使用自有轻量样式与 `assets/styles/mathmodel.mplstyle`，不强依赖该包；锁定提交与许可证见 `vendor/template_sources.json` |
+
+更完整的 commit、许可证、吸收/拒绝理由见 [开源机制整合审计](docs/HARNESS_INTEGRATION_ANALYSIS.md) 和 [上游长处复核](docs/UPSTREAM_STRENGTHS_REVIEW_2026-08-13.md)。
 
 ## 验证
 

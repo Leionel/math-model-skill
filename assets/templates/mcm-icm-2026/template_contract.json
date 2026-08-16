@@ -21,7 +21,15 @@
     "\\begin{abstract}",
     "\\begin{keywords}"
   ],
-  "forbidden_document_classes": ["article", "ctexart", "report", "book"],
-  "allowed_engines": ["pdflatex", "xelatex"],
-  "notes": "MCM/ICM community template with Summary Sheet and in-paper Report on Use of AI section."
+  "forbidden_document_classes": [
+    "article",
+    "ctexart",
+    "report",
+    "book"
+  ],
+  "allowed_engines": [
+    "pdflatex",
+    "xelatex"
+  ],
+  "notes": "MCM/ICM community template with Summary Sheet and in-paper Report on Use of AI section. status=verified binds this sanitized skeleton to the locked upstream commit and the entrypoint/command contract above; per-contest format validation still happens per run via check_template_usage.py and check_pdf.py against the current official profile."
 }

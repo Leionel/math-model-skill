@@ -20,7 +20,14 @@
     "\\begin{abstract}",
     "\\keywords{\\PaperKeywords}"
   ],
-  "forbidden_document_classes": ["article", "ctexart", "report", "book"],
-  "allowed_engines": ["xelatex"],
-  "notes": "Community class plus a sanitized electronic-submission skeleton. The competition profile and final PDF QA remain the authority for current official rules."
+  "forbidden_document_classes": [
+    "article",
+    "ctexart",
+    "report",
+    "book"
+  ],
+  "allowed_engines": [
+    "xelatex"
+  ],
+  "notes": "Community class plus a sanitized electronic-submission skeleton. The competition profile and final PDF QA remain the authority for current official rules. status=verified binds this sanitized skeleton to the locked upstream commit and the entrypoint/command contract above; per-contest format validation still happens per run via check_template_usage.py and check_pdf.py against the current official profile."
 }

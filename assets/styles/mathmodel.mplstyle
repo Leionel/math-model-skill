@@ -19,3 +19,7 @@ pdf.fonttype: 42
 ps.fonttype: 42
 svg.fonttype: none
 axes.prop_cycle: cycler('color', ['0072B2', 'E69F00', '009E73', 'D55E00', 'CC79A7', '56B4E9'])
+
+# CJK fallback for Chinese labels: try common Windows/macOS/Linux CJK faces after DejaVu.
+font.sans-serif: DejaVu Sans, Microsoft YaHei, SimHei, Noto Sans CJK SC, PingFang SC, Arial Unicode MS
+axes.unicode_minus: False
