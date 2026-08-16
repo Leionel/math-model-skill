@@ -677,7 +677,7 @@ class P0HarnessTest(unittest.TestCase):
             )
             self.assertEqual(qa.returncode, 0, qa.stdout + qa.stderr)
             labels = {row["label"] for row in read_json(paths["qa_report"])["checks"]}
-            self.assertEqual(labels, {"contracts", "math_semantics", "contest_safety", "consistency", "citations"})
+            self.assertEqual(labels, {"contracts", "scope_consistency", "formula_replay", "math_semantics", "contest_safety", "consistency", "citations"})
 
     def test_s1_rejects_missing_manual_check(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-s1-") as temp:

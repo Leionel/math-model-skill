@@ -279,7 +279,10 @@ class EnhancementsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="math-diagram-spec-") as temp:
             project = Path(temp)
             (project / "diagram.drawio").write_text(
-                '<mxGraphModel><root><mxCell value="Input data"/><mxCell value="Model"/><mxCell value="Validated result"/></root></mxGraphModel>',
+                '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>'
+                '<mxCell id="2" value="Input data" parent="1"/>'
+                '<mxCell id="3" value="Model" parent="1"/>'
+                '<mxCell id="4" value="Validated result" parent="1"/></root></mxGraphModel>',
                 encoding="utf-8",
             )
             (project / "diagram.svg").write_text("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>", encoding="utf-8")
