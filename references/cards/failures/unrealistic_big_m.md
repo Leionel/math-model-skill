@@ -17,8 +17,7 @@ x \ge L - M(1 - y), \quad \text{其中 } M = 10^9 \text{ 或 } 10^{12}
 - 最终输出 $y=0$ 却 $x=100$ 的非法逻辑错误解！
 
 ## 4. Harness 应如何发现与拦截
-- **Big-M 紧上界检查（Tight Bound Verification）**：扫描模型合同中的 Big-M 常数，强制要求 $M$ 必须由物理约束的最大可能极差推导确定（例如 $M = \max(x) - \min(L)$）；
-- 若 $M > 10^5$，触发数值警告并要求提供紧确性证明。
+- **紧上界审查（Tight Bound Verification）**：Big-M 常数作为参数写入模型合同的 `parameter_plan`（`DERIVED` provenance 给出推导式，如 $M = \max(x) - \min(L)$）；目前无自动扫描脚本，属 M1 人审 + `check_derivation_integrity` 操作前提检查项——$M > 10^5$ 应触发人工质询并要求紧上界证明。
 
 ## 5. 论文中如何正确表达
 “根据地块最大总面积与单产上限，推导出紧确上界 $M = \max_{i} \text{Area}_i = 120\text{ 亩}$，避免使用过大松弛常数引发数值精度病态。”

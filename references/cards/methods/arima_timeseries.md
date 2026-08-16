@@ -44,3 +44,9 @@ $\text{SARIMA}(p, d, q) \times (P, D, Q)_s$：
 ## 10. 论文表达规范
 - 必须展示：原始序列与差分序列时域图、ACF/PACF 诊断图、残差 Q-Q 正态图、测试集预测曲线 vs 真实值 vs Baseline 预测对比图；
 - 汇报指标表：MAE, RMSE, MAPE, 相比 Seasonal Naive 的误差下降百分点。
+## 11. 典型优秀论文机制
+- 滚动起点验证（Rolling-Origin / Time-Series Cross-Validation）替代单次切分，报告多窗口平均误差；
+- ARIMAX 引入外生变量（气温/价格/政策哑变量）解释结构变化，减少纯 AR 项背锅。
+
+## 12. 推荐实现入口
+`statsmodels.tsa.arima.model.ARIMA` / `statsmodels.tsa.statespace.SARIMAX`（需自行安装 statsmodels）；ADF/Ljung-Box 用 `statsmodels.tsa.stattools`。

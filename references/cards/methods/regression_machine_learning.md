@@ -45,3 +45,9 @@
 ## 10. 论文表达规范
 - 汇报特征重要性排序图（Feature Importance / SHAP Summary Plot）；
 - 给出训练误差 vs 测试误差学习曲线，证明未出现严重过拟合。
+## 11. 典型优秀论文机制
+- 机理+残差混合建模：物理机理项固定形式，机器学习只拟合残差，外推比纯黑箱稳；
+- SHAP 方向一致性检验：特征重要性的符号与领域常识一致才进入解释段。
+
+## 12. 推荐实现入口
+`scikit-learn`（Ridge/Lasso，需自行安装）；回归指标复算用 `scripts/scaffold/eval_metrics.py`（`calculate_regression_metrics`）。

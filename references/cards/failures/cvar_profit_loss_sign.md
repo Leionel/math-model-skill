@@ -19,7 +19,7 @@
 套用错误公式时，方案 B 因情景 2 产生巨大的 $u_2 \ge 500 - \alpha$，导致目标函数扣除巨额惩罚，系统竟然判定恒定 100 万的方案 A 优于有概率赚 500 万的方案 B！
 
 ## 4. Harness 应如何发现与拦截
-- **CVaR 符号契约检查（`check_modeling_plan.py`）**：强制声明 `optimization_direction`（min/max）、`target_nature`（profit/loss）、`tail_direction`（left/right）；
+- **CVaR 符号契约检查（`check_modeling_plan.py` / `check_math_semantics.py`）**：风险度量模型必须声明 `risk_semantics`（schema 字段：`random_variable`=profit/loss、`tail`=upper/lower、`confidence_level`、`objective_direction`=minimize/maximize）；方向约定违例（loss+upper 必须 minimize、profit+lower 必须 maximize）与非常规组合（loss+lower / profit+upper）直接 FAIL；
 - 执行极值退化测试：检查高利润方案是否被系统错误惩罚。
 
 ## 5. 论文中如何正确表达

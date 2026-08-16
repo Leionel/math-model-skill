@@ -15,11 +15,11 @@ numpy.linalg.LinAlgError: Matrix is not positive definite
 \[
 \Sigma = \begin{pmatrix} 1.0 & 0.9 & -0.9 \\ 0.9 & 1.0 & 0.9 \\ -0.9 & 0.9 & 1.0 \end{pmatrix}
 \]
-该矩阵行列式 $\det(\Sigma) = -1.432 < 0$，最小特征值 $\lambda_{\min} = -0.71 < 0$，根本不是合法的协方差矩阵，无法进行概率抽样！
+该矩阵行列式 $\det(\Sigma) = 1 + 2(0.9)(-0.9)(0.9) - 3(0.9^2) = -2.888 < 0$，特征值为 $\{1.9,\ 1.9,\ -0.8\}$，最小特征值 $\lambda_{\min} = -0.8 < 0$，根本不是合法的协方差矩阵，无法进行概率抽样！
 
 ## 4. Harness 应如何发现与拦截
-- **Precondition 拦截（`check_modeling_plan.py`）**：在执行 Cholesky 分解前，强制调用特征值分解 `min(eigvals) >= -1e-7` 校验；
-- **自动修复引导**：若非半正定，自动执行 Higham 最近半正定矩阵投影算法（Nearest PSD Projection）进行数值平滑。
+- **合同强制声明（`check_modeling_plan.py` + `check_math_semantics.py`）**：`characteristics` 含 `correlated_inputs` 时必须声明 `correlation_spec`（来源、样本范围、维度、最小特征值），且 `psd_verified=true` 才能通过；任何公式/算法提到 Cholesky 时要求 `min_eigenvalue > 0`（PD，不只是 PSD）；
+- **修复指引（非自动改写）**：检测到非正定时，建模者应改用成对协方差完全观测、或 Higham 最近半正定投影后再抽样，并把修正前后的最小特征值写进 `correlation_spec`；Harness 不代替用户改矩阵。
 
 ## 5. 论文中如何正确表达
 “由历史观测样本估计得到经验相关系数矩阵后，采用 Higham 算法做最近半正定一致性修正，确保多维正态分布联合抽样的数学合法性。”

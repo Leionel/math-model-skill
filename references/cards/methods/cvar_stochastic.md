@@ -55,3 +55,9 @@
 ## 10. 论文表达规范
 - 绘制 Pareto 风险-收益权衡曲线（X 轴为 CVaR 尾部损失，Y 轴为期望收益）；
 - 给出不同 $\lambda$ 取值下的调度决策对比，解释风险规避对决策的物理重构意义。
+## 11. 典型优秀论文机制
+- 场景法两阶段随机规划：第一阶段 here-and-now 决策 + 第二阶段 recourse 校正，CVaR 只约束第一阶段成本尾部分布；
+- 对风险权重 $\lambda$ 与置信水平 $eta$ 做网格扫描，输出完整风险-收益前沿并标注推荐工作点。
+
+## 12. 推荐实现入口
+场景线性化后按 MILP 求解：`scripts/scaffold/opt_milp.py`；黑箱版对照 `scripts/scaffold/metaheuristics.py`。
