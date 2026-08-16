@@ -4,6 +4,8 @@
 > 审计结论：**NO-GO——当前产物可以作为自动建模与成文原型，但不能标记为“研究链已验证”的竞赛终稿。**  
 > 核心原则：`Model declared ≈ Model implemented ≈ Model evaluated ≈ Result frozen ≈ Claim supported ≈ Paper stated`；`FAIL remains FAIL`。
 
+> **历史快照提示（2026-08-16 补）**：本审计为 2026-08-08 时点快照。其中研究语义核心缺陷（验证自报通过、`claimable` 可手填、Gate 放行违反 acceptance 的 run）已在 Wave 1 修复并有回归测试（见 [REVISED_IMPLEMENTATION_ROADMAP_2026-08-12](REVISED_IMPLEMENTATION_ROADMAP_2026-08-12.md) 实施状态与 `tests/test_p0_harness.py`）；文中引用的 `build_paper.py`、`collect_results.py`、`refresh_q4.py`、`conform_contracts.py` 属外部生成运行目录，不在本仓库。当前能力与边界以 [MATH_HARNESS_IMPLEMENTATION_STATUS](MATH_HARNESS_IMPLEMENTATION_STATUS.md) 为准，勿将本文结论当作现状。
+
 ## 审计边界与证据范围
 
 本报告审计的是当前 Skill/Harness 及其真实生成运行：

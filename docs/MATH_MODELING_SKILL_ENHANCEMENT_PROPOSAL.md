@@ -120,7 +120,7 @@ sequenceDiagram
         Agile->>Engine: 生成算法原型并执行 Smoke
         alt 运行异常 (语法/维度/数值)
             Engine-->>Agile: 捕获 Traceback
-            Agile->>Engine: 触发有界返修编排 (最多 2-3 轮，必须显式回调，严禁改约束)
+            Agile->>Engine: 触发有界返修编排 (最多 3 轮，必须显式回调，严禁改约束)
         end
         Engine-->>Harness: 产出 raw_results
         Harness->>Harness: 独立求值器重算验证 (evaluate_obligations)
@@ -151,7 +151,7 @@ sequenceDiagram
 - **拒绝盲目生成固定 2~3 套方案**：普通子问题采用「主模型 + 极简 Baseline（如规则启发式/简单统计）」，高风险或核心决胜问题引入一套有实质差异的「Alternative 模型」，若物理/几何机理明确则采用「单模型 + 机理推导」。参考：[`model_planning.md`](file:///d:/Projects/随便做做/math-modeling-skill-sion/references/research/model_planning.md)。
 - **Precedent Cards 查漏机制**：仅在初步问题解构完成后检索历史优秀论文机制卡 [`references/cards/`](file:///d:/Projects/随便做做/math-modeling-skill-sion/references/cards/)，用于发现遗漏的约束、典型验证方法或常见陷阱，**严禁以往届论文直接决定选型**（参见 [`precedent_policy.md`](file:///d:/Projects/随便做做/math-modeling-skill-sion/references/research/precedent_policy.md)）。
 - **Socratic 歧义分支（Assumption Forks）**：仅在题意存在二义性、参数语义缺失且会颠覆后续建模时触发向选手的提问，不作为每题冗长的固定对话。
-- **契约自动生成**：通过校验工具 [`check_modeling_plan.py`](file:///d:/Projects/随便做做/math-modeling-skill-sion/scripts/qa/check_modeling_plan.py) 和语义检查 [`check_math_semantics.py`](file:///d:/Projects/随便做做/math-modeling-skill-sion/scripts/qa/check_math_semantics.py) 确保公式符号与参数来源完备。
+- **契约校验**：通过校验工具 [`check_modeling_plan.py`](file:///d:/Projects/随便做做/math-modeling-skill-sion/scripts/qa/check_modeling_plan.py) 和语义检查 [`check_math_semantics.py`](file:///d:/Projects/随便做做/math-modeling-skill-sion/scripts/qa/check_math_semantics.py) 强制已声明模型输入具备 typed provenance，并对缺失来源报错（未列入合同的输入不在检查范围，不能据此声称“完备”）。
 
 #### 2.2 建模问题族模式库（Pattern Catalog）
 在 Agent 内部注入六大标准数模问题族知识（可参考 [intro-mathmodel](https://github.com/datawhalechina/intro-mathmodel) 与 [Algorithms_MathModels](https://github.com/HuangCongQing/Algorithms_MathModels)）：

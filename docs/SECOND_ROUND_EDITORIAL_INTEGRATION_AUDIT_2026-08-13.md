@@ -4,6 +4,8 @@
 范围：当前本地仓库、`math-model-skill_aesthetic_editorial_supplement_2026-08-12.md` 与第二轮对标意见。  
 判断边界：本审计不使用被审计的数学建模 Skill 作为合理性依据；社区项目只提供可核查的工程机制，不提供赛事规则或获奖因果证明。
 
+> 快照说明（2026-08-16 补）：文中测试数量等为 2026-08-13 当日快照；当前实现状态以 [MATH_HARNESS_IMPLEMENTATION_STATUS](MATH_HARNESS_IMPLEMENTATION_STATUS.md) 为准。
+
 ## 结论
 
 两份补充意见的主方向合理：当前短板不是模型数量，而是从题面、数据、公式、运行、claim 到最终 PDF/提交文件的连续可核验机制。应吸收“题意追踪、数据语义、公式—代码映射、正文 claim inventory、统一呈现、实际 PDF QA、安全构建与提交回执”；但不能把主观审美、固定图数、固定字体或 community template 升格为 P0。
