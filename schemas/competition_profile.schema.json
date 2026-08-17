@@ -1,121 +1,168 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "CompetitionProfile",
-  "description": "Resolved competition profile defining rules, LaTeX template, AI disclosure and submission constraints",
-  "type": "object",
-  "required": [
-    "competition_family",
-    "competition_name",
-    "language",
-    "base_template",
-    "rules",
-    "ai_disclosure",
-    "submission"
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/competition-profile.schema.json",
+  "title": "Canonical Competition Profile (v2; v1 read compatibility)",
+  "description": "The standalone competition_profile.json is the only competition-rules source of truth. The legacy branch is a read-only boundary adapter and is never emitted by the v2 writer.",
+  "oneOf": [
+    { "$ref": "#/$defs/v2" },
+    { "$ref": "#/$defs/v1_legacy" }
   ],
-  "properties": {
-    "profile_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "competition_family": {
-      "type": "string",
-      "enum": ["cumcm", "mcm_icm", "custom"]
-    },
-    "competition_name": {
-      "type": "string"
-    },
-    "season": {
-      "type": "string"
-    },
-    "language": {
-      "type": "string"
-    },
-    "default_engine": {
-      "type": "string",
-      "enum": ["xelatex", "pdflatex", "lualatex"]
-    },
-    "base_template": {
-      "type": "string"
-    },
-    "deadline": {
-      "type": "string"
-    },
-    "timezone": {
-      "type": "string"
-    },
-    "rules": {
+  "$defs": {
+    "file_ref": {
       "type": "object",
-      "required": ["page_limit", "anonymous_mode"],
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["path"] },
+        { "required": ["artifact_id"] }
+      ],
       "properties": {
-        "page_limit": { "type": "integer", "minimum": 1 },
-        "min_pages": { "type": "integer", "minimum": 1 },
-        "abstract_pages": { "type": "integer" },
-        "cover_page": { "type": "string" },
-        "max_pages_excludes_ai_report": { "type": "boolean" },
-        "anonymous_mode": { "type": "boolean" },
-        "anonymous_rules": {
-          "type": "object",
-          "properties": {
-            "forbid_team_number_in_body": { "type": "boolean" },
-            "forbid_school_name_in_body": { "type": "boolean" },
-            "forbid_student_names_in_body": { "type": "boolean" },
-            "forbid_advisor_names_in_body": { "type": "boolean" },
-            "strip_pdf_metadata": { "type": "boolean" }
-          }
-        }
+        "path": { "type": "string", "minLength": 1 },
+        "artifact_id": { "type": "string", "minLength": 1 }
       }
     },
-    "ai_disclosure": {
+    "rule_snapshot": {
       "type": "object",
-      "required": ["policy"],
+      "additionalProperties": false,
+      "required": ["rule_id", "title", "url", "retrieved_at", "snapshot"],
       "properties": {
-        "policy": {
-          "type": "string",
-          "enum": ["required_when_used", "optional", "prohibited"]
-        },
-        "format": {
-          "type": "string",
-          "enum": ["support_material_pdf", "in_paper_section", "separate_file"]
-        },
-        "manual_checks": {
-          "type": "object",
-          "properties": {
-            "when_used": { "type": "array", "items": { "type": "string" } },
-            "when_not_used": { "type": "array", "items": { "type": "string" } }
-          }
-        }
+        "rule_id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "pattern": "^https://" },
+        "retrieved_at": { "type": "string", "minLength": 1 },
+        "effective_from": { "type": "string" },
+        "snapshot": { "$ref": "#/$defs/file_ref" }
       }
     },
     "submission": {
       "type": "object",
-      "required": ["required_files"],
+      "additionalProperties": false,
+      "required": [
+        "paper_extensions",
+        "max_paper_bytes",
+        "max_pages",
+        "max_pages_excludes_ai_report",
+        "page_count_scope",
+        "support_policy",
+        "max_support_bytes",
+        "ai_disclosure_policy",
+        "ai_disclosure_format",
+        "ai_manual_checks",
+        "required_manual_checks"
+      ],
       "properties": {
+        "paper_extensions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^\\.[A-Za-z0-9]+$" }
+        },
+        "max_paper_bytes": { "type": ["integer", "null"], "minimum": 1 },
+        "max_pages": { "type": ["integer", "null"], "minimum": 1 },
+        "max_pages_excludes_ai_report": { "type": "boolean" },
+        "page_count_scope": { "type": "string", "minLength": 1 },
+        "support_policy": { "type": "string", "enum": ["prohibited", "optional", "required"] },
+        "max_support_bytes": { "type": ["integer", "null"], "minimum": 1 },
+        "ai_disclosure_policy": {
+          "type": "string",
+          "enum": ["prohibited", "optional", "required_when_used", "required_always"]
+        },
+        "ai_disclosure_format": {
+          "type": "string",
+          "enum": ["separate_file", "in_paper_section", "both", "none"]
+        },
+        "ai_manual_checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["when_used", "when_not_used"],
+          "properties": {
+            "when_used": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "when_not_used": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "required_manual_checks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "required_files": {
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["role", "format"],
             "properties": {
-              "role": { "type": "string" },
+              "role": { "type": "string", "minLength": 1 },
               "pattern": { "type": "string" },
-              "format": { "type": "string" }
+              "format": { "type": "string", "minLength": 1 }
             }
           }
         },
-        "support_zip": {
-          "type": "object",
-          "properties": {
-            "policy": { "type": "string" },
-            "max_size_mb": { "type": "number" },
-            "include_clean_code": { "type": "boolean" },
-            "include_processed_data": { "type": "boolean" },
-            "exclude_patterns": { "type": "array", "items": { "type": "string" } }
-          }
-        }
+        "support_zip": { "type": "object" }
       }
     },
-    "validation": {
-      "type": "object"
+    "v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "profile_id",
+        "competition",
+        "official_rules",
+        "official_submission_endpoints",
+        "submission",
+        "template_id"
+      ],
+      "properties": {
+        "schema_version": { "const": "2.0" },
+        "profile_id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["seed", "unresolved", "verified"] },
+        "competition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["family", "name", "season", "mode", "language"],
+          "properties": {
+            "family": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "season": { "type": "string", "minLength": 1 },
+            "mode": { "type": "string", "enum": ["pre_contest", "live_contest", "post_contest", "custom"] },
+            "language": { "type": "string", "minLength": 1 }
+          }
+        },
+        "official_rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rule_snapshot" }
+        },
+        "official_submission_endpoints": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^https://" }
+        },
+        "submission": { "$ref": "#/$defs/submission" },
+        "template_id": { "type": "string", "minLength": 1 },
+        "visual_profile_id": { "type": ["string", "null"] },
+        "metadata": { "type": "object" }
+      }
+    },
+    "v1_legacy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["competition_family", "competition_name", "language", "base_template", "rules", "ai_disclosure", "submission"],
+      "properties": {
+        "profile_id": { "type": "string" },
+        "competition_family": { "type": "string", "minLength": 1 },
+        "competition_name": { "type": "string", "minLength": 1 },
+        "season": { "type": "string" },
+        "language": { "type": "string", "minLength": 1 },
+        "default_engine": { "type": "string" },
+        "base_template": { "type": "string", "minLength": 1 },
+        "deadline": { "type": "string" },
+        "timezone": { "type": "string" },
+        "rules": { "type": "object" },
+        "ai_disclosure": { "type": "object" },
+        "submission": { "type": "object" },
+        "validation": { "type": "object" }
+      }
     }
   }
 }

@@ -1,4 +1,4 @@
-# competition_profiles/apmcm.yaml
+# competition_profiles/apmcm.yaml (maintainer seed; not an official v2 snapshot)
 # 亚太地区大学生数学建模竞赛 (APMCM) 专属画像配置
 
 inherits: "_base_cumcm"

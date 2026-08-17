@@ -1,21 +1,28 @@
-name: ci
+name: harness-ci
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
   pull_request:
 
 jobs:
-  tests:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Install optional dependencies
+          python-version: "3.11"
+      - name: Install development dependencies
         run: python -m pip install -r requirements-dev.txt
-      - name: Schema sanity (all JSON schemas parse)
-        run: python -c "import json,glob; [json.load(open(p, encoding='utf-8')) for p in glob.glob('schemas/*.json')]; print('schemas ok')"
-      - name: Full regression suite
+      - name: Install editable CLI and check entry point
+        run: |
+          python -m pip install --no-deps -e .
+          harness --help
+      - name: Parse schemas
+        run: python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]; print('schema parse ok')"
+      - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Skill metadata and progressive-disclosure validation
+        run: python -c "from pathlib import Path; import yaml; p=Path('SKILL.md'); text=p.read_text(encoding='utf-8'); assert text.startswith('---'); assert 150 <= len(text.splitlines()) <= 220; yaml.safe_load(text.split('---', 2)[1]); print('skill validation ok')"

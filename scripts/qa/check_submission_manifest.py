@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
 from validate_contracts import _validate_document  # noqa: E402
+from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
 
 def main() -> int:
@@ -68,6 +69,7 @@ def main() -> int:
         if value.get("package_sha256") != expected_package:
             errors.append("package_sha256 does not match final file records")
     run_manifest: dict[str, Any] = {}
+    profile: dict[str, Any] = {}
     try:
         run_manifest_path = resolve_path(run_manifest_ref["path"], root).resolve()
         loaded_manifest = load_structured(run_manifest_path)
@@ -79,7 +81,28 @@ def main() -> int:
                 errors.append("run_manifest project_id does not match submission manifest")
             if run_manifest.get("run_id") != value.get("run_id"):
                 errors.append("run_manifest run_id does not match submission manifest")
-            profile = run_manifest.get("competition_profile")
+            if run_manifest.get("schema_version") == "2.0":
+                try:
+                    state = load_runtime_state(run_manifest_path, project_root=root, allow_legacy=False)
+                    profile = state.profile
+                    if profile.get("status") != "verified":
+                        errors.append("F1 requires canonical competition profile status=verified")
+                    if not isinstance(profile.get("official_rules"), list) or not profile.get("official_rules"):
+                        errors.append("F1 requires non-empty canonical official_rules")
+                    if not isinstance(profile.get("official_submission_endpoints"), list) or not profile.get("official_submission_endpoints"):
+                        errors.append("F1 requires non-empty canonical official_submission_endpoints")
+                    submission_rules = profile.get("submission")
+                    if not isinstance(submission_rules, dict):
+                        errors.append("F1 requires canonical submission rules")
+                    else:
+                        for key in ("paper_extensions", "page_count_scope", "support_policy", "ai_disclosure_policy", "required_manual_checks"):
+                            if submission_rules.get(key) in (None, "", []):
+                                errors.append(f"F1 canonical submission rule {key} is empty")
+                except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
+                    profile = {}
+                    errors.append(f"cannot dereference canonical competition profile: {exc}")
+            else:
+                profile = run_manifest.get("competition_profile")
             if not isinstance(profile, dict) or sha256_json(profile) != value.get("competition", {}).get("profile_sha256"):
                 errors.append("run_manifest competition profile does not match submission manifest")
     except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -93,14 +116,14 @@ def main() -> int:
         else:
             if report.get("competition_profile_sha256") != value.get("competition", {}).get("profile_sha256"):
                 errors.append("S1 report profile hash does not match submission manifest")
-            rules = run_manifest.get("competition_profile", {}).get("submission")
+            rules = profile.get("submission") if isinstance(profile, dict) else None
             if not isinstance(rules, dict) or report.get("submission_rules_sha256") != sha256_json(rules):
                 errors.append("S1 report submission rules hash does not match run_manifest")
             if report.get("ai_usage_sha256") != sha256_json(run_manifest.get("ai_usage", [])):
                 errors.append("S1 report AI usage hash does not match run_manifest")
             s1_checkpoints = [
                 row for row in run_manifest.get("human_checkpoints", [])
-                if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") == "pass"
+                if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") in {"pass", "confirm"}
             ]
             report_checkpoint = report.get("s1_checkpoint")
             if not s1_checkpoints or not isinstance(report_checkpoint, dict) or (
@@ -132,7 +155,7 @@ def main() -> int:
                 errors.append("paper.ai_report_pages must be smaller than paper.pages")
             if limited_pages != pages - ai_pages:
                 errors.append("paper.limited_pages must equal pages - ai_report_pages")
-            rules = run_manifest.get("competition_profile", {}).get("submission", {})
+            rules = profile.get("submission", {}) if isinstance(profile, dict) else {}
             max_pages = rules.get("max_pages") if isinstance(rules, dict) else None
             if isinstance(max_pages, int) and limited_pages > max_pages:
                 errors.append("paper.limited_pages exceeds the pinned competition maximum")

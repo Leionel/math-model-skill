@@ -1,7 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/math-modeling-harness/extremum-certificate.schema.json",
-  "title": "Continuous Extremum Refinement Certificate",
+  "title": "Continuous Extremum Refinement Certificate (legacy read compatibility)",
+  "deprecated": true,
+  "description": "Legacy v1 certificate retained for checker compatibility. New projects route extremum obligations through the model contract verification_obligations and do not generate this standalone certificate.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "certificate_id", "run_id", "question_id", "status", "objective", "variables", "domain", "grid", "refinement", "tolerance", "claim_level"],

@@ -1,0 +1,36 @@
+{
+  "schema_version": "2.0",
+  "profile_id": "wp2-fixture",
+  "status": "verified",
+  "competition": {
+    "family": "fixture",
+    "name": "WP2 fixture",
+    "season": "2026",
+    "mode": "pre_contest",
+    "language": "en"
+  },
+  "official_rules": [
+    {
+      "rule_id": "WP2-RULE-1",
+      "title": "Fixture rules",
+      "url": "https://example.invalid/wp2-rules",
+      "retrieved_at": "2026-08-17T00:00:00Z",
+      "snapshot": {"path": "rules.txt"}
+    }
+  ],
+  "official_submission_endpoints": ["https://example.invalid/submit"],
+  "submission": {
+    "paper_extensions": [".pdf"],
+    "max_paper_bytes": 1000000,
+    "max_pages": 25,
+    "max_pages_excludes_ai_report": false,
+    "page_count_scope": "paper_body",
+    "support_policy": "optional",
+    "max_support_bytes": null,
+    "ai_disclosure_policy": "optional",
+    "ai_disclosure_format": "none",
+    "ai_manual_checks": {"when_used": [], "when_not_used": []},
+    "required_manual_checks": ["human_review"]
+  },
+  "template_id": "wp2-fixture-template"
+}

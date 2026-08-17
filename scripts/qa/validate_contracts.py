@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
 from validation.obligations import file_ref, verify_validation_report  # noqa: E402
+from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
 
 REQUIRED_VALIDATION_CATEGORIES = {
@@ -163,6 +164,70 @@ def _validate_document(path: Path, schema_path: Path) -> tuple[Any | None, list[
         return None, [f"{path}: {exc}"], "fallback"
 
 
+def _cross_references_v2(
+    model: dict[str, Any],
+    manifest: dict[str, Any],
+    frozen: dict[str, Any],
+    registry: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    root: Path,
+    paths: dict[str, Path],
+) -> tuple[list[str], list[str]]:
+    """Validate shared solve contracts against normalized v2 roots.
+
+    This deliberately checks canonical references and result semantics only;
+    the v1 artifact list/profile fields are not reconstructed for v2.
+    """
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    try:
+        state = load_runtime_state(paths["run_manifest"], project_root=root, allow_legacy=False)
+    except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
+        return [f"v2 runtime boundary: {exc}"], warnings
+    if manifest.get("schema_version") != "2.0":
+        errors.append("v2 normalized manifest is required")
+    if any(key in manifest for key in ("competition_profile", "commands", "artifacts", "gates", "reviewer")):
+        errors.append("v2 run_manifest contains duplicated v1 state")
+    run_ids = {
+        label: value.get("run_id")
+        for label, value in (("model_contract", model), ("run_manifest", manifest), ("frozen_results", frozen), ("evidence_registry", registry), ("paper_plan", plan))
+        if isinstance(value, dict) and value.get("run_id") is not None
+    }
+    if len(set(run_ids.values())) > 1:
+        errors.append(f"run_id mismatch across contracts: {run_ids}")
+    if model.get("project_id") != manifest.get("project_id"):
+        errors.append("run_manifest.project_id does not match model_contract.project_id")
+    model_root = state.root_path("model_contract")
+    if model_root is None or model_root.resolve() != paths["model_contract"].resolve():
+        errors.append("run_manifest roots.model_contract is not the supplied model contract")
+    if not state.profile_path.is_file() or state.profile.get("profile_id") != manifest.get("competition_profile_ref", {}).get("profile_id"):
+        errors.append("canonical competition_profile_ref does not resolve to the declared profile")
+    # Shared frozen truth checks remain independent of the profile/Gate state.
+    results = frozen.get("results", [])
+    if frozen.get("results_sha256") != sha256_json(results):
+        errors.append("frozen_results.results_sha256 does not match the canonical results array")
+    verdict = frozen.get("validation_verdict")
+    statuses = [row.get("status") for row in frozen.get("validation_obligations", []) if isinstance(row, dict)]
+    if verdict not in {"PASS", "FAIL", "ERROR"}:
+        errors.append("frozen_results.validation_verdict must be PASS, FAIL, or ERROR")
+    elif frozen.get("claimable") is not (verdict == "PASS"):
+        errors.append("frozen_results.claimable must be derived from validation_verdict")
+    for field in ("model_contract_snapshot", "source_snapshot"):
+        ref = frozen.get(field)
+        if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
+            errors.append(f"frozen_results.{field} must be a file reference")
+            continue
+        path = resolve_path(ref["path"], root).resolve()
+        if not path.is_file() or ref.get("sha256") != sha256_file(path):
+            errors.append(f"frozen_results.{field} SHA-256 drift")
+    for label, value in (("evidence_registry", registry), ("paper_plan", plan)):
+        if value.get("run_id") != manifest.get("run_id"):
+            errors.append(f"{label}.run_id does not match run_manifest.run_id")
+    return errors, warnings
+
+
 def _cross_references(
     model: dict[str, Any],
     manifest: dict[str, Any],
@@ -173,6 +238,8 @@ def _cross_references(
     root: Path,
     paths: dict[str, Path],
 ) -> tuple[list[str], list[str]]:
+    if manifest.get("schema_version") == "2.0":
+        return _cross_references_v2(model, manifest, frozen, registry, plan, root=root, paths=paths)
     errors: list[str] = []
     warnings: list[str] = []
     require_hashes = manifest.get("integrity_mode", "research") == "submission"

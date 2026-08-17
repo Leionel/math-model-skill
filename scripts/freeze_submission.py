@@ -15,6 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
 
 def submission_file(
@@ -34,6 +35,119 @@ def submission_file(
         **({"limited_pages": limited_pages} if limited_pages is not None else {}),
         **({"ai_report_pages": ai_report_pages} if ai_report_pages is not None else {}),
     }
+
+
+def _freeze_submission_v2(
+    *,
+    root: Path,
+    manifest_path: Path,
+    report_path: Path,
+    paper_path: Path,
+    support_paths: list[Path],
+    ai_path: Path | None,
+    deadline: str,
+    timezone_name: str,
+    output_path: Path,
+) -> int:
+    """Build F1 from the standalone profile and rehashed final chain."""
+
+    state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+    manifest = state.manifest
+    profile = state.profile
+    errors: list[str] = []
+    gate_check = subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "qa" / "check_gates.py"), "--project-root", str(root), "--manifest", str(manifest_path), "--gate", "s1"],
+        text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+    )
+    if gate_check.returncode != 0:
+        errors.append("F1 requires a factually passing S1 gate")
+    if state.preset != "submission":
+        errors.append("F1 requires preset=submission")
+    if profile.get("status") != "verified":
+        errors.append("F1 requires canonical competition profile status=verified")
+    if not isinstance(profile.get("official_rules"), list) or not profile.get("official_rules"):
+        errors.append("F1 requires non-empty canonical official_rules")
+    if not isinstance(profile.get("official_submission_endpoints"), list) or not profile.get("official_submission_endpoints"):
+        errors.append("F1 requires non-empty canonical official_submission_endpoints")
+    rules = profile.get("submission")
+    if not isinstance(rules, dict):
+        errors.append("F1 requires canonical submission rules")
+        rules = {}
+    if not report_path.is_file() or not isinstance(load_structured(report_path), dict):
+        errors.append("S1 report does not exist or is not an object")
+    else:
+        report = load_structured(report_path)
+        if report.get("ok") is not True:
+            errors.append("S1 report does not have ok=true")
+        if report.get("competition_profile_sha256") != sha256_json(profile):
+            errors.append("S1 report competition profile hash is stale")
+        if report.get("submission_rules_sha256") != sha256_json(rules):
+            errors.append("S1 report submission rules hash is stale")
+        if report.get("ai_usage_sha256") != sha256_json(manifest.get("ai_usage", [])):
+            errors.append("S1 report AI usage hash is stale")
+        report_inputs = {(row.get("role"), row.get("path")): row.get("sha256") for row in report.get("inputs", []) if isinstance(row, dict)}
+        for role, path in [("paper", paper_path), *(('support', value) for value in support_paths), *(('ai_disclosure', ai_path) for _ in [0] if ai_path is not None)]:
+            if not path.is_file():
+                errors.append(f"final submission artifact does not exist: {path}")
+                continue
+            if report_inputs.get((role, rel_path(path, root))) != sha256_file(path):
+                errors.append(f"S1 report does not cover current {role} artifact: {rel_path(path, root)}")
+    for path in [paper_path, *support_paths, *([ai_path] if ai_path else [])]:
+        if path is None or not path.is_file():
+            errors.append(f"final submission artifact does not exist: {path}")
+    if errors:
+        raise ValueError("; ".join(errors))
+    report = load_structured(report_path)
+    paper_input = next((row for row in report.get("inputs", []) if isinstance(row, dict) and row.get("role") == "paper"), None)
+    page_count = report.get("page_count")
+    if not isinstance(paper_input, dict) or not isinstance(page_count, dict):
+        raise ValueError("S1 report lacks auditable paper/page_count inputs")
+    total_pages, ai_report_pages, limited_pages = page_count.get("total_pages"), page_count.get("ai_report_pages"), page_count.get("limited_pages")
+    if not all(isinstance(value, int) for value in (total_pages, ai_report_pages, limited_pages)) or total_pages < 1 or ai_report_pages < 0 or ai_report_pages >= total_pages or limited_pages != total_pages - ai_report_pages:
+        raise ValueError("S1 report page-count relation is invalid")
+    max_pages = rules.get("max_pages")
+    if isinstance(max_pages, int) and limited_pages > max_pages:
+        raise ValueError("S1 report limited_pages exceeds canonical maximum")
+    if not rules.get("max_pages_excludes_ai_report") and ai_report_pages != 0:
+        raise ValueError("S1 report excludes AI pages but profile does not allow it")
+    paper_record = submission_file(paper_path, root, pages=paper_input.get("pages"), method=paper_input.get("page_count_method"), limited_pages=limited_pages, ai_report_pages=ai_report_pages)
+    support_records = [submission_file(path, root) for path in support_paths]
+    ai_record = submission_file(ai_path, root) if ai_path else None
+    package_hash = sha256_json({"paper": paper_record, "support_files": support_records, "ai_disclosure": ai_record})
+    try:
+        datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("--deadline must be ISO-8601") from exc
+    if not timezone_name.strip():
+        raise ValueError("--timezone must be non-empty")
+    rule_refs: list[dict[str, str]] = []
+    for rule in profile.get("official_rules", []):
+        snapshot = rule.get("snapshot") if isinstance(rule, dict) else None
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("path"), str):
+            raise ValueError("canonical rule snapshot must have a path")
+        snapshot_path = resolve_path(snapshot["path"], root).resolve()
+        if not snapshot_path.is_file():
+            raise ValueError(f"official rule snapshot does not exist: {snapshot['path']}")
+        rule_refs.append({"path": rel_path(snapshot_path, root), "sha256": sha256_file(snapshot_path)})
+    submission = {
+        "schema_version": "1.1", "project_id": manifest["project_id"], "run_id": manifest["run_id"],
+        "status": "final_frozen", "frozen_at": datetime.now(timezone.utc).isoformat(),
+        "competition": {
+            "profile_id": profile["profile_id"],
+            "competition": profile.get("competition", {}).get("name", profile.get("profile_id")) if isinstance(profile.get("competition"), dict) else profile.get("competition"),
+            "season": profile.get("competition", {}).get("season", "unknown") if isinstance(profile.get("competition"), dict) else str(profile.get("season", "unknown")),
+            "profile_sha256": sha256_json(profile), "rule_snapshots": rule_refs,
+        },
+        "deadline": {"closes_at": deadline, "timezone": timezone_name}, "paper": paper_record,
+        "support_files": support_records, "ai_disclosure": ai_record,
+        "s1_report": {"path": rel_path(report_path, root), "sha256": sha256_file(report_path)},
+        "run_manifest": {"path": rel_path(manifest_path, root), "sha256": sha256_file(manifest_path)},
+        "package_sha256": package_hash, "builder": {"name": "freeze_submission.py", "version": "2.0"},
+    }
+    write_json(output_path, submission)
+    print(json.dumps({"status": "final_frozen", "output": rel_path(output_path, root), "package_sha256": package_hash,
+                      "profile_status": profile.get("status"), "warning": "F1 rehashed the canonical final PDF/package chain"}, ensure_ascii=False))
+    return 0
 
 
 def main() -> int:
@@ -58,6 +172,18 @@ def main() -> int:
         report = load_structured(report_path)
         if not isinstance(manifest, dict) or not isinstance(report, dict):
             raise ValueError("run manifest and S1 report must be objects")
+        if manifest.get("schema_version") == "2.0":
+            return _freeze_submission_v2(
+                root=root,
+                manifest_path=manifest_path,
+                report_path=report_path,
+                paper_path=resolve_path(args.paper, root).resolve(),
+                support_paths=[resolve_path(value, root).resolve() for value in args.support],
+                ai_path=resolve_path(args.ai_disclosure, root).resolve() if args.ai_disclosure else None,
+                deadline=args.deadline,
+                timezone_name=args.timezone,
+                output_path=output_path,
+            )
         gate_check = subprocess.run(
             [
                 sys.executable,

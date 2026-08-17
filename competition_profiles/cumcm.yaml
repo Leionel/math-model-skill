@@ -1,4 +1,4 @@
-# competition_profiles/cumcm.yaml
+# competition_profiles/cumcm.yaml (maintainer seed; not an official v2 snapshot)
 # 2026 全国大学生数学建模竞赛 (CUMCM) 专属画像配置
 
 inherits: "_base_cumcm"

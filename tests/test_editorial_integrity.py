@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -39,12 +40,21 @@ def canonical_sha256(value: object) -> str:
 
 class EditorialIntegrityTest(unittest.TestCase):
     def run_script(self, script: str, *args: str, python: Path | None = None) -> subprocess.CompletedProcess[str]:
+        child_environment = os.environ.copy()
+        if python is not None:
+            # The plotting smoke test deliberately selects a separate Python
+            # runtime.  Do not leak a parent test runner's PYTHONPATH into a
+            # different ABI (for example cp312 wheels into Anaconda cp313).
+            child_environment.pop("PYTHONPATH", None)
+        child_environment["PYTHONUTF8"] = "1"
         return subprocess.run(
             [str(python or Path(sys.executable)), str(ROOT / "scripts" / script), *args],
             cwd=ROOT,
             text=True,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
+            env=child_environment,
             check=False,
         )
 

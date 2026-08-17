@@ -2,5 +2,6 @@
 numpy
 pandas
 PyYAML
+jsonschema
 scipy
 matplotlib

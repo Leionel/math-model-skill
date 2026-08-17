@@ -1,4 +1,4 @@
-# competition_profiles/mcm_icm.yaml
+# competition_profiles/mcm_icm.yaml (maintainer seed; not an official v2 snapshot)
 # 2026 MCM/ICM 美赛专属画像配置
 
 inherits: "_base_mcm_icm"

@@ -41,6 +41,23 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 from _common import load_structured, rel_path, resolve_path  # noqa: E402
 
 
+def emit_json(value: Any) -> None:
+    """Write machine JSON as UTF-8 bytes on Windows as well as POSIX.
+
+    ``text=True`` parents may otherwise inherit a legacy console code page;
+    an em dash in the diagnostic then raises during ``print`` and leaves the
+    caller with ``stdout=None`` instead of a parseable report.
+    """
+
+    payload = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is not None:
+        buffer.write(payload.encode("utf-8"))
+        buffer.flush()
+    else:  # pragma: no cover - StringIO test harnesses
+        sys.stdout.write(payload)
+
+
 def metric_value(frozen: dict[str, Any], metric_id: str) -> float | None:
     for row in frozen.get("results", []):
         if isinstance(row, dict) and row.get("result_id") == metric_id:
@@ -65,7 +82,7 @@ def main() -> int:
     spec = load_structured(resolve_path(args.spec, root).resolve())
     pairs = spec.get("pairs") if isinstance(spec, dict) else spec
     if not isinstance(pairs, list) or not pairs:
-        print(json.dumps({"ok": False, "errors": ["spec must contain a non-empty pairs array"], "warnings": []}, ensure_ascii=False))
+        emit_json({"ok": False, "errors": ["spec must contain a non-empty pairs array"], "warnings": []})
         return 1
 
     for index, pair in enumerate(pairs):
@@ -126,7 +143,7 @@ def main() -> int:
 
     ok = not errors and (not args.strict or not warnings)
     report = {"ok": ok, "spec": rel_path(resolve_path(args.spec, root).resolve(), root), "pairs": details, "errors": errors, "warnings": warnings}
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    emit_json(report)
     return 0 if ok else 1
 
 

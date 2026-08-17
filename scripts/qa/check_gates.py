@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import child_env, load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
+from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from v2_gate_runtime import _v2_gate  # noqa: E402
 try:  # Support both direct CLI execution and package-level test imports.
     from validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # type: ignore  # noqa: E402
     from validation.obligations import file_ref, verify_validation_report  # type: ignore  # noqa: E402
@@ -227,6 +230,7 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--gate", choices=GATE_ORDER, help="run one generated v2 gate report")
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
@@ -242,6 +246,51 @@ def main() -> int:
     if not isinstance(manifest, dict):
         errors.append("run_manifest must be an object")
         manifest = {}
+    if manifest.get("schema_version") == "2.0":
+        try:
+            state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+            requested = args.gate
+            gates_to_run = [requested] if requested else list(GATE_ORDER)
+            reports: list[dict[str, Any]] = []
+            overall_errors: list[str] = []
+            overall_warnings: list[str] = []
+            for gate_name in gates_to_run:
+                gate_ok, gate_errors, gate_warnings, evidence = _v2_gate(state, gate_name)
+                # A targeted report is still generated from evidence observed
+                # by this invocation; no manifest gates.* status is consulted.
+                report = {
+                    "ok": gate_ok and (not args.strict or not gate_warnings),
+                    "gate": gate_name,
+                    "generated_at": datetime.now().astimezone().isoformat(),
+                    "source_of_truth": ["run_manifest.v2", "competition_profile.json", "command_receipt", "run_index projection", "artifact DAG"],
+                    "evidence": evidence,
+                    "errors": gate_errors,
+                    "warnings": gate_warnings,
+                }
+                reports.append(report)
+                overall_errors.extend(f"{gate_name}: {message}" for message in gate_errors)
+                overall_warnings.extend(f"{gate_name}: {message}" for message in gate_warnings)
+                if not gate_ok:
+                    # For an all-gates run, later gates are not allowed to
+                    # self-report success after an earlier factual failure.
+                    if not requested:
+                        break
+            if args.gate:
+                output = reports[0]
+            else:
+                output = {
+                    "ok": not overall_errors and (not args.strict or not overall_warnings),
+                    "gates": reports,
+                    "generated_at": datetime.now().astimezone().isoformat(),
+                    "errors": overall_errors,
+                    "warnings": overall_warnings,
+                }
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            return 0 if output.get("ok") is True else 1
+        except (OSError, ValueError, TypeError, RuntimeStateError, json.JSONDecodeError) as exc:
+            report = {"ok": False, "gate": args.gate, "generated_at": datetime.now().astimezone().isoformat(), "errors": [str(exc)], "warnings": []}
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
     _, manifest_schema_errors, _ = _validate_document(
         manifest_path, Path(__file__).resolve().parents[2] / "schemas" / "run_manifest.schema.json"
     )

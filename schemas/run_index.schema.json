@@ -1,33 +1,99 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/math-modeling-harness/run-index.schema.json",
-  "title": "Run Index and Selection Ledger",
-  "description": "Append-style ledger of every recorded run (including failures) plus the pre-declared selection policy. Prevents best-seed-only reporting: all candidate/tuning/final runs stay visible, and 'selected' is a claim against the declared policy.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "selection_policy", "runs"],
-  "properties": {
-    "schema_version": {"type": "string", "const": "1.0"},
-    "run_id_scope": {"type": "string", "minLength": 1},
-    "selection_policy": {"type": "string", "minLength": 1, "description": "Pre-declared rule for choosing the selected run, e.g. 'highest strict-occlusion duration among feasible full runs; ties broken by earlier run'."},
-    "runs": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["command_id", "run_id", "stage", "argv", "exit_code", "receipt_path", "selected", "recorded_at"],
-        "properties": {
-          "command_id": {"type": "string", "minLength": 1},
-          "run_id": {"type": "string", "minLength": 1},
-          "stage": {"type": "string", "minLength": 1},
-          "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-          "exit_code": {"type": "integer"},
-          "receipt_path": {"type": "string", "minLength": 1},
-          "selected": {"type": "boolean"},
-          "note": {"type": "string"},
-          "recorded_at": {"type": "string", "minLength": 1}
+  "title": "Run Receipt/Selection Projection (v2; v1 read compatibility)",
+  "description": "v2 is rebuildable from immutable command receipts plus the control-plane selection policy. It deliberately does not copy argv or become the execution-fact owner.",
+  "oneOf": [
+    { "$ref": "#/$defs/v2" },
+    { "$ref": "#/$defs/v1_legacy" }
+  ],
+  "$defs": {
+    "policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "path"],
+      "properties": {
+        "owner": { "const": "run_manifest.control" },
+        "path": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "receipt_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "receipt_path", "selected", "projected_from"],
+      "properties": {
+        "receipt_id": { "type": "string", "minLength": 1 },
+        "receipt_path": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Projected label only; the command receipt owns execution facts."
+        },
+        "selected": { "type": "boolean" },
+        "exit_code": {
+          "type": "integer",
+          "description": "Projected receipt field only; the command receipt is the execution-fact source."
+        },
+        "recorded_at": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Projection timestamp; not a replacement for the command receipt timestamp."
+        },
+        "projected_from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Projection provenance only; execution facts remain owned by the command receipt."
         }
+      }
+    },
+    "v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "projection", "receipts", "selection"],
+      "properties": {
+        "schema_version": { "const": "2.0" },
+        "projection": { "const": "receipt_selection" },
+        "run_id_scope": { "type": "string", "minLength": 1 },
+        "receipts": { "type": "array", "items": { "$ref": "#/$defs/receipt_projection" } },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy_ref", "selected_receipt_ids"],
+          "properties": {
+            "policy_ref": { "$ref": "#/$defs/policy_ref" },
+            "selected_receipt_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "generated_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "v1_legacy_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_id", "run_id", "stage", "argv", "exit_code", "receipt_path", "selected", "recorded_at"],
+      "properties": {
+        "command_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "stage": { "type": "string", "minLength": 1 },
+        "argv": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "exit_code": { "type": "integer" },
+        "receipt_path": { "type": "string", "minLength": 1 },
+        "selected": { "type": "boolean" },
+        "note": { "type": "string" },
+        "recorded_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "v1_legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "selection_policy", "runs"],
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "run_id_scope": { "type": "string", "minLength": 1 },
+        "selection_policy": { "type": "string", "minLength": 1 },
+        "runs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/v1_legacy_run" } }
       }
     }
   }

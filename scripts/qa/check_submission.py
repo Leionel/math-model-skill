@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import zipfile
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
 
 def file_record(path: Path, root: Path, role: str, *, pages: int | None = None, method: str | None = None) -> dict[str, Any]:
@@ -54,13 +56,53 @@ def main() -> int:
         manifest = load_structured(manifest_path)
         if not isinstance(manifest, dict):
             raise ValueError("run_manifest must be an object")
-        profile = manifest.get("competition_profile")
-        if not isinstance(profile, dict):
-            raise ValueError("run_manifest has no competition_profile")
+        v2 = manifest.get("schema_version") == "2.0"
+        if v2:
+            state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+            manifest = state.manifest
+            profile = state.profile
+            if profile.get("status") != "verified":
+                errors.append("submission profile must have status=verified; seed/unresolved profiles are blocked")
+            if not isinstance(profile.get("official_rules"), list) or not profile.get("official_rules"):
+                errors.append("submission profile requires non-empty official_rules")
+            if not isinstance(profile.get("official_submission_endpoints"), list) or not profile.get("official_submission_endpoints"):
+                errors.append("submission profile requires non-empty official_submission_endpoints")
+            submission_rules = profile.get("submission")
+            if not isinstance(submission_rules, dict):
+                raise ValueError("canonical competition profile has no submission rules")
+            required_keys = (
+                "paper_extensions",
+                "max_paper_bytes",
+                "max_pages",
+                "max_pages_excludes_ai_report",
+                "page_count_scope",
+                "support_policy",
+                "max_support_bytes",
+                "ai_disclosure_policy",
+                "ai_disclosure_format",
+                "ai_manual_checks",
+                "required_manual_checks",
+            )
+            for key in required_keys:
+                if key not in submission_rules:
+                    errors.append(f"submission profile rule {key} is missing; official limits and policies must not be guessed")
+                elif key not in {"max_paper_bytes", "max_pages", "max_support_bytes"} and submission_rules.get(key) in (None, "", []):
+                    errors.append(f"submission profile rule {key} is empty")
+        else:
+            profile = manifest.get("competition_profile")
+            if not isinstance(profile, dict):
+                raise ValueError("run_manifest has no competition_profile")
         rules = profile.get("submission")
         if not isinstance(rules, dict):
             raise ValueError("competition_profile has no submission rules")
-        if manifest.get("gates", {}).get("w2", {}).get("status") != "pass":
+        if v2:
+            w2_check = subprocess.run(
+                [sys.executable, str(SCRIPT_DIR / "check_gates.py"), "--project-root", str(root), "--manifest", str(manifest_path), "--gate", "w2"],
+                text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+            )
+            if w2_check.returncode != 0:
+                errors.append("submission QA requires a factually passing W2 gate")
+        elif manifest.get("gates", {}).get("w2", {}).get("status") != "pass":
             errors.append("submission QA requires W2 pass")
 
         ai_policy = rules.get("ai_disclosure_policy")
@@ -83,7 +125,7 @@ def main() -> int:
 
         s1_checkpoints = [
             row for row in manifest.get("human_checkpoints", [])
-            if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") == "pass"
+            if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") in {"pass", "confirm"}
         ]
         selected_checkpoint: dict[str, Any] | None = None
         if not s1_checkpoints:
@@ -110,7 +152,8 @@ def main() -> int:
         allowed_extensions = {str(value).lower() for value in rules.get("paper_extensions", [])}
         if paper.suffix.lower() not in allowed_extensions:
             errors.append(f"paper extension {paper.suffix!r} is not allowed by profile")
-        if paper_record["bytes"] > rules.get("max_paper_bytes", 0):
+        max_paper_bytes = rules.get("max_paper_bytes")
+        if isinstance(max_paper_bytes, int) and paper_record["bytes"] > max_paper_bytes:
             errors.append(f"paper exceeds max_paper_bytes: {paper_record['bytes']}")
         max_pages = rules.get("max_pages")
         excludes_ai_report = bool(rules.get("max_pages_excludes_ai_report"))
@@ -235,7 +278,12 @@ def main() -> int:
 
         final_records = [paper_record, *support_records, *([ai_record] if ai_record else [])]
         for record in final_records:
-            if (record["path"], record["sha256"]) not in checkpoint_refs:
+            checkpoint_paths = {path for path, _ in checkpoint_refs}
+            checkpoint_artifact_ids = {
+                ref.get("artifact_id") for ref in (selected_checkpoint or {}).get("artifacts", [])
+                if isinstance(ref, dict) and isinstance(ref.get("artifact_id"), str)
+            }
+            if (record["path"], record["sha256"]) not in checkpoint_refs and record["path"] not in checkpoint_paths and not (record.get("artifact_id") and record["artifact_id"] in checkpoint_artifact_ids):
                 errors.append(f"S1 human checkpoint does not cover final artifact: {record['path']}")
 
         inputs = [

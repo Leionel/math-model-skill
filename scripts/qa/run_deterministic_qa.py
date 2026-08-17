@@ -15,6 +15,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import child_env, load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
+from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from v2_gate_runtime import _v2_role_path  # noqa: E402
 
 
 def run_check(label: str, command: list[str]) -> dict[str, Any]:
@@ -74,15 +76,16 @@ def apply_profile(args: argparse.Namespace) -> argparse.Namespace:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model-contract", required=True)
-    parser.add_argument("--run-manifest", required=True)
-    parser.add_argument("--frozen-results", required=True)
+    parser.add_argument("--model-contract")
+    parser.add_argument("--run-manifest")
+    parser.add_argument("--manifest", help="v2 manifest; resolve canonical QA inputs from roots/DAG")
+    parser.add_argument("--frozen-results")
     parser.add_argument("--derived-results")
-    parser.add_argument("--evidence-registry", required=True)
-    parser.add_argument("--paper-plan", required=True)
-    parser.add_argument("--abstract", required=True)
-    parser.add_argument("--paper", required=True)
-    parser.add_argument("--conclusion", required=True)
+    parser.add_argument("--evidence-registry")
+    parser.add_argument("--paper-plan")
+    parser.add_argument("--abstract")
+    parser.add_argument("--paper")
+    parser.add_argument("--conclusion")
     parser.add_argument("--pdf")
     parser.add_argument("--pdf-source")
     parser.add_argument("--require-pdf-math-consistency", action="store_true")
@@ -165,13 +168,13 @@ def main() -> int:
         action="store_true",
         help="Run the issue-only editorial scan; it never assigns a paper score.",
     )
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--output")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--force", action="store_true")
     parser.add_argument(
         "--profile",
         choices=("baseline", "enhanced", "strict"),
-        default="baseline",
+        default=None,
         help="Aggregate switch that turns on the require-flags implied by the profile (mirrors check_gates rerun sets); individual flags can add more on top.",
     )
     parser.add_argument(
@@ -179,9 +182,50 @@ def main() -> int:
         action="store_true",
         help="Require every frozen display value to appear in the extracted PDF text (forwarded to check_math_pdf_consistency).",
     )
-    args = apply_profile(parser.parse_args())
-
+    args = parser.parse_args()
     root = Path(args.project_root).resolve()
+    if args.manifest:
+        manifest_path = resolve_path(args.manifest, root).resolve()
+        try:
+            state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+        except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
+            print(json.dumps({"ok": False, "errors": [f"v2 manifest resolution failed: {exc}"]}, ensure_ascii=False))
+            return 2
+
+        def resolve_role(role: str) -> str | None:
+            _, path = _v2_role_path(state, role)
+            return str(path) if path is not None and path.is_file() else None
+
+        args.run_manifest = args.run_manifest or str(manifest_path)
+        for attribute, role in (
+            ("model_contract", "model_contract"), ("frozen_results", "frozen_results"),
+            ("evidence_registry", "evidence_registry"), ("paper_plan", "paper_plan"),
+            ("abstract", "abstract"), ("paper", "paper"), ("conclusion", "conclusion"),
+        ):
+            if getattr(args, attribute) is None:
+                setattr(args, attribute, resolve_role(role))
+        for attribute, role in (
+            ("writer_package", "writer_package"), ("pdf", "pdf"), ("pdf_source", "pdf_source"),
+            ("presentation_contract", "presentation_contract"), ("tex", "tex"), ("bib", "bib"),
+            ("artifact_dag", "artifact_dag"), ("oos_artifact", "oos_artifact"),
+            ("failure_evidence", "failure_evidence"), ("sensitivity_experiment", "sensitivity_experiment"),
+        ):
+            if getattr(args, attribute) is None:
+                setattr(args, attribute, resolve_role(role))
+        if args.profile is None:
+            args.profile = "strict" if state.capabilities.require_strict_math else ("enhanced" if state.capabilities.require_full_evidence_chain else "baseline")
+        if args.output is None:
+            args.output = "reports/deterministic_qa.json"
+    else:
+        if args.profile is None:
+            args.profile = "baseline"
+    required_args = ("model_contract", "run_manifest", "frozen_results", "evidence_registry", "paper_plan", "abstract", "paper", "conclusion", "output")
+    missing = [name for name in required_args if not getattr(args, name)]
+    if missing:
+        print(json.dumps({"ok": False, "errors": [f"missing required QA arguments: {missing}; pass --manifest for v2 path resolution"]}, ensure_ascii=False))
+        return 2
+    args = apply_profile(args)
+
     if bool(args.tex) != bool(args.bib):
         print("ERROR: --tex and --bib must be supplied together", file=sys.stderr)
         return 2
