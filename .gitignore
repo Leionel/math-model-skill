@@ -6,6 +6,8 @@ __pycache__/
 tmp/
 .venv/
 venv/
+.workbuddy/
+battle/
 
 # Keep only precedent indexes/pattern cards in Git. Store paper files locally.
 references/precedents/**/*.pdf

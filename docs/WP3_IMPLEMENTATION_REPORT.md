@@ -1,8 +1,9 @@
 # WP3 implementation and complexity report
 
-Status: implementation delivered and regression-verified on 2026-08-17. This
-report records the thin boundary added by WP3; it does not claim a real-problem
-capability benchmark. See [WP3 test report](WP3_TEST_REPORT.md).
+Status: the original Manifest-v2 WP3 boundary was verified on 2026-08-17; the
+Review Execution Plane addendum was freshly verified on 2026-08-20. This
+report does not claim a real-problem capability benchmark. See
+[WP3 test report](WP3_TEST_REPORT.md).
 
 ## Scope delivered
 
@@ -18,7 +19,7 @@ capability benchmark. See [WP3 test report](WP3_TEST_REPORT.md).
 - README/SKILL/reference router describe the v2 normal path and leave detailed
   validation/writing/figure/literature/submission material one hop away.
 
-## Complexity before / observed after
+## Historical Manifest-v2 complexity baseline (2026-08-17, before Review Plane)
 
 | Measure | Before (audit baseline) | Observed v2 normal path |
 |---|---:|---:|
@@ -47,8 +48,110 @@ the canonical implementation.
 2. A fake manifest Gate status cannot change the first factual blocker.
 3. Receipt selection, stale DAG artifacts, pending human checkpoints, and CLI
    versus direct checker exit codes are covered by integration tests.
-4. Skill Creator quick validation, metadata validation, 29-schema parsing,
+4. At that baseline, Skill Creator quick validation, metadata validation,
+   29-schema parsing,
    CLI packaging boundary, and full unittest results are recorded in the test
    report.
 5. Capability benchmark remains incomplete until the four-type A0/A1/A2 plan
    is independently executed under the stated budget and artifact evidence.
+
+---
+
+# Review Execution Plane (P0) — 2026-08-20 verified addendum
+
+Implements `Make Review Executable` per the v4 OSS-scoped prompt. Design:
+[REVIEW_EXECUTION_DESIGN.md](REVIEW_EXECUTION_DESIGN.md).
+
+## A. Changed
+
+- Added CLI `harness review` (`scripts/harness.py`) dispatching to the new
+  orchestrator `scripts/qa/run_review.py` (QA phase → bundle → reviewer
+  routing → validation → DAG registration → summary). Flags: `--json`,
+  `--semantic`, `--judge`, `--fresh`, `--recheck`, `--backend-cmd`.
+- Added `scripts/qa/review_evidence.py`: the single deterministic
+  review-evidence boundary (discovery, schema/mode/verdict contract,
+  freshness recompute, bundle boundary, per-preset W2 adjudication).
+- Added `schemas/review_report.schema.json` (one schema for both
+  perspectives; finding contract with stable ids, severity, locator,
+  required fix, status).
+- W2 gate (`scripts/v2_gate_runtime.py`) now calls `evaluate_w2_review`
+  after deterministic QA; review errors are first-class gate errors.
+- `harness status` (`scripts/harness_status.py`) projects a review summary
+  (per-perspective verdict/freshness/severity/independence, degraded flag,
+  next finding as next action).
+- References: added `references/review/judge_lens.md`; updated
+  `semantic_critic_rubric.md` (execution contract) and `revision_policy.md`
+  (recheck semantics); router links the review branch. SKILL.md W2 section
+  and CLI quick start mention `harness review` (+~15 lines).
+- Tests: `tests/test_review_execution.py` (prompt §24 A–Q plus degraded/
+  foreign-run/gate-integration cases) and `tests/test_review_e2e.py`
+  (prompt §23 E2E-A/B/C/D) with a deterministic stub reviewer
+  (`tests/fixtures/review_stub/stub_reviewer.py`).
+
+Reliability audit corrections made after rerunning the GLM implementation on
+2026-08-20:
+
+- removed a date-dependent test that treated `2026-08-18` as permanently in
+  the future;
+- hash review inputs before starting the child process, not afterwards;
+- bind backend output to the orchestrator-selected perspective/mode/level,
+  predeclared receipt ID, exact bundle input, exact report output, and bundle
+  working directory;
+- require canonical artifact IDs and the minimum artifact-role set for each
+  perspective; filter foreign-run history before selecting current evidence;
+- block open medium findings unless explicitly accepted with justification;
+- reject bundle/report path traversal, detect protected author/control
+  mutation, and quarantine invalid backend output outside discoverable W2
+  evidence;
+- stream phase progress in human mode and use collision-resistant report
+  names.
+
+Review execution behavior: deterministic QA runs first and must pass; the
+allow-listed bundle is materialized with per-member digests; reviewers run
+either in-context (routing instructions with exact output path/contract) or
+through the `--backend-cmd` seam via `run_and_record.py --stage review`
+(process-captured receipt); reports are validated against schema, mode↔level
+mapping, artifact bindings, freshness, and verdict/finding consistency, then
+registered as `role=review_report` DAG nodes.
+
+## B. State complexity
+
+- canonical state delta: **0** (manifest gains no review fields; review
+  truth lives in generated reports + DAG nodes)
+- schema delta: **+1** (`review_report.schema.json`; justified in the design
+  doc — no existing schema carries perspective/mode/independence/binding)
+- profile dimension delta: **0** (perspectives derive from the preset)
+- top-level gate delta: **0** (still M1 P1 P2 W1 W2 S1)
+
+Current absolute counts after this addendum: **30 schemas**, **32 QA Python
+scripts**, **205 SKILL.md lines**, **284 README.md lines**, and **388/388**
+tests passing. These counts are not capability scores; they make the delta
+auditable against the historical table above.
+
+## C. Reuse
+
+Existing deterministic QA runner (dispatched, not reimplemented); existing
+`judge_scan` (kept in `check_paper_style.py`, seeded into the bundle);
+existing receipt system (`run_and_record.py`, stage `review` was already
+legal); existing artifact DAG (new role only); existing digest-owner rules;
+existing `harness_status` view pattern; existing rubric/revision references.
+
+## D. Multi-agent / independence
+
+One minimal seam: `--backend-cmd`, executed per perspective with
+`MATH_REVIEW_*` env (bundle path, output path, rubric, mode, independence).
+No worker SDK, registry, or orchestration graph. `independence_level` comes
+from the mode↔level mapping validated against the report; a fresh (L1+)
+report additionally requires a bundle whose members hash-match and contain
+only allow-listed roles. The receipt proves the supplied bundle, cwd, command,
+and output binding; it does not turn an arbitrary local process into an OS
+sandbox. Research L0 fallback must set
+`degraded_independence: true` or W2 fails; submission requires one current
+L1+ report. The E2E suite proves a real backend execution end to end
+(receipt + bundle + report + DAG node + gate consumption).
+
+## E. Deferred (not implemented)
+
+P1 (resume/retry/trajectory/context router/generic approvals), P2 (worker
+adapters, multi-agent orchestration, capability routing), P3 (skill
+benchmark/optimization/registry). Nothing from these lists was implemented.

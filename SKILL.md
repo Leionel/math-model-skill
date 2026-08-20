@@ -24,8 +24,10 @@ Python experiment with no evidence or competition-delivery obligations.
    Overrides are allow-listed capability adjustments, not new presets.
 4. Keep Contest Safety, independent validation, human checkpoints, result
    freeze, and submission immutability non-bypassable.
-5. Never hand-write generated evidence, gate PASS values, receipts, hashes,
-   freshness, claim inventories, or validation verdicts.
+5. Never hand-write gate PASS values, receipts, hashes, freshness, claim
+   inventories, or validation verdicts. A reviewer/human may create a new
+   schema-valid review report; operators must not rewrite an existing report
+   to manufacture PASS.
 6. Preserve failed runs and failure evidence. A failed run is evidence, not a
    reason to delete a counterexample.
 7. Hashes prove byte identity only. They do not prove leakage safety, objective
@@ -102,10 +104,23 @@ semantic checks, consistency checks, template/build checks, PDF checks, and
 visual review required by the resolved capabilities. Semantic Critic and
 human review are separate from mechanical QA.
 
+Review is executable, not declarative: run `harness review` after the draft.
+It runs deterministic QA, materializes the allow-listed review bundle, and
+routes the required perspectives (sprint: semantic critic; research:
+semantic + judge; submission: research set plus one review with
+independence_level >= L1). Reports land under `reports/review/` as generated
+evidence; W2 recomputes verdict, artifact binding, and freshness from those
+reports — never from manifest self-reports. Open blocker/high/medium findings
+block W2 unless a medium finding is explicitly accepted with justification;
+a paper change makes the old review stale. `--fresh` binds the bundle, child
+working directory, receipt, and report, but is not an OS sandbox: submission
+still needs a genuinely separate context/model. Load the review references
+via the router before acting as a reviewer.
+
 Minimum I/O: paper source/draft, abstract, conclusion, deterministic QA report,
-current evidence chain, and W2 human checkpoint. `research` requires the full
-evidence chain; `submission` additionally requires strict math/editorial and
-current template/bibliography evidence.
+current review reports, current evidence chain, and W2 human checkpoint.
+`research` requires the full evidence chain; `submission` additionally
+requires strict math/editorial and current template/bibliography evidence.
 
 ### S1 — current submission checks
 
@@ -143,6 +158,8 @@ python scripts/harness.py init --project C:\work\q1 --competition cumcm --preset
 python scripts/harness.py status --project C:\work\q1
 python scripts/harness.py check M1 --project C:\work\q1 --profile research --json
 python scripts/harness.py run --project C:\work\q1 --stage smoke -- python model.py
+python scripts/harness.py review --project C:\work\q1 --json
+python scripts/harness.py review --project C:\work\q1 --recheck --json
 python scripts/harness.py validate --project C:\work\q1 --strict
 python scripts/harness.py freeze --project C:\work\q1 --kind results --source results.json --output frozen_results.json --run-id run-1 --model-contract model_contract.json --code model.py --validation validation.json
 python scripts/harness.py profile --project C:\work\q1 --json

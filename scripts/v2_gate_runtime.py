@@ -773,6 +773,18 @@ def _v2_gate(state: Any, gate: str) -> tuple[bool, list[str], list[str], dict[st
                     except OSError:
                         pass
         _v2_dispatch_contracts(state, evidence, errors)
+        # Review Execution Plane: W2 consumes real review reports only. The
+        # manifest stores no review status, so nothing is self-reported here.
+        try:
+            from qa.review_evidence import evaluate_w2_review  # type: ignore
+
+            review_summary, review_errors = evaluate_w2_review(state.root, state.preset, run_id=state.run_id)
+        except ImportError:  # pragma: no cover - direct-script import edge
+            from review_evidence import evaluate_w2_review  # type: ignore
+
+            review_summary, review_errors = evaluate_w2_review(state.root, state.preset, run_id=state.run_id)
+        errors.extend(review_errors)
+        evidence["review"] = review_summary
         checkpoint_required("w2")
         run_safety_checker()
     elif gate == "s1":

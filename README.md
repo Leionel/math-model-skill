@@ -42,7 +42,15 @@ M1，直到用户提供真实题面、数据边界、模型合同、验证计划
 # 真正运行并捕获 receipt；命令的 stdout/stderr/exit code 保留
 python scripts/harness.py run --project C:\work\math-q1 --stage smoke -- python model.py
 
-# W2 入口复用既有 check_gates -> run_deterministic_qa，不复制 QA 规则
+# 无 backend 时只生成 bundle 与人工路由说明；报告写好后用 --recheck 导入
+python scripts/harness.py review --project C:\work\math-q1 --json
+python scripts/harness.py review --project C:\work\math-q1 --recheck --json
+
+# 实际 fresh reviewer：子进程从 bundle 目录启动，执行事实写入 receipt
+python scripts/harness.py review --project C:\work\math-q1 --fresh `
+  --backend-cmd "python C:\tools\reviewer.py" --json
+
+# review evidence current 后，再跑完整 W2 Gate（复用既有 deterministic QA）
 python scripts/harness.py validate --project C:\work\math-q1 --strict
 
 # 结果与提交冻结仍由既有 producer 负责
@@ -54,12 +62,74 @@ python scripts/harness.py profile --project C:\work\math-q1 --json
 python scripts/harness.py doctor --project C:\work\math-q1 --json
 ```
 
-对 Agent/CI 使用 `--json`；无 `--json` 时 `status/profile/doctor/init` 给出
-人类摘要，底层 checker 仍透明输出机器报告。命令返回码是事实状态，不要
-只看最后一行文字。
+对 Agent/CI 使用 `--json`；无 `--json` 时 review 会在 stderr 流式显示阶段
+进度，其他命令给出人类摘要。命令返回码是事实状态：无 backend 的 review
+会在等待人工报告时返回非零，这是 pending，不是已完成。`--fresh` 证明的是
+bundle、工作目录、receipt 与报告的绑定；它不是 OS 级沙箱。submission 使用
+者仍须把 backend 放在真正的新上下文/独立模型中运行。
 
 `check/validate --profile` 是兼容性断言：它只能与 manifest 已绑定的 preset
 一致，不能在检查时临时覆盖 Gate policy。正常情况下可省略该参数。
+
+## 给指挥 Agent 的可复制 Prompt
+
+先替换开头 5 个变量，再把整段交给 Codex、Claude 或其他执行 Agent。Harness
+目录与比赛项目目录必须分开；同一上下文里的作者自审只能标为 L0，不能冒充
+fresh reviewer。
+
+```text
+你要使用现有 Math Modeling Evidence Harness 完成一次证据约束的数模任务。
+
+固定参数：
+- HARNESS_ROOT = D:\Projects\随便做做\math-modeling-skill-sion
+- PROJECT_ROOT = D:\Competitions\当前赛题
+- COMPETITION = cumcm            # 可改为 mcm_icm / apmcm
+- PRESET = research              # sprint / research / submission
+- INPUTS = 题面、附件数据及用户给定参考资料的绝对路径
+
+执行规则：
+1. 先完整读取 HARNESS_ROOT\SKILL.md，再从 references\router.md 只加载当前
+   Gate 需要的 reference；不要一次性加载所有材料。
+2. 所有 Harness 命令从 HARNESS_ROOT 执行，所有比赛 artifact 写入
+   PROJECT_ROOT。不要把论文项目写进 Harness 仓库，也不要修改 HARNESS_ROOT
+   的代码、schema 或测试。
+3. 首先运行：
+   python scripts\harness.py doctor --project PROJECT_ROOT --offline --json
+   python scripts\harness.py status --project PROJECT_ROOT --json
+   若项目尚未初始化，才运行：
+   python scripts\harness.py init --project PROJECT_ROOT --competition COMPETITION --preset PRESET
+4. 严格按 S0 -> M1 -> P1 -> P2 -> W1 -> W2 -> S1 -> F1 推进。每次先读
+   status 的 first blocker，只修当前 blocker；不得通过手改 manifest、receipt、
+   hash、DAG freshness、review verdict 或 Gate 状态来跳关。
+5. 遇到缺失题面/数据、官方规则未确认、命令 FAIL/ERROR、pending human
+   checkpoint、哈希漂移或证据不足，立即停止下游阶段并报告。不得编造数据、
+   文献、运行结果、最优性、因果解释、获奖概率或测试通过状态。
+6. 所有模型/代码结论必须走真实运行与 receipt；关键数字必须能从 paper claim
+   反向追到 evidence_registry -> frozen_results -> receipt/code -> raw data。
+   frozen artifact 如需改变，回到上游 Gate 生成新版本，不得原地改写。
+7. W2 的 review 命令会先运行 deterministic QA；只有 QA 通过才 dispatch reviewer：
+   - 同上下文自审：运行 harness review 获取 routing instructions，按
+     review_report.schema.json 产出 L0 报告，再运行 --recheck；不得声称独立。
+   - 真正 fresh review：只有在独立新上下文/模型 backend 已提供时，才运行
+     python scripts\harness.py review --project PROJECT_ROOT --fresh
+       --backend-cmd "<独立 reviewer 命令>" --json
+   `--fresh` 绑定 bundle/cwd/receipt/report，但不是 OS 沙箱。submission 至少
+   需要一个 current L1+ 或人工 L3 报告。open blocker/high/medium 未解决时
+   不得通过 W2；论文改动后旧报告 stale，必须重新审查。
+8. review evidence current 后，运行：
+   python scripts\harness.py validate --project PROJECT_ROOT --strict
+   然后再次运行 status。没有用户明确授权时，不 commit、不 push、不上传，
+   也不执行 Final Freeze。
+
+最终汇报必须包含：
+- 当前 preset、stage、first blocker、各 Gate 的事实状态；
+- 实际执行的完整命令及 exit code；
+- 新增/更新 artifact 的绝对路径；
+- receipt ID、selected run、frozen result、review report 与关键 hash；
+- 已通过的检查、未通过/未运行的检查、人工待办和剩余风险；
+- 明确区分“研究草稿完成”“W2 通过”“submission ready”“F1 已冻结”，
+  不得把前一种状态宣传成后一种。
+```
 
 ## 目录与三层模型
 
@@ -91,9 +161,13 @@ S0 -> M1 -> P1 -> P2 -> W1 -> W2 -> S1 -> F1
 
 每个 Gate 只推进一个决策。M1 是可编码且可证伪的模型/验证计划；P1 是
 最小真实 smoke；P2 是 full + 独立重算 + freeze；W1 是 claim/evidence
-计划；W2 是确定性、数学、写作、PDF/视觉检查；S1 是当届规则和提交包；
+计划；W2 是确定性、数学、写作、PDF/视觉检查加上真实执行的 review plane
+（`harness review` 产出 `reports/review/` 下的 generated evidence；open
+blocker/high/medium 阻断 W2，除非 medium 被有理由地接受；论文改动使旧
+review stale）；S1 是当届规则和提交包；
 F1 是不可覆盖交付绑定。详细最低 I/O 见
-[Gate policy](references/workflow/gate_policy.md)。
+[Gate policy](references/workflow/gate_policy.md) 与
+[Review Execution Design](docs/REVIEW_EXECUTION_DESIGN.md)。
 
 ## 三个 preset
 
@@ -150,7 +224,7 @@ Status/index 可以展示 projection，但不能成为第二真源。
 semantic validation -> accept -> freeze -> hash binding
 ```
 
-不要手写或修改 generated evidence：receipt、index、DAG freshness、frozen
+操作者不要编辑或伪造既有 generated evidence：receipt、index、DAG freshness、frozen
 results、QA report、claim inventory、submission manifest 都必须重跑 producer。
 改动 immutable artifact 时保留旧版本，生成新版本并让 downstream Gate
 pending/fail。

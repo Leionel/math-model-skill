@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import uuid
@@ -178,7 +179,9 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     if receipt_path.exists():
         raise ValueError(f"refusing to overwrite immutable receipt: {receipt_path}")
-    receipt_id = f"REC-{uuid.uuid4().hex[:16]}"
+    receipt_id = args.receipt_id or f"REC-{uuid.uuid4().hex[:16]}"
+    if re.fullmatch(r"REC-[A-Za-z0-9._-]+", receipt_id) is None:
+        raise ValueError("--receipt-id must match REC-[A-Za-z0-9._-]+")
     command_id = f"CMD-{uuid.uuid4().hex[:12]}"
     stdout_path = receipt_path.with_suffix(receipt_path.suffix + ".stdout")
     stderr_path = receipt_path.with_suffix(receipt_path.suffix + ".stderr")
@@ -190,12 +193,26 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
         if not path.is_file():
             raise ValueError(f"input does not exist: {raw}")
         input_targets.append(path)
+    # Bind inputs before the child starts. Hashing them afterwards would let
+    # a mutating command rewrite its own evidence and make the receipt attest
+    # to post-execution bytes rather than the bytes it actually received.
+    input_refs = [
+        _v2_ref(path, root, role="run_input", digest=sha256_file(path) if hash_io else None, critical=hash_io)
+        for path in input_targets
+    ]
     output_targets: list[tuple[Path, bool]] = []
     for raw in args.output_artifact:
         path = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
         output_targets.append((path, path.is_file()))
+    command_cwd = (root / args.command_cwd).resolve() if args.command_cwd else root
+    try:
+        command_cwd.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("--command-cwd must stay within --project-root") from exc
+    if not command_cwd.is_dir():
+        raise ValueError(f"--command-cwd is not a directory: {command_cwd}")
     started = datetime.now(timezone.utc)
-    result = subprocess.run(argv, cwd=str(root), text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
+    result = subprocess.run(argv, cwd=str(command_cwd), text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
     finished = datetime.now(timezone.utc)
     stdout_path.write_text(result.stdout or "", encoding="utf-8")
     stderr_path.write_text(result.stderr or "", encoding="utf-8")
@@ -206,13 +223,9 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
         output_refs.append(_v2_ref(path, root, role="run_output", digest=digest, critical=hash_io))
         if not path.is_file():
             missing_outputs.append(str(path))
-    input_refs = [
-        _v2_ref(path, root, role="run_input", digest=sha256_file(path) if hash_io else None, critical=hash_io)
-        for path in input_targets
-    ]
     receipt: dict[str, Any] = {
         "schema_version": "2.0", "receipt_id": receipt_id, "command_id": command_id,
-        "run_id": args.run_id, "stage": args.stage, "argv": argv, "cwd": str(root),
+        "run_id": args.run_id, "stage": args.stage, "argv": argv, "cwd": str(command_cwd),
         "exit_code": result.returncode, "started_at": started.isoformat(), "finished_at": finished.isoformat(),
         "duration_s": round((finished - started).total_seconds(), 3), "seed": args.seed,
         "stdout_path": rel_path(stdout_path, root), "stderr_path": rel_path(stderr_path, root),
@@ -221,6 +234,8 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
         "env_note": "environment inherited from parent process; not captured",
         "metadata": {"integrity_mode": mode, "io_hashes_bound": hash_io},
     }
+    if args.note:
+        receipt["metadata"]["note"] = args.note
     if hash_io:
         receipt["stdout_sha256"] = sha256_file(stdout_path)
         receipt["stderr_sha256"] = sha256_file(stderr_path)
@@ -263,8 +278,15 @@ def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
     for raw in args.output_artifact:
         path = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
         output_targets.append((path, path.is_file()))
+    command_cwd = (root / args.command_cwd).resolve() if args.command_cwd else root
+    try:
+        command_cwd.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("--command-cwd must stay within --project-root") from exc
+    if not command_cwd.is_dir():
+        raise ValueError(f"--command-cwd is not a directory: {command_cwd}")
     started = datetime.now(timezone.utc)
-    result = subprocess.run(argv, cwd=str(root), text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
+    result = subprocess.run(argv, cwd=str(command_cwd), text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
     finished = datetime.now(timezone.utc)
     stdout_path.write_text(result.stdout or "", encoding="utf-8")
     stderr_path.write_text(result.stderr or "", encoding="utf-8")
@@ -277,7 +299,7 @@ def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
             missing_outputs.append(path)
     receipt = {
         "schema_version": "1.0", "command_id": command_id, "run_id": args.run_id, "stage": args.stage,
-        "argv": argv, "cwd": str(root), "exit_code": result.returncode,
+        "argv": argv, "cwd": str(command_cwd), "exit_code": result.returncode,
         "started_at": started.isoformat(), "finished_at": finished.isoformat(),
         "duration_s": round((finished - started).total_seconds(), 3), "seed": args.seed,
         "stdout_path": str(stdout_path), "stderr_path": str(stderr_path),
@@ -311,6 +333,7 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--stage", required=True, choices=("safety", "smoke", "full", "freeze", "evidence", "qa", "review", "submission"))
     parser.add_argument("--receipt", required=True)
+    parser.add_argument("--receipt-id", help="predeclared v2 receipt id for producer/output binding")
     parser.add_argument("--index")
     parser.add_argument("--manifest", help="v2 run_manifest; activates the normalized receipt path")
     parser.add_argument("--v2", action="store_true", help="write a v2 receipt without requiring a manifest")
@@ -323,6 +346,7 @@ def main() -> int:
     parser.add_argument("--input", action="append", default=[])
     parser.add_argument("--output-artifact", action="append", default=[])
     parser.add_argument("--project-root", default=".")
+    parser.add_argument("--command-cwd", help="child working directory, relative to project root")
     parser.add_argument("argv", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     root = Path(args.project_root).resolve()

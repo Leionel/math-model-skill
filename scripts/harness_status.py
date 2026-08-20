@@ -183,22 +183,57 @@ def _dag_view(state: Any) -> dict[str, Any]:
     return result
 
 
-def _next_action(first_blocked: Any, pending: list[dict[str, Any]], stale: list[dict[str, Any]]) -> str:
+def _review_view(state: Any) -> dict[str, Any]:
+    """Project review state through the same evidence boundary as the W2 gate."""
+
+    try:
+        from qa.review_evidence import summarize_review  # type: ignore
+    except ImportError:  # pragma: no cover - direct-script import edge
+        from review_evidence import summarize_review  # type: ignore
+    try:
+        return summarize_review(state.root, state.preset, run_id=state.run_id, require_registration=True)
+    except (OSError, ValueError, TypeError) as exc:
+        return {"error": f"cannot summarize review evidence: {exc}", "perspectives": {}}
+
+
+def _next_action(first_blocked: Any, pending: list[dict[str, Any]], stale: list[dict[str, Any]], review: dict[str, Any] | None = None) -> str:
+    # The gate order keeps priority; review guidance is appended so an open
+    # finding stays visible without outranking an earlier blocked gate.
+    primary: str | None = None
     if pending:
         stage = pending[0].get("stage") or "required"
-        return f"human review pending on stage {str(stage).upper()}"
-    if stale:
-        return "refresh or rerun stale artifacts, then recheck the first blocked Gate"
-    if first_blocked:
+        primary = f"human review pending on stage {str(stage).upper()}"
+    elif stale:
+        primary = "refresh or rerun stale artifacts, then recheck the first blocked Gate"
+    elif first_blocked:
         gate = first_blocked[0] if isinstance(first_blocked, (tuple, list)) else first_blocked
-        return f"produce the missing evidence for {str(gate).upper()} and rerun `harness check {str(gate).upper()}`"
-    return "all observed gates pass; continue with the next human checkpoint or submission freeze"
+        primary = f"produce the missing evidence for {str(gate).upper()} and rerun `harness check {str(gate).upper()}`"
+    suffix = ""
+    if isinstance(review, dict):
+        blocked_name = first_blocked[0] if isinstance(first_blocked, (tuple, list)) else first_blocked
+        if blocked_name is None or blocked_name == "w2":
+            finding = review.get("next_finding")
+            if isinstance(finding, dict) and finding.get("finding_id"):
+                return f"fix {finding['finding_id']}: {finding.get('summary', '')}"
+            unexecuted = [
+                name for name, view in (review.get("perspectives") or {}).items()
+                if isinstance(view, dict) and view.get("required") and not view.get("executed")
+            ]
+            if unexecuted and (primary is None or blocked_name == "w2"):
+                return f"run `harness review` to produce missing review evidence: {', '.join(unexecuted)}"
+        finding = review.get("next_finding")
+        if isinstance(finding, dict) and finding.get("finding_id"):
+            suffix = f"; open review finding {finding['finding_id']}"
+    if primary is not None:
+        return primary + suffix
+    return "all observed gates pass; continue with the next human checkpoint or submission freeze" + suffix
 
 
 def _v2_status(state: Any) -> dict[str, Any]:
     pending = _pending_checkpoints(state.manifest)
     receipts = _receipt_view(state)
     dag = _dag_view(state)
+    review = _review_view(state)
     gate_reports: dict[str, dict[str, Any]] = {}
     first_blocked: str | None = None
     for gate in GATE_ORDER:
@@ -238,7 +273,8 @@ def _v2_status(state: Any) -> dict[str, Any]:
         "receipts": receipts,
         "dag": dag,
         "stale_artifacts": dag["stale_artifacts"],
-        "next_action": _next_action(first_blocked, pending, dag["stale_artifacts"]),
+        "review": review,
+        "next_action": _next_action(first_blocked, pending, dag["stale_artifacts"], review),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -331,6 +367,24 @@ def _human(report: Mapping[str, Any]) -> str:
         lines.append(f"stale artifacts: {len(stale)}")
         for row in stale[:10]:
             lines.append(f"  - {row.get('artifact_id')}: {row.get('path', row.get('reason', 'stale'))}")
+    review = report.get("review")
+    if isinstance(review, dict) and review.get("perspectives"):
+        lines.append("review:")
+        for name, view in (review.get("perspectives") or {}).items():
+            if not isinstance(view, dict):
+                continue
+            counts = view.get("severity_counts", {})
+            state_label = view.get("freshness", "missing")
+            lines.append(
+                f"  {str(name)}: {str(view.get('verdict') or 'not_run')} ({state_label})"
+                f"  blocker: {counts.get('blocker', 0)}  high: {counts.get('high', 0)}"
+                f"  medium: {counts.get('medium', 0)}"
+            )
+            if view.get("independence_level"):
+                degraded = " (degraded)" if view.get("degraded_independence") else ""
+                lines.append(f"    independence: {view.get('independence_level')}{degraded}")
+            for error in view.get("errors", [])[:3]:
+                lines.append(f"    error: {error}")
     if report.get("errors"):
         lines.append("errors:")
         lines.extend(f"  - {error}" for error in report["errors"])

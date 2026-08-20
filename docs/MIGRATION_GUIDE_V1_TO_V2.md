@@ -13,6 +13,7 @@ byte-for-byte untouched.  New project writers must emit v2 only.
 | `run_manifest.artifacts[]` and legacy DAG | existing `artifact_dag.json` v2 projection | Build stable artifact IDs and report path/digest/version conflicts. |
 | `run_index.selection_policy` | `run_manifest.control.selection_policy` | The v2 index stores only a policy reference and selected receipt IDs. |
 | five legacy profile dimensions | `preset` + `profile_overrides` | Resolve once to `ResolvedCapabilities`; ambiguous combinations require review. |
+| `run_manifest.reviewer.*` (incl. `blind_reviewers`) | not migrated | Mark deprecated. Reviewer-count semantics stay v1-only; after migration run `harness review` to produce real reports under `reports/review/`. No v1 review status is mapped or auto-passed. |
 | `extremum_certificate` | legacy checker compatibility | Mark deprecated; do not create a new certificate writer path. |
 
 The v2 manifest has only the unique `competition_profile_ref`; it has no

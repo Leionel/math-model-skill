@@ -1,5 +1,10 @@
 # Review Execution Plane（P0）改进实施方案
 
+> 历史规划快照：本文包含实施前拟议项，不代表当前已实现能力。2026-08-20
+> 可靠性复核后的事实边界以 [REVIEW_EXECUTION_DESIGN.md](REVIEW_EXECUTION_DESIGN.md)
+> 和 [WP3_TEST_REPORT.md](WP3_TEST_REPORT.md) 为准；其中自动 revision loop、
+> OS sandbox、finding-history 单调性与 decision memo 仍未实现。
+
 日期：2026-08-17
 依据：`math_model_harness_prompt_v4_oss_scoped.md`（v4 OSS-Grounded Review Execution Prompt）
 范围：仅 P0 — Review Execution Plane。不实现 P1/P2/P3，不 commit，不 push。

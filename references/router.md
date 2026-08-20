@@ -13,6 +13,7 @@ scripts and schemas.
 | model planning and real literature evidence | [research/model_planning.md](research/model_planning.md), [research/literature_evidence.md](research/literature_evidence.md) |
 | learning from previous CUMCM or MCM/ICM papers | [research/precedent_policy.md](research/precedent_policy.md), then use only the relevant [precedents/pattern-cards/](precedents/pattern-cards/) |
 | writing, figures, templates, and PDF review | [writing/editorial_style.md](writing/editorial_style.md), [visualization/figure_design.md](visualization/figure_design.md), [writing/template_adapter.md](writing/template_adapter.md), [visualization/visual_review.md](visualization/visual_review.md) |
+| running the review plane (`harness review`), semantic critic, judge lens, independence, or manual revision/recheck policy | [review/semantic_critic_rubric.md](review/semantic_critic_rubric.md), [review/judge_lens.md](review/judge_lens.md), [review/revision_policy.md](review/revision_policy.md) |
 | contest safety and final submission | [safety/contest_safety.md](safety/contest_safety.md), [submission/submission_freeze.md](submission/submission_freeze.md) |
 
 Do not recursively load every card or reference directory. Follow one link

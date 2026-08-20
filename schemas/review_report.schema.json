@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/review-report.schema.json",
+  "title": "Review Execution Report (generated evidence, not canonical state)",
+  "description": "One reviewer execution over an exact artifact set. Findings are semantic judgments; they never replace deterministic PASS/FAIL checkers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "run_id",
+    "perspective",
+    "review_mode",
+    "independence_level",
+    "reviewed_at",
+    "reviewed_artifacts",
+    "findings",
+    "verdict"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "report_id": {"type": "string", "pattern": "^REV-[A-Za-z0-9._-]+$"},
+    "run_id": {"type": "string", "minLength": 1},
+    "project_id": {"type": "string"},
+    "perspective": {"type": "string", "enum": ["semantic_critic", "judge_lens"]},
+    "review_mode": {"type": "string", "enum": ["self_critic", "fresh_context", "independent_model", "human"]},
+    "independence_level": {
+      "type": "string",
+      "enum": ["L0_same_context", "L1_fresh_context", "L2_independent_model", "L3_human"]
+    },
+    "degraded_independence": {"type": "boolean"},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "reviewed_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact_ref"}},
+    "bundle_ref": {"$ref": "#/$defs/file_ref"},
+    "execution_receipt_ref": {"$ref": "#/$defs/receipt_ref"},
+    "rubric_ref": {"type": "string", "minLength": 1},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "verdict": {"type": "string", "enum": ["pass", "fail"]},
+    "superseded_by": {"type": ["string", "null"]},
+    "notes": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"review_mode": {"enum": ["fresh_context", "independent_model"]}}},
+      "then": {"required": ["bundle_ref", "execution_receipt_ref"]}
+    }
+  ],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "path", "sha256"],
+      "properties": {
+        "artifact_id": {"type": ["string", "null"]},
+        "role": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "receipt_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "path"],
+      "properties": {
+        "receipt_id": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "perspective",
+        "severity",
+        "summary",
+        "evidence_locator",
+        "affected_artifact",
+        "affected_claim_id",
+        "required_fix",
+        "confidence",
+        "status"
+      ],
+      "properties": {
+        "finding_id": {"type": "string", "pattern": "^REV-[A-Za-z0-9._-]+$"},
+        "perspective": {"type": "string", "enum": ["semantic_critic", "judge_lens"]},
+        "severity": {"type": "string", "enum": ["blocker", "high", "medium", "low"]},
+        "summary": {"type": "string", "minLength": 1},
+        "evidence_locator": {"type": "string", "minLength": 1},
+        "affected_artifact": {"type": "string", "minLength": 1},
+        "affected_claim_id": {"type": ["string", "null"]},
+        "required_fix": {"type": "string", "minLength": 1},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "status": {"type": "string", "enum": ["open", "resolved", "accepted_risk", "superseded"]},
+        "accepted_risk_justification": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
