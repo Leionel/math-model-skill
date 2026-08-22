@@ -13,7 +13,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
+from _common import ai_usage_hash_matches, load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
 from validate_contracts import _validate_document  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
@@ -119,7 +119,7 @@ def main() -> int:
             rules = profile.get("submission") if isinstance(profile, dict) else None
             if not isinstance(rules, dict) or report.get("submission_rules_sha256") != sha256_json(rules):
                 errors.append("S1 report submission rules hash does not match run_manifest")
-            if report.get("ai_usage_sha256") != sha256_json(run_manifest.get("ai_usage", [])):
+            if not ai_usage_hash_matches(report.get("ai_usage_sha256"), run_manifest):
                 errors.append("S1 report AI usage hash does not match run_manifest")
             s1_checkpoints = [
                 row for row in run_manifest.get("human_checkpoints", [])

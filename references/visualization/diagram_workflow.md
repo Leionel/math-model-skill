@@ -20,7 +20,7 @@
 
 ## W1/W2 运行顺序
 
-1. Writer 根据 `paper_plan` 和 Figure Contract 生成 `diagram_spec.json`，先确定唯一 message、节点/边、模型与结果引用、布局和风格。
+1. Writer 根据 `paper_plan` 和 Figure Contract 生成 `diagram_spec.json`，先确定唯一 message、节点/边、模型与结果引用，再分别选择 composition `archetype` 与颜色 `style_profile`。两者不得耦合。
 2. 人工确认拓扑：总览图回答“题目—任务—模型—验证—输出”如何串联；关键任务图回答一个任务内部的输入、处理、模型、验证和结果，不把所有内容塞进一张图。
 3. 优先用仓库的 [Native draw.io Backend](drawio_backend.md) 从 `diagram_spec.json` 生成初始 `.drawio`，再在 draw.io/Figma/PowerPoint 中人工微调；不要让图像生成模型直接承担公式、中文和数值的排版。
 4. 导出 SVG/PDF，或在有明确兼容理由时导出高 DPI PNG；运行 `check_diagram_spec.py --strict`，再运行 `check_figure.py` 和整篇 PDF 视觉检查。
@@ -29,6 +29,8 @@
 ## 设计边界
 
 - 总览图通常 5–9 个一级节点；关键任务图只保留能改变读者判断的节点。
+- 优先从 `research_framework`、`computational_pipeline`、`parallel_integration`、`method_architecture`、`iterative_optimization` 选择一种主阅读语法；只有确有特殊拓扑才用 `custom`。参考样例是 visual regression，不是固定 XML 换字模板。
+- 论文模式使用 `title_mode=none` 或 `compact`；`banner` 只用于确有需要的海报、PPT 或 standalone infographic，并接受 `PPT_TITLE_BANNER_RISK` 提示。
 - 一个 panel 只承担一个主要问题；不要把概念流程、实验结果和敏感性结论混成没有层级的彩色拼贴。
 - 节点文字优先使用短语，公式保留真实 LaTeX/数学文本；禁止用 `...`、`etc.` 隐去关键步骤。
 - 使用 2–3 个语义色和白底，颜色用于区分任务/模型/结果，不用颜色代替箭头和文字。
@@ -57,4 +59,4 @@ python scripts/figures/generate_drawio.py `
   --force
 ```
 
-该检查器能阻断未知节点、断开的边、空标签、遗漏占位符、缺少来源、没有可编辑源和低 DPI 栅格例外；它不能代替人判断图是否真正帮助读者理解模型。
+该检查器能阻断未知节点、断开的边、空标签、遗漏占位符、缺少来源、没有可编辑源和低 DPI 栅格例外，并提示 card wall、PPT title banner、overview overload 与 weak hierarchy；它不能代替人判断图是否真正帮助读者理解模型。

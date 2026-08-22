@@ -36,6 +36,13 @@ Python experiment with no evidence or competition-delivery obligations.
 9. Stop on missing inputs, `FAIL`, `ERROR`, unresolved official rules, or a
    pending human decision. Do not promote a plan, demo, or regression as a
    benchmark result.
+10. Treat `MODELING_PLAN.md`, `PAPER_OUTLINE.md`, `PROJECT_BRIEF.md`, and
+    `SUBMISSION_CHECKLIST.md` as deterministic projections only. They never
+    replace contracts, receipts, Gate reports, or frozen artifacts.
+11. AI usage starts as `unknown`. Before S1, record each use or obtain an
+    explicit human `none` declaration; an empty registry is not proof of no
+    use. Harness-observable AI backends must log automatically as `pending`;
+    a human must run `harness ai verify` before strict promotion.
 
 ## Normal path
 
@@ -64,6 +71,8 @@ a documented reason for an exception), assumptions, typed parameter
 provenance, formulas, implementation map, and falsifiable validation duties.
 Use `assumption_forks` for ambiguous question semantics and declare objective
 and risk semantics before coding.
+Run `harness prepare M1` before the M1 human checkpoint; review its modeling
+plan, but never infer M1 PASS from that Markdown projection.
 
 Minimum I/O: ready `model_contract.json`, evidence registry, current profile,
 M1 human checkpoint, and a current DAG. In `research`/`submission`, formal
@@ -93,6 +102,8 @@ checkpoint.
 Build one incremental evidence registry and a paper plan mapping each claim to
 verified evidence. Keep result definitions, population, units, and rounding
 consistent. Do not fill missing evidence with prose.
+Run `harness prepare W1` to project the machine IR into a paper outline and
+deliverables/appendix plan. Missing evidence must remain visibly missing.
 
 Minimum I/O: ready `paper_plan.json`, verified evidence references, current
 frozen result, and W1 human checkpoint.
@@ -121,12 +132,17 @@ Minimum I/O: paper source/draft, abstract, conclusion, deterministic QA report,
 current review reports, current evidence chain, and W2 human checkpoint.
 `research` requires the full evidence chain; `submission` additionally
 requires strict math/editorial and current template/bibliography evidence.
+Run `harness prepare W2` to refresh the project brief and targeted revision
+view; it does not run or replace deterministic QA/review.
 
 ### S1 — current submission checks
 
 Check the current verified profile, page scope, support package, AI disclosure,
 required manual checks, and final PDF. A seed profile cannot pass submission.
 The Harness never uploads on a user's behalf.
+Run `harness prepare S1` to generate the AI ledger/disclosure draft,
+submission checklist, and mutable staging directories. It must not populate
+immutable `submission/final/` or claim readiness.
 
 Minimum I/O: verified profile, current PDF/support/disclosure artifacts, S1
 report, and S1 human checkpoint.
@@ -156,16 +172,27 @@ result freeze, or submission immutability with an override.
 ```powershell
 python scripts/harness.py init --project C:\work\q1 --competition cumcm --preset research
 python scripts/harness.py status --project C:\work\q1
+python scripts/harness.py prepare M1 --project C:\work\q1 --json
+python scripts/harness.py ai status --project C:\work\q1 --json
 python scripts/harness.py check M1 --project C:\work\q1 --profile research --json
 python scripts/harness.py run --project C:\work\q1 --stage smoke -- python model.py
 python scripts/harness.py review --project C:\work\q1 --json
 python scripts/harness.py review --project C:\work\q1 --recheck --json
+python scripts/harness.py ai verify --project C:\work\q1 --usage-id AI-REVIEW-... --checked-by-role team-lead --verification-method "checked report against evidence" --human-changes "record accepted edits or state that none were adopted"
 python scripts/harness.py validate --project C:\work\q1 --strict
+python scripts/harness.py prepare S1 --project C:\work\q1 --json
 python scripts/harness.py freeze --project C:\work\q1 --kind results --source results.json --output frozen_results.json --run-id run-1 --model-contract model_contract.json --code model.py --validation validation.json
 python scripts/harness.py profile --project C:\work\q1 --json
 python scripts/harness.py doctor --project C:\work\q1 --json
 python scripts/harness.py migrate --project C:\work\legacy --json
 ```
+
+For conceptual process/framework figures, choose an archetype independently
+of `style_profile`: `research_framework`, `computational_pipeline`,
+`parallel_integration`, `method_architecture`, or `iterative_optimization`.
+The planner may change geometry and primitives only; it must preserve nodes,
+edges, source refs, semantic roles, and the existing palette system. Data
+plots and result figures remain deterministic rather than Draw.io archetypes.
 
 Use `--json` for agent consumption. Underlying checkers retain their stdout,
 stderr, and exit code. Use their script-level flags only for debugging; the

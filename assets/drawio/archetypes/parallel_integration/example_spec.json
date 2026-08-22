@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "diagram_id": "ARCH-PARALLEL-INTEGRATION",
+  "kind": "comparison",
+  "archetype": "parallel_integration",
+  "title_mode": "none",
+  "message": "Independent economic, weather, and spatial branches converge only at the declared fusion stage.",
+  "layout": "hybrid",
+  "style_profile": "slate_violet",
+  "source_format": "drawio",
+  "delivery_mode": "vector_preferred",
+  "output_formats": ["svg"],
+  "text_policy": "native_text",
+  "source_editability": "editable_source",
+  "human_review_required": true,
+  "status": "draft",
+  "nodes": [
+    {"node_id": "econ", "label": "Economic data", "role": "input", "source_refs": ["D1"], "emphasis": "neutral"},
+    {"node_id": "weather", "label": "Weather data", "role": "input", "source_refs": ["D2"], "emphasis": "neutral"},
+    {"node_id": "spatial", "label": "Spatial data", "role": "input", "source_refs": ["D3"], "emphasis": "neutral"},
+    {"node_id": "model_a", "label": "Economic model", "role": "model", "source_refs": ["M1"], "emphasis": "core"},
+    {"node_id": "model_b", "label": "Weather model", "role": "model", "source_refs": ["M2"], "emphasis": "core"},
+    {"node_id": "model_c", "label": "Spatial model", "role": "model", "source_refs": ["M3"], "emphasis": "core"},
+    {"node_id": "fusion", "label": "Evidence fusion", "role": "process", "source_refs": ["M4"], "emphasis": "core"},
+    {"node_id": "strategy", "label": "Final strategy", "role": "result", "source_refs": ["R1"], "emphasis": "core"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from": "econ", "to": "model_a", "relation": "data", "source_refs": ["D1"]},
+    {"edge_id": "e2", "from": "weather", "to": "model_b", "relation": "data", "source_refs": ["D2"]},
+    {"edge_id": "e3", "from": "spatial", "to": "model_c", "relation": "data", "source_refs": ["D3"]},
+    {"edge_id": "e4", "from": "model_a", "to": "fusion", "relation": "dependency", "source_refs": ["M1"]},
+    {"edge_id": "e5", "from": "model_b", "to": "fusion", "relation": "dependency", "source_refs": ["M2"]},
+    {"edge_id": "e6", "from": "model_c", "to": "fusion", "relation": "dependency", "source_refs": ["M3"]},
+    {"edge_id": "e7", "from": "fusion", "to": "strategy", "relation": "control", "source_refs": ["R1"]}
+  ]
+}
+

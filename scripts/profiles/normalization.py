@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -416,6 +415,7 @@ def _normalize_internal(
         "competition_profile_ref": {"path": profile_path.replace("\\", "/"), "profile_id": profile["profile_id"]}, "roots": roots,
         "control": {"selection_policy": {"owner": "run_manifest.control", "rule": rule, "version": V2}, "required_human_stages": human_stages, "historical_evidence_policy": "preserve"},
         "safety": copy.deepcopy(manifest.get("safety") if isinstance(manifest.get("safety"), Mapping) else {}),
+        "ai_usage_state": "used" if isinstance(manifest.get("ai_usage"), list) and manifest.get("ai_usage") else "unknown",
         "ai_usage": copy.deepcopy(manifest.get("ai_usage") if isinstance(manifest.get("ai_usage"), list) else []),
         "human_checkpoints": copy.deepcopy(manifest.get("human_checkpoints") if isinstance(manifest.get("human_checkpoints"), list) else []),
         "metadata": {"normalized_from": str(manifest.get("schema_version")), "normalization_boundary": "v1_adapter"},

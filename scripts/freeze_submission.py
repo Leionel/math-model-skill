@@ -14,8 +14,8 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
-from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from _common import ai_usage_hash_matches, load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from runtime_state import load_runtime_state  # noqa: E402
 
 
 def submission_file(
@@ -83,7 +83,7 @@ def _freeze_submission_v2(
             errors.append("S1 report competition profile hash is stale")
         if report.get("submission_rules_sha256") != sha256_json(rules):
             errors.append("S1 report submission rules hash is stale")
-        if report.get("ai_usage_sha256") != sha256_json(manifest.get("ai_usage", [])):
+        if not ai_usage_hash_matches(report.get("ai_usage_sha256"), manifest):
             errors.append("S1 report AI usage hash is stale")
         report_inputs = {(row.get("role"), row.get("path")): row.get("sha256") for row in report.get("inputs", []) if isinstance(row, dict)}
         for role, path in [("paper", paper_path), *(('support', value) for value in support_paths), *(('ai_disclosure', ai_path) for _ in [0] if ai_path is not None)]:
@@ -226,7 +226,7 @@ def main() -> int:
         rules = profile.get("submission")
         if not isinstance(rules, dict) or report.get("submission_rules_sha256") != sha256_json(rules):
             raise ValueError("S1 report submission rules hash is stale")
-        if report.get("ai_usage_sha256") != sha256_json(manifest.get("ai_usage", [])):
+        if not ai_usage_hash_matches(report.get("ai_usage_sha256"), manifest):
             raise ValueError("S1 report AI usage hash is stale")
         s1_checkpoints = [
             row for row in manifest.get("human_checkpoints", [])

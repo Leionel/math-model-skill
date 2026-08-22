@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "diagram_id": "ARCH-COMPUTATIONAL-PIPELINE",
+  "kind": "task_pipeline",
+  "archetype": "computational_pipeline",
+  "title_mode": "none",
+  "message": "A reproducible data-to-forecast chain separates preparation, learning, evaluation, and decision optimization.",
+  "layout": "left_to_right",
+  "style_profile": "forest_gold",
+  "source_format": "drawio",
+  "delivery_mode": "vector_preferred",
+  "output_formats": ["svg"],
+  "text_policy": "native_text",
+  "source_editability": "editable_source",
+  "human_review_required": true,
+  "status": "draft",
+  "nodes": [
+    {"node_id": "raw", "label": "Raw data", "role": "input", "source_refs": ["D1"], "emphasis": "neutral"},
+    {"node_id": "clean", "label": "Cleaning", "role": "process", "source_refs": ["C1"], "emphasis": "secondary"},
+    {"node_id": "features", "label": "Feature engineering", "role": "process", "source_refs": ["C2"], "emphasis": "secondary"},
+    {"node_id": "xgb", "label": "XGBoost", "role": "model", "source_refs": ["M1"], "emphasis": "core"},
+    {"node_id": "eval", "label": "Out-of-sample evaluation", "role": "validation", "source_refs": ["V1"], "emphasis": "secondary"},
+    {"node_id": "opt", "label": "Decision optimization", "role": "process", "source_refs": ["M2"], "emphasis": "core"},
+    {"node_id": "forecast", "label": "Forecast and policy", "role": "result", "source_refs": ["R1"], "emphasis": "core"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from": "raw", "to": "clean", "relation": "data", "source_refs": ["D1"]},
+    {"edge_id": "e2", "from": "clean", "to": "features", "relation": "data", "source_refs": ["C1"]},
+    {"edge_id": "e3", "from": "features", "to": "xgb", "relation": "data", "source_refs": ["C2"]},
+    {"edge_id": "e4", "from": "xgb", "to": "eval", "relation": "dependency", "source_refs": ["V1"]},
+    {"edge_id": "e5", "from": "eval", "to": "opt", "relation": "control", "source_refs": ["M2"]},
+    {"edge_id": "e6", "from": "opt", "to": "forecast", "relation": "control", "source_refs": ["R1"]}
+  ]
+}
+

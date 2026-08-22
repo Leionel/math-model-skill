@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
+from _common import load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
 
@@ -110,18 +110,49 @@ def _check_v2_safety(manifest_path: Path, root: Path, *, strict: bool) -> tuple[
     if not isinstance(usage_rows, list):
         errors.append("ai_usage must be an array")
         usage_rows = []
+    ai_state = resolve_ai_usage_state(state.manifest)
+    if "ai_usage_state" not in state.manifest and not strict:
+        warnings.append("v2 ai_usage_state is missing; treat AI use as unknown until explicitly declared")
+    if ai_state == "unknown" and usage_rows:
+        errors.append("ai_usage_state=unknown conflicts with non-empty ai_usage")
+    if ai_state == "none" and usage_rows:
+        errors.append("ai_usage_state=none conflicts with non-empty ai_usage")
+    if ai_state == "used" and not usage_rows:
+        errors.append("ai_usage_state=used requires at least one ai_usage record")
+    declaration = state.manifest.get("ai_usage_declaration")
+    if ai_state == "none" and not isinstance(declaration, dict):
+        (errors if strict else warnings).append("ai_usage_state=none requires an explicit ai_usage_declaration")
+    elif ai_state == "none" and isinstance(declaration, dict):
+        iso8601(declaration.get("confirmed_at"), "ai_usage_declaration.confirmed_at", errors)
+    elif declaration is not None:
+        errors.append(f"ai_usage_declaration conflicts with ai_usage_state={ai_state}")
     if effective.get("ai_tool_use") == "deny" and usage_rows:
         errors.append("ai_usage is non-empty while effective ai_tool_use=deny")
+    usage_ids: list[str] = []
     for index, usage in enumerate(usage_rows):
         if not isinstance(usage, dict):
             errors.append(f"ai_usage[{index}] must be an object")
             continue
+        usage_ids.append(str(usage.get("usage_id", "")))
+        iso8601(usage.get("used_at"), f"ai_usage[{index}].used_at", errors)
         ref = usage.get("interaction_record")
-        if isinstance(ref, dict) and isinstance(ref.get("path"), str) and not resolve_path(ref["path"], root).resolve().is_file():
-            errors.append(f"ai_usage[{index}].interaction_record does not exist")
+        if not isinstance(ref, dict) or not isinstance(ref.get("path"), str) or not isinstance(ref.get("sha256"), str):
+            errors.append(f"ai_usage[{index}].interaction_record requires path and sha256")
+        else:
+            record_path = resolve_path(ref["path"], root).resolve()
+            if not record_path.is_file():
+                errors.append(f"ai_usage[{index}].interaction_record does not exist")
+            elif sha256_file(record_path).lower() != str(ref["sha256"]).lower():
+                errors.append(f"ai_usage[{index}].interaction_record sha256 drift")
         verification = usage.get("verification")
-        if not isinstance(verification, dict) or verification.get("status") != "verified":
+        if not isinstance(verification, dict):
             (errors if strict else warnings).append(f"ai_usage[{index}] has not completed human verification")
+        else:
+            iso8601(verification.get("checked_at"), f"ai_usage[{index}].verification.checked_at", errors)
+            if verification.get("status") != "verified":
+                (errors if strict else warnings).append(f"ai_usage[{index}] has not completed human verification")
+    if len(usage_ids) != len(set(usage_ids)) or any(not value for value in usage_ids):
+        errors.append("AI usage_id values must be distinct and non-empty")
     checkpoints = state.manifest.get("human_checkpoints", [])
     if not isinstance(checkpoints, list):
         errors.append("human_checkpoints must be an array")
@@ -129,6 +160,19 @@ def _check_v2_safety(manifest_path: Path, root: Path, *, strict: bool) -> tuple[
     checkpoint_ids = [str(row.get("checkpoint_id", "")) for row in checkpoints if isinstance(row, dict)]
     if len(checkpoint_ids) != len(set(checkpoint_ids)) or any(not value for value in checkpoint_ids):
         errors.append("checkpoint_id values must be distinct and non-empty")
+    if any(isinstance(usage, dict) and usage.get("stage") == "modeling" for usage in usage_rows):
+        m1_checkpoint = next(
+            (
+                row for row in checkpoints
+                if isinstance(row, dict) and row.get("stage") == "m1" and row.get("decision") in {"pass", "confirm"}
+            ),
+            None,
+        )
+        manual_checks = set(m1_checkpoint.get("manual_checks", [])) if m1_checkpoint else set()
+        if "team_led_core_modeling" not in manual_checks:
+            warnings.append(
+                "AI was used during modeling; M1 must confirm team_led_core_modeling before strict promotion"
+            )
     report = {
         "ok": not errors and (not strict or not warnings),
         "manifest": rel_path(manifest_path, root),
@@ -138,6 +182,7 @@ def _check_v2_safety(manifest_path: Path, root: Path, *, strict: bool) -> tuple[
         "effective_policy": effective,
         "checked_rules": len(rules),
         "checked_ai_usage": len(usage_rows),
+        "ai_usage_state": ai_state,
         "errors": errors,
         "warnings": warnings,
     }

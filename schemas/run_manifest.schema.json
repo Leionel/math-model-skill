@@ -27,6 +27,44 @@
         "version": { "type": "string", "minLength": 1 }
       }
     },
+    "audit_file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
+      }
+    },
+    "ai_usage_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["usage_id", "tool_name", "model", "provider", "used_at", "stage", "purpose", "prompt_summary", "output_use", "human_changes", "interaction_record", "verification"],
+      "properties": {
+        "usage_id": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "used_at": { "type": "string", "minLength": 1 },
+        "stage": { "type": "string", "enum": ["analysis", "modeling", "coding", "experiments", "writing", "review", "submission", "other"] },
+        "purpose": { "type": "string", "minLength": 1 },
+        "prompt_summary": { "type": "string", "minLength": 1 },
+        "output_use": { "type": "string", "minLength": 1 },
+        "human_changes": { "type": "string", "minLength": 1 },
+        "interaction_record": { "$ref": "#/$defs/audit_file_ref" },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "checked_by_role", "method", "checked_at"],
+          "properties": {
+            "status": { "type": "string", "enum": ["pending", "verified", "rejected"] },
+            "checked_by_role": { "type": "string", "minLength": 1 },
+            "method": { "type": "string", "minLength": 1 },
+            "checked_at": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
     "v2": {
       "type": "object",
       "additionalProperties": false,
@@ -101,7 +139,19 @@
           }
         },
         "safety": { "type": "object" },
-        "ai_usage": { "type": "array" },
+        "ai_usage_state": { "type": "string", "enum": ["unknown", "none", "used"] },
+        "ai_usage_declaration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "confirmed_by", "confirmed_at", "reason"],
+          "properties": {
+            "status": { "const": "none" },
+            "confirmed_by": { "type": "string", "minLength": 1 },
+            "confirmed_at": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        "ai_usage": { "type": "array", "items": { "$ref": "#/$defs/ai_usage_record" } },
         "human_checkpoints": { "type": "array" },
         "metadata": {
           "type": "object",

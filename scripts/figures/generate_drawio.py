@@ -196,17 +196,52 @@ ROLE_PALETTE_KEYS = {
 }
 
 
+ARCHETYPES = {
+    "research_framework",
+    "computational_pipeline",
+    "parallel_integration",
+    "method_architecture",
+    "iterative_optimization",
+    "custom",
+}
+
+KIND_ARCHETYPE_DEFAULTS = {
+    "overview": "research_framework",
+    "task_pipeline": "computational_pipeline",
+    "model_framework": "method_architecture",
+    "validation_flow": "iterative_optimization",
+    "decision_tree": "computational_pipeline",
+    "comparison": "parallel_integration",
+    "custom": "research_framework",
+}
+
+PRIMITIVE_SIZES: dict[str, tuple[int, int]] = {
+    "band": (230, 56),
+    "stage": (200, 74),
+    "hero_container": (280, 108),
+    "model_block": (244, 92),
+    "input_lane": (176, 60),
+    "parallel_lane": (206, 68),
+    "merge_hub": (146, 96),
+    "validation_rail": (190, 60),
+    "output_block": (220, 76),
+    "decision_gate": (184, 108),
+    "feedback_rail": (192, 56),
+    "annotation_strip": (224, 56),
+}
+
+
 def _safe_id(prefix: str, index: int) -> str:
     return f"{prefix}-{index:03d}"
 
 
-def _html_label(label: str, *, bold: bool = False) -> str:
+def _html_label(label: str, *, bold: bool = False, align: str = "center") -> str:
     normalised = label.replace("\r\n", "\n").replace("\r", "\n")
     lines = [html.escape(line, quote=False) for line in normalised.split("\n")]
     body = "<br/>".join(lines)
     if bold:
         body = f"<b>{body}</b>"
-    return f"<div align=\"center\">{body}</div>"
+    return f"<div align=\"{align}\">{body}</div>"
 
 
 def _style(**values: Any) -> str:
@@ -223,7 +258,84 @@ def _resolve_palette(style_profile: str) -> dict[str, str]:
     return palette
 
 
-def _role_style(role: str, palette: dict[str, str], font_family: str, font_size: int, emphasis: str) -> str:
+def resolve_archetype(spec: dict[str, Any]) -> str:
+    """Resolve composition without changing the semantic graph.
+
+    Older specs did not declare an archetype.  Their ``kind`` is used only as
+    a compatibility hint; unknown/missing values fall back to the conservative
+    research-framework grammar.
+    """
+
+    declared = spec.get("archetype")
+    if isinstance(declared, str) and declared in ARCHETYPES:
+        return declared
+    return KIND_ARCHETYPE_DEFAULTS.get(str(spec.get("kind", "overview")), "research_framework")
+
+
+def _graph_degrees(spec: dict[str, Any]) -> tuple[dict[str, int], dict[str, int]]:
+    node_ids = [str(row["node_id"]) for row in spec.get("nodes", []) if isinstance(row, dict)]
+    incoming = {node_id: 0 for node_id in node_ids}
+    outgoing = {node_id: 0 for node_id in node_ids}
+    for edge in spec.get("edges", []):
+        if not isinstance(edge, dict) or edge.get("relation") == "feedback":
+            continue
+        source, target = str(edge.get("from")), str(edge.get("to"))
+        if source in outgoing and target in incoming:
+            outgoing[source] += 1
+            incoming[target] += 1
+    return incoming, outgoing
+
+
+def _primitive_for(node: dict[str, Any], archetype: str, incoming: int = 0, outgoing: int = 0) -> str:
+    declared = str(node.get("primitive", "auto"))
+    if declared != "auto" and declared in PRIMITIVE_SIZES:
+        return declared
+    role = str(node.get("role", "process"))
+    emphasis = str(node.get("emphasis", "neutral"))
+    if role == "input":
+        return "band" if archetype == "research_framework" else "input_lane"
+    if role == "validation":
+        return "validation_rail"
+    if role == "result":
+        return "output_block"
+    if role == "decision":
+        return "decision_gate"
+    if role == "annotation":
+        return "annotation_strip"
+    if archetype == "parallel_integration" and incoming >= 2:
+        return "merge_hub"
+    if archetype == "parallel_integration" and role in {"process", "model", "task"}:
+        return "parallel_lane"
+    if archetype == "iterative_optimization" and outgoing == 0 and role != "result":
+        return "feedback_rail"
+    if role == "model":
+        return "hero_container" if emphasis == "core" else "model_block"
+    if emphasis == "core" and archetype in {"method_architecture", "computational_pipeline"}:
+        return "hero_container"
+    return "stage"
+
+
+def _node_size(node: dict[str, Any], primitive: str) -> tuple[int, int]:
+    width, height = PRIMITIVE_SIZES.get(primitive, PRIMITIVE_SIZES["stage"])
+    # Long labels get one bounded size increase; geometry must not grow without
+    # limit and turn the figure into a collection of text cards.
+    density = len(re.sub(r"\s+", " ", str(node.get("label", ""))).strip())
+    if density > 42:
+        width += 28
+        height += 14
+    elif density > 24:
+        width += 16
+    return width, height
+
+
+def _role_style(
+    role: str,
+    palette: dict[str, str],
+    font_family: str,
+    font_size: int,
+    emphasis: str,
+    primitive: str = "auto",
+) -> str:
     fill_key, stroke_key = ROLE_PALETTE_KEYS.get(role, ROLE_PALETTE_KEYS["task"])
     stroke_width = "2" if emphasis == "core" else "1.2"
     font_style = "1" if emphasis == "core" or role in {"model", "result"} else "0"
@@ -243,12 +355,16 @@ def _role_style(role: str, palette: dict[str, str], font_family: str, font_size:
         "shadow": "0",
         "glass": "0",
     }
-    if role == "decision":
+    if role == "decision" or primitive == "decision_gate":
         values.update({"shape": "rhombus", "perimeter": "rhombusPerimeter"})
     elif role == "annotation":
         values.update({"shape": "note", "size": "15"})
     else:
-        values.update({"rounded": "1", "arcSize": "14"})
+        values.update({"rounded": "1", "arcSize": "10"})
+        if primitive in {"band", "validation_rail", "feedback_rail", "annotation_strip"}:
+            values.update({"arcSize": "6"})
+        elif primitive in {"hero_container", "merge_hub"}:
+            values.update({"strokeWidth": "2.4", "arcSize": "12"})
         if role == "group":
             values.update({"dashed": "1", "arcSize": "12"})
     return _style(**values)
@@ -311,61 +427,226 @@ def _dag_layers(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dic
     return layers
 
 
-def _layout_nodes(spec: dict[str, Any]) -> tuple[dict[str, tuple[float, float, float, float]], int, int]:
-    nodes = [row for row in spec["nodes"] if isinstance(row, dict)]
+def _validate_graph_integrity(spec: dict[str, Any]) -> None:
+    """Fail before rendering when the semantic graph cannot be preserved."""
+
+    nodes = [row for row in spec.get("nodes", []) if isinstance(row, dict)]
     edges = [row for row in spec.get("edges", []) if isinstance(row, dict)]
-    layout = spec.get("layout", "left_to_right")
+    node_ids = [str(row.get("node_id")) for row in nodes]
+    edge_ids = [str(row.get("edge_id")) for row in edges]
+    if len(node_ids) != len(set(node_ids)):
+        raise ValueError("diagram node_id values must be unique")
+    if len(edge_ids) != len(set(edge_ids)):
+        raise ValueError("diagram edge_id values must be unique")
+    known = set(node_ids)
+    for edge in edges:
+        source, target = str(edge.get("from")), str(edge.get("to"))
+        if source not in known or target not in known:
+            raise ValueError(
+                f"edge {edge.get('edge_id')} references unknown endpoint(s): {source} -> {target}"
+            )
+    for panel in spec.get("panels", []):
+        if not isinstance(panel, dict):
+            continue
+        missing = [str(node_id) for node_id in panel.get("node_ids", []) if str(node_id) not in known]
+        if missing:
+            raise ValueError(
+                f"panel {panel.get('panel_id')} references unknown node(s): {', '.join(missing)}"
+            )
+
+
+def _composition_top(spec: dict[str, Any]) -> int:
+    mode = str(spec.get("title_mode", "compact" if spec.get("title") else "none"))
+    return 132 if mode == "banner" else 78
+
+
+def _sized_nodes(spec: dict[str, Any], archetype: str) -> list[tuple[dict[str, Any], str, int, int]]:
+    incoming, outgoing = _graph_degrees(spec)
+    result: list[tuple[dict[str, Any], str, int, int]] = []
+    for node in spec.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        node_id = str(node["node_id"])
+        primitive = _primitive_for(node, archetype, incoming.get(node_id, 0), outgoing.get(node_id, 0))
+        width, height = _node_size(node, primitive)
+        result.append((node, primitive, width, height))
+    return result
+
+
+def _finish_layout(
+    spec: dict[str, Any],
+    positions: dict[str, tuple[float, float, float, float]],
+) -> tuple[dict[str, tuple[float, float, float, float]], int, int]:
     canvas = spec.get("canvas") if isinstance(spec.get("canvas"), dict) else {}
     width = int(canvas.get("width", 1400))
-    height = int(canvas.get("height", 900))
-    node_w, node_h = 190, 72
-    decision_h = 94
-    h_gap, v_gap = 76, 66
-    left, top = 70, 128
-    layers = _dag_layers(nodes, edges)
-    by_layer: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for node in nodes:
-        by_layer[layers.get(str(node["node_id"]), 0)].append(node)
-    positions: dict[str, tuple[float, float, float, float]] = {}
-
-    if layout == "grid":
-        columns = max(1, int(len(nodes) ** 0.5 + 0.999))
-        for index, node in enumerate(nodes):
-            col, row = divmod(index, columns)
-            node_height = decision_h if node.get("role") == "decision" else node_h
-            positions[str(node["node_id"])] = (
-                left + row * (node_w + h_gap),
-                top + col * (node_height + v_gap),
-                node_w,
-                node_height,
-            )
-    else:
-        max_layer = max(by_layer, default=0)
-        for layer in range(max_layer + 1):
-            rows = by_layer.get(layer, [])
-            for row, node in enumerate(rows):
-                node_height = decision_h if node.get("role") == "decision" else node_h
-                if layout == "top_to_bottom":
-                    x = left + row * (node_w + h_gap)
-                    y = top + layer * (node_h + v_gap)
-                else:
-                    x = left + layer * (node_w + h_gap)
-                    y = top + row * (node_height + v_gap)
-                positions[str(node["node_id"])] = (x, y, node_w, node_height)
-        if layout == "top_to_bottom":
-            max_layer_width = max((len(rows) for rows in by_layer.values()), default=1)
-            width = max(width, int(left * 2 + max_layer_width * node_w + max(0, max_layer_width - 1) * h_gap))
-
-    max_right = max((box[0] + box[2] for box in positions.values()), default=width - left)
+    height = int(canvas.get("height", 720))
+    max_right = max((box[0] + box[2] for box in positions.values()), default=width - 70)
     max_bottom = max((box[1] + box[3] for box in positions.values()), default=height - 60)
-    width = max(width, int(max_right + left))
-    height = max(height, int(max_bottom + 90))
-    return positions, width, height
+    return positions, max(width, int(max_right + 70)), max(height, int(max_bottom + 76))
+
+
+def plan_research_framework(spec: dict[str, Any]) -> dict[str, tuple[float, float, float, float]]:
+    """Input band -> core scientific chain -> output, with validation as a rail."""
+
+    rows = _sized_nodes(spec, "research_framework")
+    layers = _dag_layers(
+        [row[0] for row in rows],
+        [row for row in spec.get("edges", []) if isinstance(row, dict)],
+    )
+    source_order = {str(row[0]["node_id"]): index for index, row in enumerate(rows)}
+
+    def reading_order(row: tuple[dict[str, Any], str, int, int]) -> tuple[int, int]:
+        node_id = str(row[0]["node_id"])
+        return layers.get(node_id, 0), source_order[node_id]
+
+    inputs = sorted((row for row in rows if row[0].get("role") == "input"), key=reading_order)
+    validation = sorted((row for row in rows if row[0].get("role") == "validation"), key=reading_order)
+    outputs = sorted((row for row in rows if row[0].get("role") == "result"), key=reading_order)
+    used = {id(row[0]) for row in inputs + validation + outputs}
+    core = sorted((row for row in rows if id(row[0]) not in used), key=reading_order)
+    top, left = _composition_top(spec), 70
+    positions: dict[str, tuple[float, float, float, float]] = {}
+    for index, (node, _, width, height) in enumerate(inputs):
+        positions[str(node["node_id"])] = (left, top + 28 + index * (height + 34), width, height)
+    core_x = left + (max((row[2] for row in inputs), default=176) + 96 if inputs else 0)
+    cursor = core_x
+    for node, _, width, height in core:
+        positions[str(node["node_id"])] = (cursor, top, width, height)
+        cursor += width + 72
+    validation_y = top + max((row[3] for row in core), default=92) + 108
+    for index, (node, _, width, height) in enumerate(validation):
+        positions[str(node["node_id"])] = (core_x + index * (width + 52), validation_y, width, height)
+    output_x = cursor + 28 if core else core_x + 240
+    for index, (node, _, width, height) in enumerate(outputs):
+        positions[str(node["node_id"])] = (output_x, top + 16 + index * (height + 46), width, height)
+    return positions
+
+
+def _layered_plan(spec: dict[str, Any], archetype: str, *, vertical: bool = False) -> dict[str, tuple[float, float, float, float]]:
+    rows = _sized_nodes(spec, archetype)
+    nodes = [row[0] for row in rows]
+    edges = [row for row in spec.get("edges", []) if isinstance(row, dict)]
+    layer_map = _dag_layers(nodes, edges)
+    by_layer: dict[int, list[tuple[dict[str, Any], str, int, int]]] = defaultdict(list)
+    for row in rows:
+        by_layer[layer_map.get(str(row[0]["node_id"]), 0)].append(row)
+    positions: dict[str, tuple[float, float, float, float]] = {}
+    top, left = _composition_top(spec), 70
+    if vertical:
+        cursor_y = top
+        for layer in sorted(by_layer):
+            layer_rows = by_layer[layer]
+            cursor_x = left
+            layer_h = max((row[3] for row in layer_rows), default=74)
+            for node, _, width, height in layer_rows:
+                positions[str(node["node_id"])] = (cursor_x, cursor_y, width, height)
+                cursor_x += width + 64
+            cursor_y += layer_h + 84
+    else:
+        cursor_x = left
+        for layer in sorted(by_layer):
+            layer_rows = sorted(
+                by_layer[layer],
+                key=lambda row: (row[0].get("emphasis") != "core", row[0].get("role") not in {"model", "result"}),
+            )
+            cursor_y = top
+            layer_w = max((row[2] for row in layer_rows), default=200)
+            for node, _, width, height in layer_rows:
+                positions[str(node["node_id"])] = (cursor_x, cursor_y, width, height)
+                cursor_y += height + 52
+            cursor_x += layer_w + 84
+    return positions
+
+
+def plan_computational_pipeline(spec: dict[str, Any]) -> dict[str, tuple[float, float, float, float]]:
+    return _layered_plan(spec, "computational_pipeline", vertical=spec.get("layout") == "top_to_bottom")
+
+
+def plan_parallel_integration(spec: dict[str, Any]) -> dict[str, tuple[float, float, float, float]]:
+    return _layered_plan(spec, "parallel_integration")
+
+
+def plan_method_architecture(spec: dict[str, Any]) -> dict[str, tuple[float, float, float, float]]:
+    rows = _sized_nodes(spec, "method_architecture")
+    incoming, outgoing = _graph_degrees(spec)
+    core = next((row for row in rows if row[0].get("emphasis") == "core" and row[0].get("role") == "model"), None)
+    core = core or next((row for row in rows if row[0].get("role") == "model"), None)
+    core = core or max(rows, key=lambda row: incoming.get(str(row[0]["node_id"]), 0) + outgoing.get(str(row[0]["node_id"]), 0))
+    core_id = str(core[0]["node_id"])
+    edge_rows = [row for row in spec.get("edges", []) if isinstance(row, dict) and row.get("relation") != "feedback"]
+    predecessors = {str(edge.get("from")) for edge in edge_rows if str(edge.get("to")) == core_id}
+    successors = {str(edge.get("to")) for edge in edge_rows if str(edge.get("from")) == core_id}
+    left_rows = [row for row in rows if str(row[0]["node_id"]) in predecessors]
+    right_rows = [row for row in rows if str(row[0]["node_id"]) in successors and row[0].get("role") != "validation"]
+    validation = [row for row in rows if row[0].get("role") == "validation"]
+    allocated = {id(row[0]) for row in left_rows + right_rows + validation + [core]}
+    extras = [row for row in rows if id(row[0]) not in allocated]
+    top = _composition_top(spec)
+    positions: dict[str, tuple[float, float, float, float]] = {}
+    core_x, core_y = 500, top + 92
+    positions[core_id] = (core_x, core_y, core[2], core[3])
+    for index, (node, _, width, height) in enumerate(left_rows):
+        positions[str(node["node_id"])] = (70, top + index * (height + 46), width, height)
+    right_x = core_x + core[2] + 126
+    for index, (node, _, width, height) in enumerate(right_rows):
+        positions[str(node["node_id"])] = (right_x, top + index * (height + 46), width, height)
+    rail_y = core_y + core[3] + 108
+    for index, (node, _, width, height) in enumerate(validation):
+        positions[str(node["node_id"])] = (core_x + index * (width + 48), rail_y, width, height)
+    for index, (node, _, width, height) in enumerate(extras):
+        positions[str(node["node_id"])] = (core_x - 16 + index * (width + 44), top, width, height)
+    return positions
+
+
+def plan_iterative_optimization(spec: dict[str, Any]) -> dict[str, tuple[float, float, float, float]]:
+    positions = _layered_plan(spec, "iterative_optimization")
+    # Validation is a lower rail; feedback remains an explicit dashed edge and
+    # is never invented by the planner.
+    validations = [row for row in _sized_nodes(spec, "iterative_optimization") if row[0].get("role") == "validation"]
+    if validations:
+        bottom = max((box[1] + box[3] for box in positions.values()), default=_composition_top(spec)) + 72
+        for index, (node, _, width, height) in enumerate(validations):
+            positions[str(node["node_id"])] = (280 + index * (width + 54), bottom, width, height)
+    return positions
+
+
+def _layout_nodes(spec: dict[str, Any]) -> tuple[dict[str, tuple[float, float, float, float]], int, int]:
+    archetype = resolve_archetype(spec)
+    planner = {
+        "research_framework": plan_research_framework,
+        "computational_pipeline": plan_computational_pipeline,
+        "parallel_integration": plan_parallel_integration,
+        "method_architecture": plan_method_architecture,
+        "iterative_optimization": plan_iterative_optimization,
+        "custom": lambda value: _layered_plan(value, "custom", vertical=value.get("layout") == "top_to_bottom"),
+    }[archetype]
+    return _finish_layout(spec, planner(spec))
 
 
 def _panel_bounds(spec: dict[str, Any], positions: dict[str, tuple[float, float, float, float]]) -> list[tuple[dict[str, Any], tuple[float, float, float, float]]]:
     result: list[tuple[dict[str, Any], tuple[float, float, float, float]]] = []
-    for panel in spec.get("panels", []):
+    panels = [dict(panel) for panel in spec.get("panels", []) if isinstance(panel, dict)]
+    if resolve_archetype(spec) == "research_framework":
+        core_ids = [
+            str(node["node_id"])
+            for node in spec.get("nodes", [])
+            if isinstance(node, dict)
+            and node.get("role") not in {"input", "validation", "result", "annotation"}
+        ]
+        explicitly_grouped = {
+            str(node_id)
+            for panel in panels
+            for node_id in panel.get("node_ids", [])
+        }
+        ungrouped_core = [node_id for node_id in core_ids if node_id not in explicitly_grouped]
+        if len(ungrouped_core) >= 2:
+            panels.append({
+                "panel_id": "__research_core__",
+                "title": "Core modeling framework",
+                "node_ids": ungrouped_core,
+                "message": "Composition-only academic hierarchy",
+            })
+    for panel in panels:
         if not isinstance(panel, dict):
             continue
         boxes = [positions[node_id] for node_id in panel.get("node_ids", []) if node_id in positions]
@@ -380,8 +661,10 @@ def _panel_bounds(spec: dict[str, Any], positions: dict[str, tuple[float, float,
 
 
 def build_drawio_tree(spec: dict[str, Any]) -> ET.Element:
+    _validate_graph_integrity(spec)
     palette_name = str(spec.get("style_profile", "academic_minimal"))
     palette = _resolve_palette(palette_name)
+    archetype = resolve_archetype(spec)
     font_family = str(spec.get("font_family", "Microsoft YaHei"))
     font_size = int(spec.get("font_size", 16))
     positions, width, height = _layout_nodes(spec)
@@ -400,35 +683,42 @@ def build_drawio_tree(spec: dict[str, Any]) -> ET.Element:
     ET.SubElement(xml_root, "mxCell", {"id": "0"})
     ET.SubElement(xml_root, "mxCell", {"id": "1", "parent": "0"})
 
+    title_mode = str(spec.get("title_mode", "compact" if spec.get("title") else "none"))
     title = str(spec.get("title", spec.get("diagram_id", "Diagram")))
-    title_cell = ET.SubElement(
-        xml_root,
-        "mxCell",
-        {
-            "id": "title",
-            "value": _html_label(title, bold=True),
-            "style": _style(
-                shape="text", html="1", align="left", verticalAlign="middle", fontColor=palette["ink"],
-                fontFamily=font_family, fontSize=font_size + 5, fontStyle="1", spacing="0",
-            ),
-            "vertex": "1", "parent": "1",
-        },
-    )
-    ET.SubElement(title_cell, "mxGeometry", {"x": "70", "y": "24", "width": str(width - 140), "height": "34", "as": "geometry"})
+    if title_mode == "banner":
+        title_cell = ET.SubElement(
+            xml_root,
+            "mxCell",
+            {
+                "id": "title",
+                "value": _html_label(title, bold=True, align="left"),
+                "style": _style(
+                    shape="text", html="1", align="left", verticalAlign="middle", fontColor=palette["ink"],
+                    fontFamily=font_family, fontSize=font_size + 5, fontStyle="1", spacing="0",
+                ),
+                "vertex": "1", "parent": "1",
+            },
+        )
+        ET.SubElement(title_cell, "mxGeometry", {"x": "70", "y": "24", "width": str(width - 140), "height": "34", "as": "geometry"})
+        message_y, message_h = 66, 38
+        message_value = str(spec["message"])
+    else:
+        message_y, message_h = 20, 34
+        message_value = f"{title} — {spec['message']}" if title_mode == "compact" and spec.get("title") else str(spec["message"])
     message_cell = ET.SubElement(
         xml_root,
         "mxCell",
         {
             "id": "message",
-            "value": _html_label(str(spec["message"])),
+            "value": _html_label(message_value, align="left"),
             "style": _style(
                 shape="text", html="1", align="left", verticalAlign="middle", fontColor=palette["muted"],
-                fontFamily=font_family, fontSize=max(11, font_size - 2), spacing="0",
+                fontFamily=font_family, fontSize=max(11, font_size - (1 if title_mode == "compact" else 2)), spacing="0",
             ),
             "vertex": "1", "parent": "1",
         },
     )
-    ET.SubElement(message_cell, "mxGeometry", {"x": "70", "y": "66", "width": str(width - 140), "height": "38", "as": "geometry"})
+    ET.SubElement(message_cell, "mxGeometry", {"x": "70", "y": str(message_y), "width": str(width - 140), "height": str(message_h), "as": "geometry"})
 
     for index, (panel, box) in enumerate(_panel_bounds(spec, positions), start=1):
         x, y, panel_w, panel_h = box
@@ -437,7 +727,7 @@ def build_drawio_tree(spec: dict[str, Any]) -> ET.Element:
             "mxCell",
             {
                 "id": _safe_id("panel", index),
-                "value": _html_label(str(panel.get("title", panel.get("panel_id", "Panel"))), bold=True),
+                "value": _html_label(str(panel.get("title", panel.get("panel_id", "Panel"))), bold=True, align="left"),
                 "style": _style(
                     shape="swimlane", startSize="30", rounded="1", collapsible="0", html="1", whiteSpace="wrap",
                     fillColor=palette["panel_fill"], fillOpacity="35", strokeColor=palette["panel_stroke"],
@@ -446,17 +736,20 @@ def build_drawio_tree(spec: dict[str, Any]) -> ET.Element:
                     spacingLeft="10", shadow="0",
                 ),
                 "vertex": "1", "parent": "1",
+                "tags": f"harness-panel;{panel.get('panel_id')};archetype:{archetype}",
             },
         )
         ET.SubElement(panel_cell, "mxGeometry", {"x": str(x), "y": str(y), "width": str(panel_w), "height": str(panel_h), "as": "geometry"})
 
     node_xml_ids: dict[str, str] = {}
+    incoming, outgoing = _graph_degrees(spec)
     node_rows = [row for row in spec["nodes"] if isinstance(row, dict)]
     for index, node in enumerate(node_rows, start=1):
         node_id = str(node["node_id"])
         xml_id = _safe_id("node", index)
         node_xml_ids[node_id] = xml_id
         x, y, node_w, node_h = positions[node_id]
+        primitive = _primitive_for(node, archetype, incoming.get(node_id, 0), outgoing.get(node_id, 0))
         source_refs = ",".join(str(value) for value in node.get("source_refs", []))
         cell = ET.SubElement(
             xml_root,
@@ -464,9 +757,9 @@ def build_drawio_tree(spec: dict[str, Any]) -> ET.Element:
             {
                 "id": xml_id,
                 "value": _html_label(str(node["label"]), bold=node.get("emphasis") == "core"),
-                "style": _role_style(str(node.get("role", "process")), palette, font_family, font_size, str(node.get("emphasis", "neutral"))),
+                "style": _role_style(str(node.get("role", "process")), palette, font_family, font_size, str(node.get("emphasis", "neutral")), primitive),
                 "vertex": "1", "parent": "1",
-                "tags": f"harness-node;{node_id};source-refs:{source_refs}",
+                "tags": f"harness-node;{node_id};archetype:{archetype};primitive:{primitive};source-refs:{source_refs}",
             },
         )
         ET.SubElement(cell, "mxGeometry", {"x": str(x), "y": str(y), "width": str(node_w), "height": str(node_h), "as": "geometry"})
@@ -474,15 +767,16 @@ def build_drawio_tree(spec: dict[str, Any]) -> ET.Element:
     for index, edge in enumerate((row for row in spec.get("edges", []) if isinstance(row, dict)), start=1):
         source = node_xml_ids.get(str(edge.get("from")))
         target = node_xml_ids.get(str(edge.get("to")))
-        if source is None or target is None:
-            continue
+        if source is None or target is None:  # protected by _validate_graph_integrity
+            raise ValueError(f"edge {edge.get('edge_id')} could not resolve its endpoints")
         source_refs = ",".join(str(value) for value in edge.get("source_refs", []))
+        relation = str(edge.get("relation", "data"))
         attrs = {
             "id": _safe_id("edge", index),
             "value": _html_label(str(edge["label"])) if edge.get("label") else "",
-            "style": _edge_style(str(edge.get("relation", "data")), palette, font_family, font_size),
+            "style": _edge_style(relation, palette, font_family, font_size),
             "edge": "1", "parent": "1", "source": source, "target": target,
-            "tags": f"harness-edge;{edge.get('edge_id')};source-refs:{source_refs}",
+            "tags": f"harness-edge;{edge.get('edge_id')};relation:{relation};source-refs:{source_refs}",
         }
         cell = ET.SubElement(xml_root, "mxCell", attrs)
         ET.SubElement(cell, "mxGeometry", {"relative": "1", "as": "geometry"})
@@ -498,11 +792,21 @@ def write_drawio(spec: dict[str, Any], output_path: Path) -> None:
 
 
 def _find_drawio_cli() -> str | None:
-    candidates = [shutil.which("drawio"), shutil.which("diagrams.net")]
-    program_files = os.environ.get("ProgramFiles")
+    candidates = [
+        os.environ.get("DRAWIO_CLI"),
+        shutil.which("drawio"),
+        shutil.which("diagrams.net"),
+    ]
+    program_files = (
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramW6432"),
+        # A common Windows data-drive installation; use DRAWIO_CLI to override
+        # discovery for any other non-standard location.
+        r"D:\Program Files" if os.name == "nt" else None,
+    )
     local_app_data = os.environ.get("LOCALAPPDATA")
-    if program_files:
-        candidates.append(str(Path(program_files) / "draw.io" / "draw.io.exe"))
+    for directory in dict.fromkeys(path for path in program_files if path):
+        candidates.append(str(Path(directory) / "draw.io" / "draw.io.exe"))
     if local_app_data:
         candidates.append(str(Path(local_app_data) / "Programs" / "draw.io" / "draw.io.exe"))
     for candidate in candidates:
@@ -531,14 +835,20 @@ def main() -> int:
     parser.add_argument("--export-format", choices=["svg", "pdf", "png"])
     parser.add_argument("--export-output")
     parser.add_argument("--list-style-profiles", action="store_true")
+    parser.add_argument("--list-archetypes", action="store_true")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    if args.list_style_profiles:
-        print(json.dumps({"style_profiles": list(PALETTES)}, ensure_ascii=False))
+    if args.list_style_profiles or args.list_archetypes:
+        listing: dict[str, Any] = {}
+        if args.list_style_profiles:
+            listing["style_profiles"] = list(PALETTES)
+        if args.list_archetypes:
+            listing["archetypes"] = sorted(ARCHETYPES)
+        print(json.dumps(listing, ensure_ascii=False))
         return 0
     if not args.spec or not args.output:
-        parser.error("--spec and --output are required unless --list-style-profiles is used")
+        parser.error("--spec and --output are required unless a --list-* option is used")
 
     root = Path(args.project_root).resolve()
     spec_path = resolve_path(args.spec, root).resolve()
@@ -563,7 +873,7 @@ def main() -> int:
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({"ok": False, "errors": [str(exc)]}, ensure_ascii=False))
         return 1
-    report: dict[str, Any] = {"ok": True, "source": str(output_path), "export": None, "warnings": []}
+    report: dict[str, Any] = {"ok": True, "source": str(output_path), "archetype": resolve_archetype(spec), "export": None, "warnings": []}
     if args.export_format:
         export_path = resolve_path(args.export_output, root).resolve() if args.export_output else output_path.with_suffix(output_path.suffix + f".{args.export_format}")
         exported, message = export_drawio(output_path, export_path, args.export_format)

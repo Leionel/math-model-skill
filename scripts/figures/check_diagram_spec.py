@@ -25,6 +25,40 @@ RASTER_OUTPUTS = {"png"}
 DIAGRAM_ROLES = {"overview", "task_pipeline", "model_framework", "validation_flow", "decision_tree", "comparison", "custom"}
 
 
+def _composition_qa(spec: dict[str, Any], nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return bounded composition warnings; factual/spec errors stay elsewhere."""
+
+    warnings: list[dict[str, str]] = []
+    primitives = {str(row.get("primitive", "auto")) for row in nodes}
+    roles = {str(row.get("role", "process")) for row in nodes}
+    core_count = sum(row.get("emphasis") == "core" for row in nodes)
+    archetype = str(spec.get("archetype", "research_framework"))
+    if len(nodes) > 5 and archetype == "custom" and primitives.issubset({"auto", "stage"}):
+        warnings.append({
+            "code": "CARD_WALL_RISK",
+            "message": "consider archetype-specific composition primitives instead of uniform cards",
+        })
+    if spec.get("title_mode") == "banner":
+        warnings.append({
+            "code": "PPT_TITLE_BANNER_RISK",
+            "message": "a large in-figure title is usually redundant at paper scale; prefer title_mode=none or compact",
+        })
+    labels = " ".join(str(row.get("label", "")) for row in nodes)
+    numeric_tokens = len(re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?%?", labels))
+    long_labels = sum(len(re.sub(r"\s+", " ", str(row.get("label", "")))) > 55 for row in nodes)
+    if spec.get("kind") == "overview" and (len(nodes) > 10 or numeric_tokens > 10 or long_labels > 2 or len(edges) > 16):
+        warnings.append({
+            "code": "OVERVIEW_OVERLOADED",
+            "message": "overview carries too many nodes, numbers, or long descriptions for a single paper-scale reading order",
+        })
+    if len(nodes) >= 4 and (core_count == 0 or "result" not in roles):
+        warnings.append({
+            "code": "WEAK_HIERARCHY",
+            "message": "declare a core module and an explicit output so model, validation, and result do not read at equal weight",
+        })
+    return warnings
+
+
 def _normalise_text(value: str) -> str:
     text = html.unescape(value)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -132,13 +166,17 @@ def audit_diagram_spec(
     kind = spec.get("kind")
     roles = {node.get("role") for node in node_rows}
     if kind in {"overview", "task_pipeline", "model_framework"}:
-        for required_role in ("process", "model"):
-            if required_role not in roles:
-                warnings.append(f"{kind} diagram has no node with role={required_role}")
+        if "model" not in roles:
+            warnings.append(f"{kind} diagram has no node with role=model")
+        if kind == "task_pipeline" and "process" not in roles:
+            warnings.append("task_pipeline diagram has no node with role=process")
         if "result" not in roles:
             warnings.append(f"{kind} diagram has no result node; verify that the output is explicit")
     if len(node_rows) >= 2 and not edge_rows:
         errors.append("a diagram with multiple nodes must declare at least one edge")
+
+    composition_warnings = _composition_qa(spec, node_rows, edge_rows)
+    warnings.extend(f"{row['code']}: {row['message']}" for row in composition_warnings)
 
     source_path_value = spec.get("source_artifact")
     source_path = resolve_path(source_path_value, root).resolve() if isinstance(source_path_value, str) else None
@@ -212,6 +250,7 @@ def audit_diagram_spec(
         "source_labels": source_label_report,
         "errors": errors,
         "warnings": warnings,
+        "composition_warnings": composition_warnings,
         "manual_review_required": True,
         "ok": not errors,
     }

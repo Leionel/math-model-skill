@@ -662,6 +662,37 @@ class P0HarnessTest(unittest.TestCase):
             )
             self.assertNotEqual(overwrite.returncode, 0)
 
+    def test_legacy_submission_accepts_historical_ai_list_hash(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-harness-legacy-ai-hash-") as temp:
+            project = Path(temp)
+            paths = self.build_fixture(project)
+            manifest = read_json(paths["manifest"])
+            report = read_json(paths["submission_report"])
+            payload = json.dumps(
+                manifest["ai_usage"], ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+            report["ai_usage_sha256"] = hashlib.sha256(payload).hexdigest()
+            write_json(paths["submission_report"], report)
+            submission_artifact = next(row for row in manifest["artifacts"] if row["role"] == "submission_qa")
+            submission_artifact["sha256"] = sha256(paths["submission_report"])
+            write_json(paths["manifest"], manifest)
+
+            freeze = self.run_script(
+                "freeze_submission.py", "--project-root", str(project),
+                "--run-manifest", paths["manifest"].name,
+                "--s1-report", paths["submission_report"].name,
+                "--paper", paths["paper"].name, "--support", paths["support"].name,
+                "--ai-disclosure", paths["ai_disclosure"].name,
+                "--deadline", "2026-09-01T20:00:00+08:00", "--timezone", "Asia/Hong_Kong",
+                "--output", paths["submission_manifest"].name,
+            )
+            self.assertEqual(freeze.returncode, 0, freeze.stdout + freeze.stderr)
+            checked = self.run_script(
+                "qa/check_submission_manifest.py", "--project-root", str(project),
+                "--submission-manifest", paths["submission_manifest"].name,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
     def test_deterministic_qa_includes_contest_safety(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-qa-") as temp:
             project = Path(temp)

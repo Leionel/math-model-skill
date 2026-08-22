@@ -209,7 +209,6 @@ def _cross_references_v2(
     if frozen.get("results_sha256") != sha256_json(results):
         errors.append("frozen_results.results_sha256 does not match the canonical results array")
     verdict = frozen.get("validation_verdict")
-    statuses = [row.get("status") for row in frozen.get("validation_obligations", []) if isinstance(row, dict)]
     if verdict not in {"PASS", "FAIL", "ERROR"}:
         errors.append("frozen_results.validation_verdict must be PASS, FAIL, or ERROR")
     elif frozen.get("claimable") is not (verdict == "PASS"):
@@ -520,6 +519,7 @@ def _cross_references(
     unique("paper_plan figure_id", figure_ids)
     table_ids = [row["table_id"] for row in plan["tables"]]
     unique("paper_plan table_id", table_ids)
+    unique("paper_plan deliverable_id", [row["deliverable_id"] for row in plan.get("deliverables", [])])
     unique("paper_plan terminology canonical", [row["canonical"] for row in plan["terminology"]])
 
     def check_claim_refs(owner: str, row: dict[str, Any]) -> None:

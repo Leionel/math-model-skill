@@ -8,6 +8,7 @@ scripts and schemas.
 |---|---|
 | v2 artifact identity, result semantics, and generated-file ownership | [contracts/artifact_contracts.md](contracts/artifact_contracts.md) |
 | Gate order, minimum evidence, and non-bypassable checkpoints | [workflow/gate_policy.md](workflow/gate_policy.md) |
+| human-facing M1/W1/W2/S1 projections, AI tri-state, or submission staging | [workflow/authoring_plane.md](workflow/authoring_plane.md) |
 | validation obligations and numeric replay | [validation/validation_obligations.md](validation/validation_obligations.md), [validation/numeric_correctness.md](validation/numeric_correctness.md) |
 | optimization, prediction, evaluation, or mechanism-specific validation | [validation/profiles/optimization.md](validation/profiles/optimization.md), [validation/profiles/prediction.md](validation/profiles/prediction.md), [validation/profiles/evaluation_ranking.md](validation/profiles/evaluation_ranking.md), [validation/profiles/simulation.md](validation/profiles/simulation.md) |
 | model planning and real literature evidence | [research/model_planning.md](research/model_planning.md), [research/literature_evidence.md](research/literature_evidence.md) |

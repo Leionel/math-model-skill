@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import os
 import re
 import subprocess
 import sys
@@ -24,7 +23,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_structured, rel_path, resolve_path  # noqa: E402
+from _common import exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
 from profiles.normalization import canonicalize_competition_profile, resolve_profile  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
@@ -224,6 +223,7 @@ def _init(args: argparse.Namespace) -> int:
             "historical_evidence_policy": "preserve",
         },
         "safety": {"contest_safety": "required"},
+        "ai_usage_state": "unknown",
         "ai_usage": [],
         "human_checkpoints": [],
     }
@@ -315,6 +315,18 @@ def _review(args: argparse.Namespace) -> int:
             command.append(f"--{flag}")
     if args.backend_cmd:
         command.extend(["--backend-cmd", args.backend_cmd])
+        if not args.backend_kind:
+            raise ValueError("--backend-cmd requires --backend-kind=ai or --backend-kind=non_ai")
+        command.extend(["--backend-kind", args.backend_kind])
+        missing = [name for name in ("ai_tool_name", "ai_model", "ai_provider") if not getattr(args, name)]
+        if args.backend_kind == "ai" and missing:
+            raise ValueError("--backend-cmd requires --ai-tool-name, --ai-model, and --ai-provider")
+        if args.backend_kind == "ai":
+            command.extend([
+                "--ai-tool-name", args.ai_tool_name,
+                "--ai-model", args.ai_model,
+                "--ai-provider", args.ai_provider,
+            ])
     return _dispatch(command, root)
 
 
@@ -378,6 +390,128 @@ def _freeze(args: argparse.Namespace) -> int:
         if args.integrity_mode:
             command.extend(["--integrity-mode", args.integrity_mode])
     return _dispatch(command, root)
+
+
+def _write_manifest_atomic(path: Path, value: Mapping[str, Any]) -> None:
+    write_json_atomic(path, value)
+
+
+def _refresh_ai_ledger(root: Path, manifest_path: Path) -> str:
+    from prepare_project import refresh_ai_ledger
+
+    state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+    ledger_path, _ = refresh_ai_ledger(state)
+    return rel_path(ledger_path, root)
+
+
+def _ai(args: argparse.Namespace) -> int:
+    root = _project(args)
+    manifest_path = _manifest_path(root, args.manifest)
+    action = args.ai_action
+    if action == "status":
+        state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+        manifest = dict(state.manifest)
+        rows = manifest.get("ai_usage", [])
+        if not isinstance(rows, list):
+            raise ValueError("run_manifest.ai_usage must be an array")
+        result = {
+            "ok": True,
+            "ai_usage_state": resolve_ai_usage_state(manifest),
+            "record_count": len(rows),
+            "declared": "ai_usage_state" in manifest,
+            "declaration": manifest.get("ai_usage_declaration"),
+        }
+        _emit(result, machine=args.json, human=f"AI usage: {result['ai_usage_state']} ({len(rows)} records)")
+        return 0
+    with exclusive_path_lock(manifest_path):
+        state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+        manifest = dict(state.manifest)
+        rows = manifest.get("ai_usage", [])
+        if not isinstance(rows, list):
+            raise ValueError("run_manifest.ai_usage must be an array")
+        if action == "verify":
+            matched = [index for index, row in enumerate(rows) if isinstance(row, Mapping) and row.get("usage_id") == args.usage_id]
+            if not matched:
+                raise ValueError(f"unknown AI usage_id: {args.usage_id}")
+            index = matched[0]
+            updated = dict(rows[index])
+            updated["human_changes"] = args.human_changes
+            updated["verification"] = {
+                "status": "verified",
+                "checked_by_role": args.checked_by_role,
+                "method": args.verification_method,
+                "checked_at": args.checked_at or datetime.now(timezone.utc).isoformat(),
+            }
+            manifest["ai_usage"] = [*rows[:index], updated, *rows[index + 1:]]
+            manifest["ai_usage_state"] = "used"
+            manifest.pop("ai_usage_declaration", None)
+            _write_manifest_atomic(manifest_path, manifest)
+            result = {
+                "ok": True, "ai_usage_state": "used", "usage_id": args.usage_id,
+                "verification_status": "verified", "manifest": rel_path(manifest_path, root),
+                "ledger": _refresh_ai_ledger(root, manifest_path),
+            }
+            _emit(result, machine=args.json, human=f"verified AI use {args.usage_id}")
+            return 0
+        if action == "confirm-none":
+            if rows:
+                raise ValueError("cannot declare no AI use while ai_usage contains records")
+            now = args.confirmed_at or datetime.now(timezone.utc).isoformat()
+            manifest["ai_usage_state"] = "none"
+            manifest["ai_usage_declaration"] = {
+                "status": "none",
+                "confirmed_by": args.confirmed_by,
+                "confirmed_at": now,
+                "reason": args.reason,
+            }
+            _write_manifest_atomic(manifest_path, manifest)
+            result = {"ok": True, "ai_usage_state": "none", "manifest": rel_path(manifest_path, root), "ledger": _refresh_ai_ledger(root, manifest_path)}
+            _emit(result, machine=args.json, human="AI usage explicitly declared: none")
+            return 0
+        record_path = resolve_path(args.interaction_record, root).resolve()
+        if not record_path.is_file():
+            raise ValueError(f"interaction record does not exist: {record_path}")
+        try:
+            record_path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("interaction record must be inside the project root for portable audit evidence") from exc
+        used_at = args.used_at or datetime.now(timezone.utc).isoformat()
+        checked_at = args.checked_at or datetime.now(timezone.utc).isoformat()
+        usage_id = args.usage_id or f"AI-{uuid.uuid4().hex[:12].upper()}"
+        if any(isinstance(row, Mapping) and row.get("usage_id") == usage_id for row in rows):
+            raise ValueError(f"duplicate AI usage_id: {usage_id}")
+        record = {
+            "usage_id": usage_id,
+            "tool_name": args.tool_name,
+            "model": args.model,
+            "provider": args.provider,
+            "used_at": used_at,
+            "stage": args.stage,
+            "purpose": args.purpose,
+            "prompt_summary": args.prompt_summary,
+            "output_use": args.output_use,
+            "human_changes": args.human_changes,
+            "interaction_record": {"path": rel_path(record_path, root), "sha256": sha256_file(record_path)},
+            "verification": {
+                "status": "verified",
+                "checked_by_role": args.checked_by_role,
+                "method": args.verification_method,
+                "checked_at": checked_at,
+            },
+        }
+        manifest["ai_usage"] = [*rows, record]
+        manifest["ai_usage_state"] = "used"
+        manifest.pop("ai_usage_declaration", None)
+        _write_manifest_atomic(manifest_path, manifest)
+        result = {"ok": True, "ai_usage_state": "used", "usage_id": usage_id, "record_count": len(rows) + 1, "manifest": rel_path(manifest_path, root), "ledger": _refresh_ai_ledger(root, manifest_path)}
+    _emit(result, machine=args.json, human=f"recorded AI use {usage_id}; total records: {len(rows) + 1}")
+    return 0
+
+
+def _prepare(args: argparse.Namespace) -> int:
+    root = _project(args)
+    manifest = _manifest_path(root, args.manifest)
+    return _dispatch([sys.executable, str(SCRIPT_DIR / "prepare_project.py"), args.stage, "--project-root", str(root), "--manifest", str(manifest)], root)
 
 
 def _profile(args: argparse.Namespace) -> int:
@@ -495,6 +629,10 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--fresh", action="store_true", help="require fresh-context (L1) execution via --backend-cmd")
     review.add_argument("--recheck", action="store_true", help="revalidate existing review reports without executing reviewers")
     review.add_argument("--backend-cmd", help="reviewer backend command executed per perspective with MATH_REVIEW_* env")
+    review.add_argument("--backend-kind", choices=("ai", "non_ai"), help="declare whether the backend invokes AI; never infer this from a command string")
+    review.add_argument("--ai-tool-name", help="AI tool identity for automatic backend usage logging")
+    review.add_argument("--ai-model", help="AI model identity for automatic backend usage logging")
+    review.add_argument("--ai-provider", help="AI provider identity for automatic backend usage logging")
     review.set_defaults(handler=_review)
 
     run = sub.add_parser("run", help="capture a v2 command receipt")
@@ -538,6 +676,57 @@ def build_parser() -> argparse.ArgumentParser:
     freeze.add_argument("--deadline")
     freeze.add_argument("--timezone")
     freeze.set_defaults(handler=_freeze)
+
+    prepare = sub.add_parser("prepare", help="render deterministic human-facing projections without changing Gate truth")
+    _add_common(prepare)
+    prepare.add_argument("stage", choices=("M1", "W1", "W2", "S1"))
+    prepare.add_argument("--manifest", default=None)
+    prepare.set_defaults(handler=_prepare)
+
+    ai = sub.add_parser("ai", help="declare or record AI usage in the v2 control manifest")
+    ai_sub = ai.add_subparsers(dest="ai_action", required=True)
+
+    ai_status = ai_sub.add_parser("status", help="show the current tri-state AI declaration")
+    _add_common(ai_status)
+    ai_status.add_argument("--manifest", default=None)
+    ai_status.set_defaults(handler=_ai)
+
+    ai_none = ai_sub.add_parser("confirm-none", help="explicitly confirm that no AI tool was used")
+    _add_common(ai_none)
+    ai_none.add_argument("--manifest", default=None)
+    ai_none.add_argument("--confirmed-by", required=True)
+    ai_none.add_argument("--reason", required=True)
+    ai_none.add_argument("--confirmed-at")
+    ai_none.set_defaults(handler=_ai)
+
+    ai_record = ai_sub.add_parser("record", help="append one externally auditable AI-use record")
+    _add_common(ai_record)
+    ai_record.add_argument("--manifest", default=None)
+    ai_record.add_argument("--usage-id")
+    ai_record.add_argument("--tool-name", required=True)
+    ai_record.add_argument("--model", required=True)
+    ai_record.add_argument("--provider", required=True)
+    ai_record.add_argument("--stage", required=True, choices=("analysis", "modeling", "coding", "experiments", "writing", "review", "submission", "other"))
+    ai_record.add_argument("--purpose", required=True)
+    ai_record.add_argument("--prompt-summary", required=True)
+    ai_record.add_argument("--output-use", required=True)
+    ai_record.add_argument("--human-changes", required=True)
+    ai_record.add_argument("--interaction-record", required=True)
+    ai_record.add_argument("--checked-by-role", required=True)
+    ai_record.add_argument("--verification-method", required=True)
+    ai_record.add_argument("--used-at")
+    ai_record.add_argument("--checked-at")
+    ai_record.set_defaults(handler=_ai)
+
+    ai_verify = ai_sub.add_parser("verify", help="complete human verification for an automatically logged AI use")
+    _add_common(ai_verify)
+    ai_verify.add_argument("--manifest", default=None)
+    ai_verify.add_argument("--usage-id", required=True)
+    ai_verify.add_argument("--checked-by-role", required=True)
+    ai_verify.add_argument("--verification-method", required=True)
+    ai_verify.add_argument("--human-changes", required=True)
+    ai_verify.add_argument("--checked-at")
+    ai_verify.set_defaults(handler=_ai)
 
     profile = sub.add_parser("profile", help="show preset capabilities and profile status")
     _add_common(profile)

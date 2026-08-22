@@ -381,11 +381,16 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
         manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
         manifest["preset"] = "submission"
         manifest["human_checkpoints"] = [checkpoint]
+        manifest["ai_usage_state"] = "none"
+        manifest["ai_usage_declaration"] = {
+            "status": "none", "confirmed_by": "team", "confirmed_at": "2026-08-17T00:00:00Z", "reason": "fixture declaration",
+        }
         (self.project / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        ai_snapshot = {"state": "none", "records": [], "declaration": manifest["ai_usage_declaration"]}
         report = {
             "ok": True, "competition_profile_sha256": hashlib.sha256(json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
             "submission_rules_sha256": hashlib.sha256(json.dumps(profile["submission"], ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
-            "ai_usage_sha256": hashlib.sha256(b"[]").hexdigest(),
+            "ai_usage_sha256": hashlib.sha256(json.dumps(ai_snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
             "s1_checkpoint": {"checkpoint_id": "CP-S1", "sha256": hashlib.sha256(json.dumps(checkpoint, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()},
             "page_count": {"total_pages": 1, "page_count_method": "manual_verified", "limited_pages": 1, "ai_report_pages": 0},
         }

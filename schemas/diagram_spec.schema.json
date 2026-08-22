@@ -34,6 +34,11 @@
       "type": "string",
       "enum": ["left_to_right", "top_to_bottom", "two_column", "grid", "hybrid"]
     },
+    "archetype": {
+      "type": "string",
+      "enum": ["research_framework", "computational_pipeline", "parallel_integration", "method_architecture", "iterative_optimization", "custom"]
+    },
+    "title_mode": {"type": "string", "enum": ["none", "compact", "banner"]},
     "style_profile": {"type": "string", "minLength": 1},
     "font_family": {"type": "string", "minLength": 1},
     "font_size": {"type": "integer", "minimum": 8, "maximum": 36},
@@ -96,6 +101,10 @@
         },
         "source_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "emphasis": {"type": "string", "enum": ["core", "secondary", "neutral"]},
+        "primitive": {
+          "type": "string",
+          "enum": ["auto", "band", "stage", "hero_container", "model_block", "input_lane", "parallel_lane", "merge_hub", "validation_rail", "output_block", "decision_gate", "feedback_rail", "annotation_strip"]
+        },
         "parent_id": {"type": ["string", "null"]},
         "line_breaks": {"type": "array", "items": {"type": "integer", "minimum": 1}}
       }

@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "diagram_id": "ARCH-RESEARCH-FRAMEWORK",
+  "kind": "overview",
+  "archetype": "research_framework",
+  "title_mode": "none",
+  "message": "Data support a deterministic-risk-dependence model chain whose decision is independently validated.",
+  "layout": "hybrid",
+  "style_profile": "academic_minimal",
+  "source_format": "drawio",
+  "delivery_mode": "vector_preferred",
+  "output_formats": ["svg"],
+  "text_policy": "native_text",
+  "source_editability": "editable_source",
+  "human_review_required": true,
+  "status": "draft",
+  "nodes": [
+    {"node_id": "data", "label": "Agricultural data", "role": "input", "source_refs": ["D1"], "emphasis": "neutral"},
+    {"node_id": "milp", "label": "Deterministic MILP", "role": "model", "source_refs": ["M1"], "emphasis": "core"},
+    {"node_id": "cvar", "label": "Expected-CVaR", "role": "model", "source_refs": ["M2"], "emphasis": "core"},
+    {"node_id": "copula", "label": "Gaussian copula", "role": "model", "source_refs": ["M3"], "emphasis": "core"},
+    {"node_id": "validation", "label": "Feasibility and stress validation", "role": "validation", "source_refs": ["V1"], "emphasis": "secondary"},
+    {"node_id": "decision", "label": "Planting decision", "role": "result", "source_refs": ["R1"], "emphasis": "core"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from": "data", "to": "milp", "relation": "data", "source_refs": ["D1"]},
+    {"edge_id": "e2", "from": "milp", "to": "cvar", "relation": "dependency", "source_refs": ["M1"]},
+    {"edge_id": "e3", "from": "cvar", "to": "copula", "relation": "dependency", "source_refs": ["M2"]},
+    {"edge_id": "e4", "from": "copula", "to": "validation", "relation": "dependency", "source_refs": ["V1"]},
+    {"edge_id": "e5", "from": "validation", "to": "decision", "relation": "control", "source_refs": ["R1"]}
+  ]
+}
+

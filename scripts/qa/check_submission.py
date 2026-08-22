@@ -16,8 +16,8 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
-from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from _common import ai_usage_snapshot, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from runtime_state import load_runtime_state  # noqa: E402
 
 
 def file_record(path: Path, root: Path, role: str, *, pages: int | None = None, method: str | None = None) -> dict[str, Any]:
@@ -107,7 +107,20 @@ def main() -> int:
 
         ai_policy = rules.get("ai_disclosure_policy")
         ai_format = rules.get("ai_disclosure_format", "separate_file")
-        ai_used = bool(manifest.get("ai_usage"))
+        ai_rows = manifest.get("ai_usage", [])
+        ai_rows = ai_rows if isinstance(ai_rows, list) else []
+        ai_state = resolve_ai_usage_state(manifest)
+        if v2 and ai_state == "unknown":
+            errors.append("S1 requires an explicit AI usage declaration; run `harness ai record` or `harness ai confirm-none`")
+        if ai_state == "used" and not ai_rows:
+            errors.append("ai_usage_state=used requires at least one AI usage record")
+        if ai_state in {"unknown", "none"} and ai_rows:
+            errors.append(f"ai_usage_state={ai_state} conflicts with non-empty ai_usage")
+        if v2 and ai_state == "none" and not isinstance(manifest.get("ai_usage_declaration"), dict):
+            errors.append("ai_usage_state=none requires an explicit ai_usage_declaration")
+        if ai_state != "none" and manifest.get("ai_usage_declaration") is not None:
+            errors.append(f"ai_usage_declaration conflicts with ai_usage_state={ai_state}")
+        ai_used = ai_state == "used"
         ai_required = ai_policy == "required_always" or (ai_policy == "required_when_used" and ai_used)
         needs_separate_file = ai_format in ("separate_file", "both")
         needs_in_paper = ai_format in ("in_paper_section", "both")
@@ -177,7 +190,7 @@ def main() -> int:
                     if args.ai_report_pages > 0 and "ai_report_position" not in completed_manual:
                         errors.append("S1 human checkpoint must include 'ai_report_position' manual check when AI report pages are excluded")
                     if args.ai_report_pages > 0 and not ai_used:
-                        errors.append("ai_report_pages is non-zero but run_manifest.ai_usage is empty")
+                        errors.append("ai_report_pages is non-zero but AI usage is not declared as used")
                     if args.ai_report_pages > 0 and not needs_in_paper:
                         errors.append("ai_report_pages can only be excluded when ai_disclosure_format includes an in-paper report")
                     if ai_required and needs_in_paper and args.ai_report_pages == 0:
@@ -252,7 +265,7 @@ def main() -> int:
         if ai_policy == "prohibited" and ai_record is not None:
             errors.append("AI disclosure file is prohibited by this profile")
         if ai_record is not None and not ai_used:
-            errors.append("AI disclosure file was provided but run_manifest.ai_usage is empty")
+            errors.append("AI disclosure file was provided but AI usage is not declared as used")
         if ai_record is not None and not needs_separate_file and ai_format != "none":
             errors.append(f"AI disclosure file provided but profile requires ai_disclosure_format={ai_format}, not a separate file")
         if ai_used and "ai_disclosure_in_support" in required_manual and ai_path is not None:
@@ -298,7 +311,8 @@ def main() -> int:
             "competition_profile_id": profile.get("profile_id"),
             "competition_profile_sha256": sha256_json(profile),
             "submission_rules_sha256": sha256_json(rules),
-            "ai_usage_sha256": sha256_json(manifest.get("ai_usage", [])),
+            "ai_usage_sha256": sha256_json(ai_usage_snapshot(manifest)),
+            "ai_usage_state": ai_state,
             "s1_checkpoint": (
                 {
                     "checkpoint_id": selected_checkpoint.get("checkpoint_id"),

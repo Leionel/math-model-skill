@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "diagram_id": "ARCH-ITERATIVE-OPTIMIZATION",
+  "kind": "validation_flow",
+  "archetype": "iterative_optimization",
+  "title_mode": "none",
+  "message": "Search operators update the incumbent only after evaluated acceptance, and terminate at a declared convergence decision.",
+  "layout": "left_to_right",
+  "style_profile": "navy_coral",
+  "source_format": "drawio",
+  "delivery_mode": "vector_preferred",
+  "output_formats": ["svg"],
+  "text_policy": "native_text",
+  "source_editability": "editable_source",
+  "human_review_required": true,
+  "status": "draft",
+  "nodes": [
+    {"node_id": "init", "label": "Initialize", "role": "input", "source_refs": ["A1"], "emphasis": "neutral"},
+    {"node_id": "operators", "label": "ALNS destroy / repair", "role": "model", "source_refs": ["M1"], "emphasis": "core"},
+    {"node_id": "evaluate", "label": "Evaluate candidate", "role": "validation", "source_refs": ["V1"], "emphasis": "secondary"},
+    {"node_id": "accept", "label": "Accept?", "role": "decision", "source_refs": ["A2"], "emphasis": "neutral"},
+    {"node_id": "update", "label": "Update incumbent", "role": "process", "source_refs": ["M2"], "emphasis": "secondary"},
+    {"node_id": "converge", "label": "Converged?", "role": "decision", "source_refs": ["V2"], "emphasis": "neutral"},
+    {"node_id": "result", "label": "Final solution", "role": "result", "source_refs": ["R1"], "emphasis": "core"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from": "init", "to": "operators", "relation": "control", "source_refs": ["A1"]},
+    {"edge_id": "e2", "from": "operators", "to": "evaluate", "relation": "dependency", "source_refs": ["M1"]},
+    {"edge_id": "e3", "from": "evaluate", "to": "accept", "relation": "control", "source_refs": ["A2"]},
+    {"edge_id": "e4", "from": "accept", "to": "update", "relation": "control", "source_refs": ["M2"]},
+    {"edge_id": "e5", "from": "update", "to": "converge", "relation": "control", "source_refs": ["V2"]},
+    {"edge_id": "e6", "from": "converge", "to": "operators", "relation": "feedback", "source_refs": ["V2"]},
+    {"edge_id": "e7", "from": "converge", "to": "result", "relation": "control", "source_refs": ["R1"]}
+  ]
+}

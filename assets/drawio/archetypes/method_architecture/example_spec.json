@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "diagram_id": "ARCH-METHOD-ARCHITECTURE",
+  "kind": "model_framework",
+  "archetype": "method_architecture",
+  "title_mode": "none",
+  "message": "Inputs, predictions, objective, and constraints meet in one optimization core before decision and validation.",
+  "layout": "hybrid",
+  "style_profile": "minimal_gray_blue",
+  "source_format": "drawio",
+  "delivery_mode": "vector_preferred",
+  "output_formats": ["svg"],
+  "text_policy": "native_text",
+  "source_editability": "editable_source",
+  "human_review_required": true,
+  "status": "draft",
+  "nodes": [
+    {"node_id": "input", "label": "Observed inputs", "role": "input", "source_refs": ["D1"], "emphasis": "neutral"},
+    {"node_id": "predictor", "label": "Demand predictor", "role": "model", "source_refs": ["M1"], "emphasis": "secondary"},
+    {"node_id": "constraints", "label": "Feasibility constraints", "role": "task", "source_refs": ["C1"], "emphasis": "secondary"},
+    {"node_id": "objective", "label": "Risk-adjusted objective", "role": "task", "source_refs": ["O1"], "emphasis": "secondary"},
+    {"node_id": "core", "label": "Optimization core", "role": "model", "source_refs": ["M2"], "emphasis": "core"},
+    {"node_id": "decision", "label": "Decision plan", "role": "result", "source_refs": ["R1"], "emphasis": "core"},
+    {"node_id": "validation", "label": "Replay and sensitivity", "role": "validation", "source_refs": ["V1"], "emphasis": "secondary"}
+  ],
+  "edges": [
+    {"edge_id": "e1", "from": "input", "to": "predictor", "relation": "data", "source_refs": ["D1"]},
+    {"edge_id": "e2", "from": "predictor", "to": "core", "relation": "dependency", "source_refs": ["M1"]},
+    {"edge_id": "e3", "from": "constraints", "to": "core", "relation": "dependency", "source_refs": ["C1"]},
+    {"edge_id": "e4", "from": "objective", "to": "core", "relation": "dependency", "source_refs": ["O1"]},
+    {"edge_id": "e5", "from": "core", "to": "decision", "relation": "control", "source_refs": ["R1"]},
+    {"edge_id": "e6", "from": "core", "to": "validation", "relation": "dependency", "source_refs": ["V1"]}
+  ]
+}
+

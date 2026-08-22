@@ -265,7 +265,9 @@ class ReviewE2ETest(unittest.TestCase):
         backend = f'"{sys.executable}" "{STUB}"'
         return subprocess.run(
             [sys.executable, str(SCRIPTS / "harness.py"), "review", "--project", str(self.project),
-             "--backend-cmd", backend, "--json", *flags],
+             "--backend-cmd", backend, "--ai-tool-name", "fixture-reviewer",
+             "--backend-kind", "ai", "--ai-model", "fixture-model", "--ai-provider", "fixture-provider",
+             "--json", *flags],
             text=True, capture_output=True, encoding="utf-8", errors="replace", env=env, check=False,
         )
 
@@ -297,6 +299,46 @@ class ReviewE2ETest(unittest.TestCase):
         gate = self.run_script("qa/check_gates.py", "--manifest", "run_manifest.json", "--project-root", str(self.project), "--gate", "w2")
         self.assertNotEqual(gate.returncode, 0)
         self.assertIn("REV-E2E-001", gate.stdout)
+
+    def test_observable_backend_use_is_auto_logged_then_human_verified(self) -> None:
+        result = self.run_review("--fresh")
+        payload = json.loads(result.stdout)
+        self.assertIn("semantic_critic", payload["ai_usage_records"])
+        manifest_path = self.project / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["ai_usage_state"], "used")
+        self.assertEqual(len(manifest["ai_usage"]), 1)
+        usage = manifest["ai_usage"][0]
+        self.assertEqual(usage["verification"]["status"], "pending")
+        self.assertTrue((self.project / usage["interaction_record"]["path"]).is_file())
+
+        verified = subprocess.run(
+            [
+                sys.executable, str(SCRIPTS / "harness.py"), "ai", "verify",
+                "--project", str(self.project), "--usage-id", usage["usage_id"],
+                "--checked-by-role", "team-lead", "--verification-method",
+                "compared review findings with frozen evidence", "--human-changes",
+                "accepted no changes after evidence check", "--json",
+            ],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["ai_usage"][0]["verification"]["status"], "verified")
+
+    def test_declared_non_ai_backend_does_not_create_ai_record(self) -> None:
+        backend = f'"{sys.executable}" "{STUB}"'
+        result = subprocess.run(
+            [
+                sys.executable, str(SCRIPTS / "harness.py"), "review",
+                "--project", str(self.project), "--backend-cmd", backend,
+                "--backend-kind", "non_ai", "--fresh", "--json",
+            ],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
+        self.assertFalse(manifest.get("ai_usage"))
 
     # -- E2E-B: revision resolves the finding; re-review passes ------------
 
@@ -371,7 +413,21 @@ class ReviewE2ETest(unittest.TestCase):
         self.assertTrue(rejected and (self.project / rejected).is_file(), payload)
 
         # A rejected output is diagnostic material, not discoverable evidence;
-        # a subsequent conforming reviewer can recover without deleting history.
+        # its observable AI call still needs human verification before another
+        # strict review run can proceed.
+        usage_id = payload["ai_usage_records"]["semantic_critic"]["usage_id"]
+        verified = subprocess.run(
+            [
+                sys.executable, str(SCRIPTS / "harness.py"), "ai", "verify",
+                "--project", str(self.project), "--usage-id", usage_id,
+                "--checked-by-role", "team-lead", "--verification-method",
+                "confirmed rejected report was not adopted", "--human-changes",
+                "rejected report was not adopted", "--json",
+            ],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        # A subsequent conforming reviewer can recover without deleting history.
         recovered = self.run_review("--fresh")
         self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
 
@@ -393,7 +449,8 @@ class ReviewE2ETest(unittest.TestCase):
         backend = f'"{sys.executable}" "{STUB}"'
         result = subprocess.run(
             [sys.executable, str(SCRIPTS / "harness.py"), "review", "--project", str(self.project),
-             "--backend-cmd", backend, "--fresh"],
+             "--backend-cmd", backend, "--ai-tool-name", "fixture-reviewer",
+             "--backend-kind", "ai", "--ai-model", "fixture-model", "--ai-provider", "fixture-provider", "--fresh"],
             text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
         )
         self.assertIn("Running deterministic QA", result.stderr)

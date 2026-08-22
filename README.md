@@ -16,6 +16,8 @@ python scripts/harness.py init `
   --preset research
 
 python scripts/harness.py status --project C:\work\math-q1
+python scripts/harness.py prepare M1 --project C:\work\math-q1 --json
+python scripts/harness.py ai status --project C:\work\math-q1 --json
 python scripts/harness.py check M1 --project C:\work\math-q1 --profile research --json
 ```
 
@@ -36,6 +38,37 @@ references、assets 和模板打入可独立分发的 wheel。发布型 wheel �
 空 JSON，也不生成不存在的 model、result、paper 或 receipt。新项目会停在
 M1，直到用户提供真实题面、数据边界、模型合同、验证计划和人工确认。
 
+`init` 还把 AI 使用状态设为 `unknown`。它不会根据空数组猜测“未使用”。由人
+明确确认未使用时运行：
+
+```powershell
+python scripts/harness.py ai confirm-none --project C:\work\math-q1 `
+  --confirmed-by team-lead --reason "已核对团队工具记录"
+```
+
+使用过外部 AI 时，每次用 `harness ai record` 登记工具、模型、阶段、用途、交互
+记录、采纳方式、人工修改和核验方式。Harness 自己通过 `--backend-cmd` 触发的
+review 会自动登记为 `pending`，人审后运行 `harness ai verify --usage-id ...`。
+`record` / `verify` / `confirm-none` 会同步刷新 `AI_USAGE_LEDGER.md`。
+`prepare S1` 前状态必须从 `unknown` 解析为 `none` 或 `used`；未知状态或未完成人工
+核验的自动记录会阻断正式 Gate。
+
+## Authoring Plane：给人和 Agent 看的确定性投影
+
+```powershell
+python scripts/harness.py prepare M1 --project C:\work\math-q1 --json
+python scripts/harness.py prepare W1 --project C:\work\math-q1 --json
+python scripts/harness.py prepare W2 --project C:\work\math-q1 --json
+python scripts/harness.py prepare S1 --project C:\work\math-q1 --json
+```
+
+这些命令生成或刷新 `MODELING_PLAN.md`、`PAPER_OUTLINE.md`、
+`PROJECT_BRIEF.md`、`APPENDIX_PLAN.md`、`AI_USAGE_LEDGER.md` 和
+`SUBMISSION_CHECKLIST.md`。每份文档都列出源文件 SHA-256，并明确自己只是
+projection；手改 Markdown 不会让 Gate 通过。`prepare S1` 只创建 mutable
+`submission/staging/` 与 disclosure draft，不复制到 `submission/final/`、
+不上传，也不声称 submission ready。
+
 继续执行时，使用同一个 project root：
 
 ```powershell
@@ -48,10 +81,16 @@ python scripts/harness.py review --project C:\work\math-q1 --recheck --json
 
 # 实际 fresh reviewer：子进程从 bundle 目录启动，执行事实写入 receipt
 python scripts/harness.py review --project C:\work\math-q1 --fresh `
-  --backend-cmd "python C:\tools\reviewer.py" --json
+  --backend-cmd "python C:\tools\reviewer.py" `
+  --backend-kind ai --ai-tool-name Codex --ai-model gpt-5 --ai-provider OpenAI --json
 
 # review evidence current 后，再跑完整 W2 Gate（复用既有 deterministic QA）
 python scripts/harness.py validate --project C:\work\math-q1 --strict
+
+# 在对应人审点刷新可读投影；prepare 不等于 Gate PASS
+python scripts/harness.py prepare W1 --project C:\work\math-q1 --json
+python scripts/harness.py prepare W2 --project C:\work\math-q1 --json
+python scripts/harness.py prepare S1 --project C:\work\math-q1 --json
 
 # 结果与提交冻结仍由既有 producer 负责
 python scripts/harness.py freeze --project C:\work\math-q1 --kind results `
@@ -93,14 +132,19 @@ fresh reviewer。
 2. 所有 Harness 命令从 HARNESS_ROOT 执行，所有比赛 artifact 写入
    PROJECT_ROOT。不要把论文项目写进 Harness 仓库，也不要修改 HARNESS_ROOT
    的代码、schema 或测试。
-3. 首先运行：
-   python scripts\harness.py doctor --project PROJECT_ROOT --offline --json
-   python scripts\harness.py status --project PROJECT_ROOT --json
-   若项目尚未初始化，才运行：
-   python scripts\harness.py init --project PROJECT_ROOT --competition COMPETITION --preset PRESET
+3. 先显式切换到 Harness 根目录：
+   Set-Location "HARNESS_ROOT"
+   若 "PROJECT_ROOT\run_manifest.json" 不存在，先运行：
+   python scripts\harness.py init --project "PROJECT_ROOT" --competition COMPETITION --preset PRESET --json
+   然后始终运行：
+   python scripts\harness.py doctor --project "PROJECT_ROOT" --offline --json
+   python scripts\harness.py status --project "PROJECT_ROOT" --json
+   已初始化项目的 doctor/status 非零表示真实阻断；不要吞掉退出码。
 4. 严格按 S0 -> M1 -> P1 -> P2 -> W1 -> W2 -> S1 -> F1 推进。每次先读
    status 的 first blocker，只修当前 blocker；不得通过手改 manifest、receipt、
    hash、DAG freshness、review verdict 或 Gate 状态来跳关。
+   在 M1/W1/W2/S1 人审前运行对应的 `harness prepare <STAGE>`，优先阅读
+   PROJECT_BRIEF 和阶段投影；这些 Markdown 只能帮助审阅，不能作为 PASS 证据。
 5. 遇到缺失题面/数据、官方规则未确认、命令 FAIL/ERROR、pending human
    checkpoint、哈希漂移或证据不足，立即停止下游阶段并报告。不得编造数据、
    文献、运行结果、最优性、因果解释、获奖概率或测试通过状态。
@@ -111,13 +155,18 @@ fresh reviewer。
    - 同上下文自审：运行 harness review 获取 routing instructions，按
      review_report.schema.json 产出 L0 报告，再运行 --recheck；不得声称独立。
    - 真正 fresh review：只有在独立新上下文/模型 backend 已提供时，才运行
-     python scripts\harness.py review --project PROJECT_ROOT --fresh
-       --backend-cmd "<独立 reviewer 命令>" --json
+     python scripts\harness.py review --project "PROJECT_ROOT" --fresh
+       --backend-cmd "<独立 reviewer 命令>" --ai-tool-name "<工具>"
+       --backend-kind ai --ai-model "<模型>" --ai-provider "<提供方>" --json
    `--fresh` 绑定 bundle/cwd/receipt/report，但不是 OS 沙箱。submission 至少
    需要一个 current L1+ 或人工 L3 报告。open blocker/high/medium 未解决时
    不得通过 W2；论文改动后旧报告 stale，必须重新审查。
-8. review evidence current 后，运行：
-   python scripts\harness.py validate --project PROJECT_ROOT --strict
+8. `run_manifest.ai_usage_state` 初始为 unknown。若完全未使用 AI，必须由人运行
+   `harness ai confirm-none`；若使用过外部 AI，必须逐次运行 `harness ai record`
+   并绑定交互记录和人工核验。Harness 触发的 reviewer 会自动写 pending 记录，
+   人审后用 `harness ai verify` 完成核验。不得仅因 ai_usage 为空就写“未使用”。
+9. review evidence current 后，运行：
+   python scripts\harness.py validate --project "PROJECT_ROOT" --strict
    然后再次运行 status。没有用户明确授权时，不 commit、不 push、不上传，
    也不执行 Final Freeze。
 
@@ -139,6 +188,12 @@ project-root/
 ├── run_manifest.json           # v2 control plane：preset、roots、policy、人审/安全
 ├── artifact_dag.json           # artifact_id、依赖、生命周期、现场 freshness
 ├── run_index.json              # 可重建 projection：receipt IDs 与 selection
+├── PROJECT_BRIEF.md            # 确定性人类投影，不是 Gate 真源
+├── MODELING_PLAN.md             # prepare M1 生成
+├── PAPER_OUTLINE.md             # prepare W1 生成
+├── APPENDIX_PLAN.md             # prepare W1 生成
+├── AI_USAGE_LEDGER.md           # prepare S1 生成
+├── SUBMISSION_CHECKLIST.md      # prepare S1 生成
 ├── receipts/                   # 真实进程生成；不要手写
 ├── model_contract.json         # M1 后由项目产生
 ├── frozen_results.json         # P2 freeze 后由 producer 产生
@@ -168,6 +223,14 @@ review stale）；S1 是当届规则和提交包；
 F1 是不可覆盖交付绑定。详细最低 I/O 见
 [Gate policy](references/workflow/gate_policy.md) 与
 [Review Execution Design](docs/REVIEW_EXECUTION_DESIGN.md)。
+
+概念流程图/框架图支持五种与配色解耦的学术构图 archetype：
+`research_framework`、`computational_pipeline`、`parallel_integration`、
+`method_architecture`、`iterative_optimization`。示例 spec 与原生 `.drawio`
+位于 [`assets/drawio/archetypes`](assets/drawio/archetypes/README.md)。这些样例
+吸收的是第 16 节所列外部项目的构图机制，不复制外部 XML、不引入运行时依赖；
+数据图仍走确定性绘图，图数仍由 evidence coverage 决定。详见
+[`drawio_backend.md`](references/visualization/drawio_backend.md)。
 
 ## 三个 preset
 
@@ -256,6 +319,9 @@ evidence registry、claim inventory 或 capability benchmark。完整规则见
 | migrate 有 manual review | 阅读报告并由人解决 page limit、receipt、profile、artifact collision；不要手改报告为 pass |
 | CLI 报缺依赖 | `python scripts/harness.py doctor --json`；安装 `requirements-dev.txt`，然后重跑原命令 |
 | `validate` 失败 | 保存 checker 原始 stdout/stderr 和 exit code；先修 Gate 指向的 artifact，不要在论文中掩盖 |
+| `AI usage` 是 `unknown` | 真实使用过则逐次 `harness ai record`；确认完全未使用则由人 `harness ai confirm-none` |
+| reviewer AI 记录是 `pending` | 人工核对报告、证据和采纳修改后运行 `harness ai verify --usage-id ... --human-changes "..."`；即使未采纳也要明确记录，不要直接改 JSON |
+| `prepare S1` 后 final 为空 | 正常；staging 可变，只有 F1 producer 才能写 immutable final |
 
 ## Debug appendix
 

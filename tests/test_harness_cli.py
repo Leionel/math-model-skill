@@ -43,6 +43,7 @@ class HarnessCliTest(unittest.TestCase):
         self.assertEqual(manifest["schema_version"], "2.0")
         self.assertEqual(profile["schema_version"], "2.0")
         self.assertEqual(profile["status"], "seed")
+        self.assertEqual(manifest["ai_usage_state"], "unknown")
         self.assertNotIn("commands", manifest)
         self.assertNotIn("gates", manifest)
 
@@ -137,6 +138,103 @@ class HarnessCliTest(unittest.TestCase):
         migration = self.run_cli("migrate", "--project", str(legacy), "--no-write", "--json")
         self.assertIn("manual_review_required", migration.stdout)
         self.assertNotEqual(migration.returncode, 0)
+
+    def test_ai_usage_tri_state_requires_explicit_human_declaration(self) -> None:
+        self.init()
+        status = self.run_cli("ai", "status", "--project", str(self.project), "--json")
+        self.assertEqual(json.loads(status.stdout)["ai_usage_state"], "unknown")
+
+        confirmed = self.run_cli(
+            "ai", "confirm-none", "--project", str(self.project),
+            "--confirmed-by", "team-lead", "--reason", "Reviewed team tool log",
+            "--confirmed-at", "2026-08-21T00:00:00Z", "--json",
+        )
+        self.assertEqual(confirmed.returncode, 0, confirmed.stdout + confirmed.stderr)
+        manifest = self.read("run_manifest.json")
+        self.assertEqual(manifest["ai_usage_state"], "none")
+        self.assertEqual(manifest["ai_usage_declaration"]["confirmed_by"], "team-lead")
+        self.assertIn("Declaration state: `none`", (self.project / "AI_USAGE_LEDGER.md").read_text(encoding="utf-8"))
+
+        interaction = self.project / "ai_interaction.md"
+        interaction.write_text("prompt and response summary\n", encoding="utf-8")
+        recorded = self.run_cli(
+            "ai", "record", "--project", str(self.project), "--usage-id", "AI-TEST-1",
+            "--tool-name", "Codex", "--model", "fixture-model", "--provider", "OpenAI",
+            "--stage", "coding", "--purpose", "review implementation",
+            "--prompt-summary", "inspect deterministic renderer", "--output-use", "adopted bounded patch",
+            "--human-changes", "reviewed and edited", "--interaction-record", interaction.name,
+            "--checked-by-role", "team-lead", "--verification-method", "manual diff and tests",
+            "--used-at", "2026-08-21T01:00:00Z", "--checked-at", "2026-08-21T02:00:00Z", "--json",
+        )
+        self.assertEqual(recorded.returncode, 0, recorded.stdout + recorded.stderr)
+        manifest = self.read("run_manifest.json")
+        self.assertEqual(manifest["ai_usage_state"], "used")
+        self.assertNotIn("ai_usage_declaration", manifest)
+        self.assertEqual(manifest["ai_usage"][0]["interaction_record"]["sha256"], hashlib.sha256(interaction.read_bytes()).hexdigest())
+        self.assertIn("AI-TEST-1", (self.project / "AI_USAGE_LEDGER.md").read_text(encoding="utf-8"))
+
+    def test_ai_record_is_serialized_and_rejects_external_evidence(self) -> None:
+        self.init()
+        outside = Path(self.temp.name) / "outside.md"
+        outside.write_text("not portable\n", encoding="utf-8")
+        rejected = self.run_cli(
+            "ai", "record", "--project", str(self.project), "--usage-id", "AI-OUTSIDE",
+            "--tool-name", "Codex", "--model", "fixture", "--provider", "OpenAI",
+            "--stage", "coding", "--purpose", "fixture", "--prompt-summary", "fixture",
+            "--output-use", "fixture", "--human-changes", "reviewed",
+            "--interaction-record", str(outside), "--checked-by-role", "team",
+            "--verification-method", "manual review", "--json",
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("inside the project root", rejected.stdout)
+
+        processes: list[subprocess.Popen[str]] = []
+        for index in range(2):
+            interaction = self.project / f"interaction-{index}.md"
+            interaction.write_text(f"interaction {index}\n", encoding="utf-8")
+            command = [
+                sys.executable, str(CLI), "ai", "record", "--project", str(self.project),
+                "--usage-id", f"AI-CONCURRENT-{index}", "--tool-name", "Codex",
+                "--model", "fixture", "--provider", "OpenAI", "--stage", "coding",
+                "--purpose", "fixture", "--prompt-summary", "fixture",
+                "--output-use", "fixture", "--human-changes", "reviewed",
+                "--interaction-record", interaction.name, "--checked-by-role", "team",
+                "--verification-method", "manual review", "--json",
+            ]
+            processes.append(subprocess.Popen(
+                command, cwd=str(ROOT), text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, encoding="utf-8", errors="replace",
+            ))
+        completed = [process.communicate(timeout=30) + (process.returncode,) for process in processes]
+        self.assertTrue(all(row[2] == 0 for row in completed), completed)
+        manifest = self.read("run_manifest.json")
+        self.assertEqual(
+            {row["usage_id"] for row in manifest["ai_usage"]},
+            {"AI-CONCURRENT-0", "AI-CONCURRENT-1"},
+        )
+
+    def test_prepare_projections_are_safe_idempotent_and_do_not_promote(self) -> None:
+        self.init()
+        first = self.run_cli("prepare", "M1", "--project", str(self.project), "--json")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        plan = (self.project / "MODELING_PLAN.md").read_text(encoding="utf-8")
+        self.assertIn("Generated projection", plan)
+        self.assertIn("model_contract` is missing", plan)
+        first_bytes = (self.project / "PROJECT_BRIEF.md").read_bytes()
+        second = self.run_cli("prepare", "M1", "--project", str(self.project), "--json")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(first_bytes, (self.project / "PROJECT_BRIEF.md").read_bytes())
+
+        s1 = self.run_cli("prepare", "S1", "--project", str(self.project), "--json")
+        self.assertEqual(s1.returncode, 0, s1.stdout + s1.stderr)
+        report = json.loads(s1.stdout)
+        self.assertFalse(report["submission_ready"])
+        self.assertTrue((self.project / "submission" / "staging" / "ai_disclosure" / "AI工具使用详情.md").is_file())
+        self.assertTrue((self.project / "submission" / "final").is_dir())
+        self.assertFalse(any((self.project / "submission" / "final").iterdir()))
+        checklist = (self.project / "SUBMISSION_CHECKLIST.md").read_text(encoding="utf-8")
+        self.assertIn("AI usage is explicitly and consistently declared (current: `unknown`)", checklist)
+        self.assertIn("does not assert submission readiness", checklist)
 
 
 if __name__ == "__main__":

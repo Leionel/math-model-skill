@@ -241,8 +241,13 @@ def main() -> int:
             errors.append(f"artifact DAG cannot be loaded: {exc}")
         if isinstance(dag_doc, dict):
             for node in dag_doc.get("nodes", []):
-                if isinstance(node, dict) and isinstance(node.get("node_id"), str):
-                    dag_nodes[node["node_id"]] = node
+                if not isinstance(node, dict):
+                    continue
+                node_key = node.get("node_id")
+                if not isinstance(node_key, str):
+                    node_key = node.get("artifact_id")
+                if isinstance(node_key, str):
+                    dag_nodes[node_key] = node
     elif args.require_canonical_source:
         errors.append("--require-canonical-source requires --artifact-dag")
     try:
@@ -683,12 +688,17 @@ def main() -> int:
             if not isinstance(node, dict):
                 errors.append(f"{collection_name[:-1]} {item_id} canonical_source_id is absent from artifact DAG: {source_id}")
                 continue
-            if node.get("status") != "current":
+            node_status = node.get("status", node.get("freshness"))
+            if node_status != "current":
                 errors.append(f"{collection_name[:-1]} {item_id} canonical source is not current: {source_id}")
             output_paths = {
                 str(ref.get("path")) for ref in node.get("outputs", [])
                 if isinstance(ref, dict) and isinstance(ref.get("path"), str)
             }
+            if not output_paths:
+                node_path = node.get("path")
+                if isinstance(node_path, str):
+                    output_paths.add(node_path)
             if not output_paths.intersection(set(item.get("data_artifacts", []))):
                 errors.append(f"{collection_name[:-1]} {item_id} canonical source does not produce a listed data artifact")
             for claim_id in item.get("claim_ids", []):

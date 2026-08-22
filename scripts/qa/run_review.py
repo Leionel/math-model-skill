@@ -6,7 +6,8 @@ runs the existing deterministic QA, materializes the allow-listed review
 bundle, routes each required perspective to a reviewer execution path, and
 validates the produced reports against the review contract.  It never writes
 semantic findings itself and never edits author artifacts, frozen results, or
-manifest truth.  Review reports are generated evidence under
+Gate truth.  Its only control-plane mutation is a producer-owned AI usage
+record when an explicitly declared AI backend is actually invoked.  Review reports are generated evidence under
 ``reports/review/`` and are optionally registered as DAG nodes with
 ``role=review_report``.
 """
@@ -30,7 +31,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import child_env, load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
+from _common import append_ai_usage_record, child_env, load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_dag_nodes, _v2_role_entries, _v2_role_path  # noqa: E402
 try:  # Package import in tests versus direct script execution.
@@ -304,6 +305,71 @@ def run_backend_reviewer(
     return ok, execution
 
 
+def record_backend_ai_use(
+    state: Any,
+    root: Path,
+    perspective: str,
+    bundle_manifest_path: Path,
+    execution: dict[str, Any],
+    *,
+    tool_name: str,
+    model: str,
+    provider: str,
+    output_accepted: bool,
+) -> dict[str, Any]:
+    """Register an observable backend call before any S1 disclosure is built."""
+
+    receipt_value = execution.get("receipt_path")
+    if not isinstance(receipt_value, str):
+        raise ValueError(f"{perspective} backend use has no process receipt to bind")
+    receipt_path = resolve_path(receipt_value, root).resolve()
+    if not receipt_path.is_file():
+        raise ValueError(f"{perspective} backend receipt does not exist: {receipt_value}")
+    now = datetime.now(timezone.utc).isoformat()
+    receipt_id = str(execution.get("receipt_id", "UNRECORDED"))
+    usage_id = f"AI-REVIEW-{receipt_id.removeprefix('REC-')}"
+    record = {
+        "usage_id": usage_id,
+        "tool_name": tool_name,
+        "model": model,
+        "provider": provider,
+        "used_at": now,
+        "stage": "review",
+        "purpose": f"Run the {perspective} reviewer on the allow-listed review bundle",
+        "prompt_summary": (
+            f"Apply the {perspective} rubric to {rel_path(bundle_manifest_path, root)} "
+            "and write a schema-bound review report"
+        ),
+        "output_use": (
+            "candidate review report produced; acceptance remains subject to schema and human verification"
+            if output_accepted
+            else "no accepted review output; failed execution retained as audit evidence"
+        ),
+        "human_changes": "pending human verification",
+        "interaction_record": {
+            "path": rel_path(receipt_path, root),
+            "sha256": sha256_file(receipt_path),
+        },
+        "verification": {
+            "status": "pending",
+            "checked_by_role": "unassigned",
+            "method": "pending human verification",
+            "checked_at": now,
+        },
+    }
+    count = append_ai_usage_record(state.manifest_path, record)
+    from prepare_project import refresh_ai_ledger
+
+    refreshed = load_runtime_state(state.manifest_path, project_root=root, allow_legacy=False)
+    ledger_path, _ = refresh_ai_ledger(refreshed)
+    return {
+        "usage_id": usage_id,
+        "verification_status": "pending",
+        "record_count": count,
+        "ledger": rel_path(ledger_path, root),
+    }
+
+
 def routing_instructions(
     state: Any,
     root: Path,
@@ -503,6 +569,10 @@ def main() -> int:
     parser.add_argument("--fresh", action="store_true", help="require fresh-context (L1) execution via --backend-cmd")
     parser.add_argument("--recheck", action="store_true", help="revalidate existing reports without executing reviewers")
     parser.add_argument("--backend-cmd", help="reviewer backend command; executed per perspective with MATH_REVIEW_* env")
+    parser.add_argument("--backend-kind", choices=("ai", "non_ai"), help="declare whether this backend invokes AI")
+    parser.add_argument("--ai-tool-name", help="AI tool identity for automatic backend usage logging")
+    parser.add_argument("--ai-model", help="AI model identity for automatic backend usage logging")
+    parser.add_argument("--ai-provider", help="AI provider identity for automatic backend usage logging")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -526,6 +596,16 @@ def main() -> int:
     if args.fresh and not args.backend_cmd and not args.recheck:
         print(json.dumps({"ok": False, "errors": [
             "--fresh requires --backend-cmd; a same-context self-critic cannot pose as a fresh-context reviewer",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.backend_cmd and not args.backend_kind:
+        print(json.dumps({"ok": False, "errors": [
+            "--backend-cmd requires --backend-kind=ai or --backend-kind=non_ai; backend type is never inferred",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.backend_cmd and args.backend_kind == "ai" and not all((args.ai_tool_name, args.ai_model, args.ai_provider)):
+        print(json.dumps({"ok": False, "errors": [
+            "--backend-cmd requires --ai-tool-name, --ai-model, and --ai-provider so observable AI use cannot go unlogged",
         ]}, ensure_ascii=False))
         return 2
 
@@ -575,6 +655,16 @@ def main() -> int:
                     state, root, args.backend_cmd, perspective, bundle_manifest_path, report_path, review_mode,
                 )
                 result.setdefault("executions", {})[perspective] = execution
+                if args.backend_kind == "ai":
+                    try:
+                        ai_record = record_backend_ai_use(
+                            state, root, perspective, bundle_manifest_path, execution,
+                            tool_name=args.ai_tool_name, model=args.ai_model,
+                            provider=args.ai_provider, output_accepted=ok,
+                        )
+                        result.setdefault("ai_usage_records", {})[perspective] = ai_record
+                    except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
+                        result["errors"].append(f"{perspective} backend AI use could not be registered: {exc}")
                 if not ok:
                     mutations = execution.get("protected_artifact_mutations", [])
                     if mutations:
@@ -605,7 +695,7 @@ def main() -> int:
         if pending:
             result["phases"].extend(pending)
             result["phases"].append(
-                f"after writing the report file(s), rerun with --recheck to validate and register review evidence"
+                "after writing the report file(s), rerun with --recheck to validate and register review evidence"
             )
             print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else _human(result))
             return 1

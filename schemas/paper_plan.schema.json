@@ -21,12 +21,28 @@
     "figures": {"type": "array", "items": {"$ref": "#/$defs/figure"}},
     "figure_references": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/figure_reference"}},
     "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}},
+    "deliverables": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/deliverable"}},
     "draft_coverage": {"$ref": "#/$defs/draft_coverage"},
     "readiness": {"$ref": "#/$defs/readiness"},
     "canonical_recommendation": {"type": "object", "additionalProperties": false, "required": ["text", "evidence_ids"], "properties": {"text": {"type": "string", "minLength": 1}, "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}},
     "status": {"type": "string", "enum": ["draft", "ready", "superseded"]}
   },
   "$defs": {
+    "deliverable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deliverable_id", "type", "required_by_profile", "source_refs", "status"],
+      "properties": {
+        "deliverable_id": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "enum": ["main_paper", "paper_appendix", "ai_report", "code_appendix", "supplementary_tables", "official_result_workbook", "support_material", "submission_package"]},
+        "title": {"type": "string", "minLength": 1},
+        "required_by_profile": {"type": "boolean"},
+        "target_path": {"type": "string", "minLength": 1},
+        "source_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "status": {"type": "string", "enum": ["planned", "ready", "verified", "not_applicable"]},
+        "notes": {"type": "string"}
+      }
+    },
     "readiness": {
       "type": "object",
       "additionalProperties": false,
