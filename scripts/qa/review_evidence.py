@@ -30,6 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by package imports.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from _common import load_structured, rel_path, resolve_path, sha256_file  # type: ignore  # noqa: E402
 
+from project_layout import resolve_control_path  # type: ignore  # noqa: E402
 REVIEW_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "review_report.schema.json"
 REVIEW_DIR = "reports/review"
 REVIEW_PERSPECTIVES = ("semantic_critic", "judge_lens")
@@ -102,7 +103,7 @@ def requires_l1_review(preset: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _dag_review_paths(root: Path) -> list[Path]:
-    dag_path = root / "artifact_dag.json"
+    dag_path = resolve_control_path(root, "artifact_dag.json")
     paths: list[Path] = []
     if not dag_path.is_file():
         return paths
@@ -280,7 +281,7 @@ def review_freshness(report: Mapping[str, Any], root: Path) -> tuple[str, list[s
         return "stale", ["review report binds no reviewed artifacts"]
     current = True
     dag_by_id: dict[str, Mapping[str, Any]] = {}
-    dag_path = root / "artifact_dag.json"
+    dag_path = resolve_control_path(root, "artifact_dag.json")
     if dag_path.is_file():
         try:
             dag = load_structured(dag_path)
@@ -481,7 +482,7 @@ def validate_execution_binding(
                     if len(inputs) != 1 or inputs[0].get("sha256") != bundle_ref.get("sha256"):
                         errors.append("execution receipt does not bind the exact review bundle input")
 
-    dag_path = root / "artifact_dag.json"
+    dag_path = resolve_control_path(root, "artifact_dag.json")
     nodes: list[Mapping[str, Any]] = []
     if dag_path.is_file():
         try:

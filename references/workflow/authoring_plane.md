@@ -6,10 +6,10 @@ The Authoring Plane makes canonical Harness state readable without creating anot
 
 | Command | Deterministic outputs | Canonical inputs |
 |---|---|---|
-| `harness prepare M1` | `MODELING_PLAN.md`, `PROJECT_BRIEF.md` | model contract, manifest, profile, DAG/index |
-| `harness prepare W1` | `PAPER_OUTLINE.md`, `APPENDIX_PLAN.md`, `PROJECT_BRIEF.md` | paper plan IR, frozen result reference, runtime state |
-| `harness prepare W2` | refreshed `PROJECT_BRIEF.md` with coverage/review/targeted finding | runtime Gate evaluation, DAG freshness, review evidence |
-| `harness prepare S1` | `AI_USAGE_LEDGER.md`, disclosure draft, `SUBMISSION_CHECKLIST.md`, staging directories, `PROJECT_BRIEF.md` | profile, AI registry/state, runtime state |
+| `harness prepare M1` | `.harness/views/M1_STATE.md`, `PROJECT_BRIEF.md` | model contract, manifest, profile, DAG/index |
+| `harness prepare W1` | `.harness/views/W1_STATE.md`, `APPENDIX_PLAN.md`, `PROJECT_BRIEF.md` | paper plan IR, frozen result reference, runtime state |
+| `harness prepare W2` | `.harness/views/W2_STATE.md`, refreshed `PROJECT_BRIEF.md` | runtime Gate evaluation, DAG freshness, review evidence |
+| `harness prepare S1` | `.harness/views/AI_USAGE_LEDGER.md`, disclosure draft, `SUBMISSION_STATE.md`, staging directories, `PROJECT_BRIEF.md` | profile, AI registry/state, runtime state |
 
 Every projection contains:
 

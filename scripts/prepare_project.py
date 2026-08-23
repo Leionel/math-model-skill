@@ -16,6 +16,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from _common import load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file  # noqa: E402
 from harness_status import _v2_status  # noqa: E402
 from runtime_state import RuntimeState, RuntimeStateError, load_runtime_state  # noqa: E402
+from project_layout import resolve_manifest_path  # noqa: E402
 
 
 PROJECTION_NOTICE = "Generated projection — factual state remains in Harness contracts/receipts."
@@ -317,7 +318,7 @@ def render_ai_ledger(state: RuntimeState) -> list[str]:
 def refresh_ai_ledger(state: RuntimeState) -> tuple[Path, bool]:
     """Refresh the one human-facing ledger after an explicit AI mutation."""
 
-    path = state.root / "AI_USAGE_LEDGER.md"
+    path = state.root / ".harness" / "views" / "AI_USAGE_LEDGER.md"
     return path, _write_projection(path, render_ai_ledger(state))
 
 
@@ -468,6 +469,7 @@ def render_submission_checklist(state: RuntimeState) -> list[str]:
 def prepare(stage: str, state: RuntimeState) -> dict[str, Any]:
     outputs: list[dict[str, Any]] = []
     warnings: list[str] = []
+    views = state.root / ".harness" / "views"
 
     def emit(path: Path, lines: list[str]) -> None:
         changed = _write_projection(path, lines)
@@ -477,10 +479,12 @@ def prepare(stage: str, state: RuntimeState) -> dict[str, Any]:
     paper_plan_path = _artifact_path(state, "paper_plan")
     frozen_path = _artifact_path(state, "frozen_results")
     if stage == "M1":
-        emit(state.root / "MODELING_PLAN.md", render_modeling_plan(state, model_path))
+        emit(views / "M1_STATE.md", render_modeling_plan(state, model_path))
     elif stage == "W1":
-        emit(state.root / "PAPER_OUTLINE.md", render_paper_outline(state, paper_plan_path, frozen_path))
-        emit(state.root / "APPENDIX_PLAN.md", render_appendix_plan(state, paper_plan_path))
+        emit(views / "W1_STATE.md", render_paper_outline(state, paper_plan_path, frozen_path))
+        emit(views / "APPENDIX_PLAN.md", render_appendix_plan(state, paper_plan_path))
+    elif stage == "W2":
+        emit(views / "W2_STATE.md", render_project_brief(state))
     elif stage == "S1":
         for path in (
             state.root / "submission" / "staging" / "support",
@@ -497,8 +501,8 @@ def prepare(stage: str, state: RuntimeState) -> dict[str, Any]:
         title, disclosure = render_ai_disclosure(state)
         filename = "AI工具使用详情.md" if title == "AI工具使用详情" else "Report_on_Use_of_AI_Tools.md"
         emit(state.root / "submission" / "staging" / "ai_disclosure" / filename, disclosure)
-        emit(state.root / "SUBMISSION_CHECKLIST.md", render_submission_checklist(state))
-    emit(state.root / "PROJECT_BRIEF.md", render_project_brief(state))
+        emit(views / "SUBMISSION_STATE.md", render_submission_checklist(state))
+    emit(views / "PROJECT_BRIEF.md", render_project_brief(state))
     return {"ok": True, "stage": stage, "projection_notice": PROJECTION_NOTICE, "outputs": outputs, "warnings": warnings, "submission_ready": False}
 
 
@@ -506,11 +510,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stage", choices=STAGES)
     parser.add_argument("--project-root", default=".")
-    parser.add_argument("--manifest", default="run_manifest.json")
+    parser.add_argument("--manifest", default=None)
     args = parser.parse_args(argv)
     root = Path(args.project_root).resolve()
     try:
-        state = load_runtime_state(resolve_path(args.manifest, root), project_root=root, allow_legacy=False)
+        state = load_runtime_state(resolve_manifest_path(root, args.manifest), project_root=root, allow_legacy=False)
         report = prepare(args.stage, state)
     except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
         report = {"ok": False, "stage": args.stage, "errors": [str(exc)]}

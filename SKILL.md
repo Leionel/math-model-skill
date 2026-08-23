@@ -36,9 +36,12 @@ Python experiment with no evidence or competition-delivery obligations.
 9. Stop on missing inputs, `FAIL`, `ERROR`, unresolved official rules, or a
    pending human decision. Do not promote a plan, demo, or regression as a
    benchmark result.
-10. Treat `MODELING_PLAN.md`, `PAPER_OUTLINE.md`, `PROJECT_BRIEF.md`, and
-    `SUBMISSION_CHECKLIST.md` as deterministic projections only. They never
-    replace contracts, receipts, Gate reports, or frozen artifacts.
+10. Treat `.harness/views/` (including `M1_STATE.md`, `W1_STATE.md`,
+    `PROJECT_BRIEF.md`, and `SUBMISSION_STATE.md`) as deterministic projections
+    only. They never replace contracts, receipts, Gate reports, or frozen
+    artifacts. `00_PROJECT_BRIEF.md`, `01_RESEARCH_NOTES.md`,
+    `02_MODEL_DECISION.md`, `03_SOLUTION_REPORT.md`, and `paper/` are the
+    human authoring surface and must never be overwritten by `prepare`.
 11. AI usage starts as `unknown`. Before S1, record each use or obtain an
     explicit human `none` declaration; an empty registry is not proof of no
     use. Harness-observable AI backends must log automatically as `pending`;
@@ -187,12 +190,19 @@ python scripts/harness.py doctor --project C:\work\q1 --json
 python scripts/harness.py migrate --project C:\work\legacy --json
 ```
 
-For conceptual process/framework figures, choose an archetype independently
-of `style_profile`: `research_framework`, `computational_pipeline`,
-`parallel_integration`, `method_architecture`, or `iterative_optimization`.
-The planner may change geometry and primitives only; it must preserve nodes,
-edges, source refs, semantic roles, and the existing palette system. Data
-plots and result figures remain deterministic rather than Draw.io archetypes.
+For conceptual process/framework figures, default to the inspected PPTX route:
+`harness figure FIG-01 --semantic-type workflow --prepare-pptx`. Read only
+the selected entry in `assets/pptx_workflow/README.md`, then edit the copied
+deck in PowerPoint (or the presentation template-following workflow), not with
+manually positioned Python boxes. Preserve the source deck, use only the selected
+source slide as a composition start, keep connectors behind nodes, and render a
+paper-scale export for human review. The route creates an editable visual source;
+it does not create a visual claim, receipt, or Gate outcome.
+
+Use `--diagram-backend drawio` only when a native XML/topology contract is
+actually needed. The Draw.io archetypes may change geometry and primitives only;
+they must preserve nodes, edges, source refs, semantic roles, and palette policy.
+Data plots and result figures remain deterministic.
 
 Use `--json` for agent consumption. Underlying checkers retain their stdout,
 stderr, and exit code. Use their script-level flags only for debugging; the
@@ -218,6 +228,12 @@ Run `harness migrate --project <legacy-root>` to a separate `migration_v2/`
 directory. Read `migrated`, `inferred`, `unresolved`, `deprecated`, and
 `manual_review_required` before promotion. Migration never rewrites historical
 frozen evidence and never upgrades a legacy command declaration to a receipt.
+
+For an already-v2 flat project, `harness migrate --layout hidden` is a read-only
+plan; add `--apply` only after inspecting it. It moves only the four mutable
+control documents into `.harness/state/`, records a non-Gate migration report,
+and preserves receipts, frozen artifacts, evidence, results and author files.
+Never leave a root-level duplicate beside an active hidden layout.
 
 Status is read-only and a v1 status is explicitly deprecated. A DAG freshness
 projection is evidence for the next action, not permission to rewrite the DAG.

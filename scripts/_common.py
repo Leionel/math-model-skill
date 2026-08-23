@@ -20,8 +20,8 @@ def child_env() -> dict[str, str]:
     """
 
     env = dict(os.environ)
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    env.setdefault("PYTHONUTF8", "1")
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     return env
 
 

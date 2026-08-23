@@ -20,6 +20,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import load_structured, rel_path, resolve_path  # noqa: E402
+from project_layout import resolve_manifest_path  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_gate  # noqa: E402
 
@@ -325,7 +326,7 @@ def _v1_status(manifest: Mapping[str, Any], root: Path, manifest_path: Path) -> 
 def status_report(manifest: dict[str, Any], root: Path, manifest_path: Path | None = None) -> dict[str, Any]:
     """Return a read-only status report for a loaded manifest."""
 
-    path = manifest_path or (root / "run_manifest.json")
+    path = manifest_path or resolve_manifest_path(root)
     if manifest.get("schema_version") == "2.0":
         try:
             return _v2_status(load_runtime_state(path, project_root=root, allow_legacy=False))
@@ -394,16 +395,16 @@ def _human(report: Mapping[str, Any]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", default="run_manifest.json")
+    parser.add_argument("--manifest", default=None)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = Path(args.project_root).resolve()
-    manifest_path = resolve_path(args.manifest, root).resolve()
     try:
+        manifest_path = resolve_manifest_path(root, args.manifest)
         manifest = load_structured(manifest_path)
     except (OSError, ValueError, TypeError) as exc:
-        report = {"ok": False, "errors": [f"cannot read manifest: {exc}"], "manifest": rel_path(manifest_path, root)}
+        report = {"ok": False, "errors": [f"cannot read manifest: {exc}"], "manifest": args.manifest or "active state layout"}
         print(json.dumps(report, ensure_ascii=False) if args.json else _human(report))
         return 2
     if not isinstance(manifest, dict):

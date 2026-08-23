@@ -23,9 +23,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
+from _common import child_env, exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
+from figures.tool_router import route_figure  # noqa: E402
+from figures.pptx_router import stage_pptx_reference  # noqa: E402
+from human_surface import authoring_context, compile_model_contract, ensure_figure_brief, ensure_human_surface, ensure_section  # noqa: E402
 from profiles.normalization import canonicalize_competition_profile, resolve_profile  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from project_layout import StateLayoutError, active_state_layout, existing_control_paths, resolve_manifest_path  # noqa: E402
+from state_layout_migration import migrate_flat_control_state_to_hidden  # noqa: E402
+
 
 GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
 PRESETS = ("sprint", "research", "submission")
@@ -33,6 +39,15 @@ PRESETS = ("sprint", "research", "submission")
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
+def _configure_utf8_output() -> None:
+    """Keep Chinese CLI help usable in legacy Windows console code pages."""
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _emit(value: Any, *, machine: bool, human: str | None = None) -> None:
@@ -52,7 +67,7 @@ def _project(args: argparse.Namespace) -> Path:
 
 
 def _manifest_path(root: Path, raw: str | None = None) -> Path:
-    return resolve_path(raw or "run_manifest.json", root).resolve()
+    return resolve_manifest_path(root, raw)
 
 
 def _parse_overrides(values: list[str] | None) -> dict[str, Any]:
@@ -186,8 +201,16 @@ def _init_profile(selector: str) -> tuple[dict[str, Any], str]:
 
 def _init(args: argparse.Namespace) -> int:
     root = _project(args)
+    try:
+        active_state_layout(root)
+    except StateLayoutError as exc:
+        raise ValueError(f"project has an incomplete Harness state layout: {exc}") from exc
     if root.exists() and any(root.iterdir()) and not args.force:
-        existing = [path.name for path in root.iterdir() if path.name in {"run_manifest.json", "competition_profile.json", "artifact_dag.json", "run_index.json"}]
+        existing = [
+            rel_path(path, root)
+            for paths in existing_control_paths(root).values()
+            for path in paths
+        ]
         if existing:
             raise ValueError(f"project already contains Harness state ({', '.join(existing)}); use a new root or --force")
     root.mkdir(parents=True, exist_ok=True)
@@ -268,7 +291,8 @@ def _init(args: argparse.Namespace) -> int:
         if path.exists() and not args.force:
             raise ValueError(f"refusing to overwrite existing file: {path}")
         path.write_text(_json(value), encoding="utf-8")
-    result = {"ok": True, "schema_version": "2.0", "project_root": str(root), "preset": args.preset, "competition": args.competition, "profile_status": "seed", "profile_source": source, "files": sorted(outputs)}
+    human_surface = ensure_human_surface(root)
+    result = {"ok": True, "schema_version": "2.0", "project_root": str(root), "preset": args.preset, "competition": args.competition, "profile_status": "seed", "profile_source": source, "files": sorted(outputs), "human_surface": human_surface}
     _emit(result, machine=args.json, human=f"initialized v2 project at {root}\npreset: {args.preset}\ncompetition profile: seed ({source})\nfiles: {', '.join(sorted(outputs))}")
     return 0
 
@@ -276,7 +300,7 @@ def _init(args: argparse.Namespace) -> int:
 def _dispatch(command: list[str], root: Path) -> int:
     # Keep child stdout/stderr and exit code transparent: the CLI is not a
     # wrapper around Gate policy and does not reinterpret checker results.
-    return subprocess.run(command, cwd=str(root), check=False).returncode
+    return subprocess.run(command, cwd=str(root), env=child_env(), check=False).returncode
 
 
 def _check(args: argparse.Namespace, gate: str | None = None) -> int:
@@ -333,16 +357,25 @@ def _review(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     root = _project(args)
     manifest = _manifest_path(root, args.manifest)
+    manifest_value = load_structured(manifest) if manifest.is_file() else None
+    state = None
+    if isinstance(manifest_value, Mapping) and manifest_value.get("schema_version") == "2.0":
+        state = load_runtime_state(manifest, project_root=root, allow_legacy=False)
     if args.run_id is None:
-        if manifest.is_file():
-            value = load_structured(manifest)
-            args.run_id = value.get("run_id") if isinstance(value, Mapping) else None
+        args.run_id = manifest_value.get("run_id") if isinstance(manifest_value, Mapping) else None
         if not isinstance(args.run_id, str) or not args.run_id:
             raise ValueError("run requires --run-id when run_manifest.json is absent")
     receipt = args.receipt or f"receipts/{args.stage}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:6]}.json"
-    index = args.index or "run_index.json"
+    if args.index:
+        index = args.index
+    elif state is not None:
+        index_path = state.root_path("run_index", required=True)
+        assert index_path is not None
+        index = rel_path(index_path, root)
+    else:
+        index = "run_index.json"
     command = [sys.executable, str(SCRIPT_DIR / "run_and_record.py"), "--run-id", args.run_id, "--stage", args.stage, "--receipt", receipt, "--index", index, "--project-root", str(root)]
-    if manifest.is_file() and load_structured(manifest).get("schema_version") == "2.0":
+    if state is not None:
         command[2:2] = ["--manifest", str(manifest)]
     else:
         command[2:2] = ["--v2", "--integrity-mode", args.preset]
@@ -514,6 +547,141 @@ def _prepare(args: argparse.Namespace) -> int:
     return _dispatch([sys.executable, str(SCRIPT_DIR / "prepare_project.py"), args.stage, "--project-root", str(root), "--manifest", str(manifest)], root)
 
 
+def _research(args: argparse.Namespace) -> int:
+    root = _project(args)
+    surface = ensure_human_surface(root)
+    result = {
+        "ok": True,
+        "human_surface": surface,
+        "read": "00_PROJECT_BRIEF.md",
+        "authoring_target": "01_RESEARCH_NOTES.md",
+        "checkpoint": {
+            "message": "Research notes are ready to author. Review problem interpretation, candidate coverage, rejected methods, and unresolved questions before model selection.",
+            "gate": "none",
+        },
+    }
+    _emit(result, machine=args.json, human="research authoring surface ready\nread: 00_PROJECT_BRIEF.md\nwrite: 01_RESEARCH_NOTES.md")
+    return 0
+
+
+def _model(args: argparse.Namespace) -> int:
+    root = _project(args)
+    if args.compile:
+        result = compile_model_contract(
+            root,
+            source=args.source,
+            output=args.output,
+            schema_path=REPO_ROOT / "schemas" / "model_contract.schema.json",
+            manifest_path=_manifest_path(root),
+        )
+    else:
+        result = {
+            "ok": True,
+            "human_surface": ensure_human_surface(root),
+            "read": "01_RESEARCH_NOTES.md",
+            "authoring_target": "02_MODEL_DECISION.md",
+            "checkpoint": {
+                "message": "Model selection ready for review. Check candidate coverage, selected-model rationale, inter-question dependencies, and the validation plan.",
+                "actions": ["continue", "revise", "research-more"],
+                "gate": "m1",
+            },
+            "compile_hint": "When a machine consumer needs the decision, add the explicit YAML source block and run `harness model --compile`.",
+        }
+    _emit(result, machine=args.json, human="model authoring surface ready\nread: 01_RESEARCH_NOTES.md\nwrite: 02_MODEL_DECISION.md")
+    return 0
+
+
+def _solve(args: argparse.Namespace) -> int:
+    root = _project(args)
+    ensure_human_surface(root)
+    if not args.command:
+        result = {
+            "ok": True,
+            "execution_started": False,
+            "read": "02_MODEL_DECISION.md",
+            "authoring_target": "03_SOLUTION_REPORT.md",
+            "next_action": "Run a real command after `--`; the existing receipt producer and validation Gate remain authoritative.",
+        }
+        _emit(result, machine=args.json, human="solve surface ready; no computation was run\nread: 02_MODEL_DECISION.md\nupdate after a real receipt: 03_SOLUTION_REPORT.md")
+        return 0
+    run_args = argparse.Namespace(
+        project=str(root), manifest=args.manifest, run_id=args.run_id, stage=args.execution_stage,
+        receipt=args.receipt, index=args.index, preset=args.preset, selected=args.selected,
+        freeze=False, seed=args.seed, input=args.input, output_artifact=args.output_artifact,
+        command=args.command,
+    )
+    return _run(run_args)
+
+
+def _paper(args: argparse.Namespace) -> int:
+    root = _project(args)
+    if args.paper_action == "plan":
+        result = {"ok": True, "human_surface": ensure_human_surface(root), "authoring_target": "paper/00_PAPER_PLAN.md"}
+        human = "paper plan surface ready\nwrite: paper/00_PAPER_PLAN.md"
+    else:
+        section = ensure_section(root, args.section)
+        action = "draft" if args.paper_action == "write" else "semantic review"
+        result = {
+            "ok": True,
+            "section": section,
+            "action": action,
+            "context": authoring_context(root, f"paper:{section['section']}"),
+            "boundary": "Only this section was scaffolded; no other section, result, or Gate state was changed.",
+        }
+        human = f"paper {args.paper_action} surface ready\nsection: {section['section']}\npath: {section['path']}"
+    _emit(result, machine=args.json, human=human)
+    return 0
+
+
+def _figure(args: argparse.Namespace) -> int:
+    root = _project(args)
+    brief = ensure_figure_brief(root, args.figure_id)
+    route = route_figure(
+        args.kind,
+        args.semantic_type,
+        args.fallback_reason,
+        diagram_backend=args.diagram_backend,
+        pptx_reference=args.pptx_reference,
+    )
+    staged = None
+    if args.prepare_pptx:
+        if route["default_tool"] != "pptx_template":
+            raise ValueError("--prepare-pptx requires a diagram routed to PPTX")
+        staged = stage_pptx_reference(root, args.figure_id, route["reference"])
+    result = {
+        "ok": True,
+        "brief": brief,
+        "route": route,
+        "boundary": "The router creates no visual claim and does not replace Figure Contract, source evidence, or final-size review.",
+    }
+    if staged is not None:
+        result["pptx_editable_copy"] = staged
+    human = f"figure brief ready: {brief['path']}\nroute: {route['default_tool']}"
+    if staged is not None:
+        human += f"\npptx copy: {staged['path']}"
+    _emit(result, machine=args.json, human=human)
+    return 0
+
+
+def _context(args: argparse.Namespace) -> int:
+    root = _project(args)
+    ensure_human_surface(root)
+    result = authoring_context(root, args.stage)
+    _emit(result, machine=args.json, human="context plan generated; inspect the listed files before starting the stage")
+    return 0
+
+
+def _submit_check(args: argparse.Namespace) -> int:
+    check_args = argparse.Namespace(
+        project=args.project,
+        manifest=args.manifest,
+        requested_preset=None,
+        gate="S1",
+        strict=args.strict,
+    )
+    return _check(check_args, gate="s1")
+
+
 def _profile(args: argparse.Namespace) -> int:
     root = _project(args)
     manifest = _manifest_path(root, args.manifest)
@@ -560,8 +728,15 @@ def _doctor(args: argparse.Namespace) -> int:
     critical = ["scripts/harness.py", "scripts/harness_status.py", "scripts/run_and_record.py", "scripts/qa/check_gates.py", "scripts/qa/run_deterministic_qa.py"]
     missing = [item for item in critical if not (REPO_ROOT / item).is_file()]
     errors.extend(f"critical file missing: {item}" for item in missing)
-    manifest = root / "run_manifest.json"
-    if manifest.is_file():
+    layout: str | None
+    try:
+        layout = active_state_layout(root)
+        manifest = _manifest_path(root)
+    except StateLayoutError as exc:
+        layout = None
+        manifest = None
+        errors.append(f"project state layout cannot be resolved: {exc}")
+    if manifest is not None and manifest.is_file():
         try:
             value = load_structured(manifest)
             if not isinstance(value, Mapping):
@@ -569,6 +744,7 @@ def _doctor(args: argparse.Namespace) -> int:
         except (OSError, ValueError, TypeError) as exc:
             errors.append(f"project run_manifest cannot be read: {exc}")
     report = {"ok": not errors, "project_root": str(root), "python": {"path": sys.executable, "version": sys.version.split()[0]}, "dependencies": dependencies, "schema_count": len(schemas), "schemas": schemas, "critical_files": {"checked": critical, "missing": missing}, "warnings": warnings, "errors": errors}
+    report["state_layout"] = layout
     _emit(report, machine=args.json, human=f"doctor: {'OK' if report['ok'] else 'BLOCKED'}\npython: {sys.version.split()[0]}\nschemas: {len(schemas)}\noptional warnings: {len(warnings)}")
     return 0 if report["ok"] else 1
 
@@ -683,6 +859,67 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--manifest", default=None)
     prepare.set_defaults(handler=_prepare)
 
+    research = sub.add_parser("research", help="prepare the human-authored research surface; it does not run a Gate")
+    _add_common(research)
+    research.set_defaults(handler=_research)
+
+    model = sub.add_parser("model", help="prepare model-decision authoring or compile its explicit YAML contract source")
+    _add_common(model)
+    model.add_argument("--compile", action="store_true", help="compile the explicit machine-contract YAML block to JSON IR")
+    model.add_argument("--source", help="model decision Markdown source; defaults to 02_MODEL_DECISION.md")
+    model.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/model_contract.json")
+    model.set_defaults(handler=_model)
+
+    solve = sub.add_parser("solve", help="prepare solve authoring or dispatch one real receipt-captured command")
+    _add_common(solve)
+    solve.add_argument("--manifest", default=None)
+    solve.add_argument("--stage", dest="execution_stage", choices=("smoke", "full"), default="smoke")
+    solve.add_argument("--run-id")
+    solve.add_argument("--receipt")
+    solve.add_argument("--index")
+    solve.add_argument("--preset", choices=PRESETS, default="research")
+    solve.add_argument("--selected", action="store_true")
+    solve.add_argument("--seed", type=int)
+    solve.add_argument("--input", action="append", default=[])
+    solve.add_argument("--output-artifact", action="append", default=[])
+    solve.add_argument("command", nargs=argparse.REMAINDER, help="real command after --")
+    solve.set_defaults(handler=_solve)
+
+    paper = sub.add_parser("paper", help="section-local paper authoring façades")
+    paper_sub = paper.add_subparsers(dest="paper_action", required=True)
+    paper_plan = paper_sub.add_parser("plan", help="create paper/00_PAPER_PLAN.md when absent")
+    _add_common(paper_plan)
+    paper_plan.set_defaults(handler=_paper)
+    for action, help_text in (("write", "scaffold exactly one section for drafting"), ("review", "scaffold exactly one section for semantic review")):
+        section = paper_sub.add_parser(action, help=help_text)
+        _add_common(section)
+        section.add_argument("section")
+        section.set_defaults(handler=_paper)
+
+    figure = sub.add_parser("figure", help="create a figure brief and route it to the appropriate tool family")
+    _add_common(figure)
+    figure.add_argument("figure_id")
+    figure.add_argument("--kind", choices=("auto", "data", "diagram", "illustration"), default="auto")
+    figure.add_argument("--semantic-type")
+    figure.add_argument("--diagram-backend", choices=("auto", "pptx", "drawio"), default="auto")
+    figure.add_argument("--pptx-reference", help="use one inspected PPTX reference id")
+    figure.add_argument("--prepare-pptx", action="store_true", help="copy the selected PPTX reference into the figure directory without overwriting an existing copy")
+    figure.add_argument("--fallback-reason", help="record why the explicit Draw.io fallback is needed")
+    figure.set_defaults(handler=_figure)
+
+    context = sub.add_parser("context", help="show the minimal stage-local context plan")
+    _add_common(context)
+    context.add_argument("--stage", required=True, help="research, model, solve, or paper:<section>")
+    context.set_defaults(handler=_context)
+
+    submit = sub.add_parser("submit", help="thin submission-facing façade")
+    submit_sub = submit.add_subparsers(dest="submit_action", required=True)
+    submit_check = submit_sub.add_parser("check", help="dispatch the existing factual S1 checker")
+    _add_common(submit_check)
+    submit_check.add_argument("--manifest", default=None)
+    submit_check.add_argument("--strict", action="store_true")
+    submit_check.set_defaults(handler=_submit_check)
+
     ai = sub.add_parser("ai", help="declare or record AI usage in the v2 control manifest")
     ai_sub = ai.add_subparsers(dest="ai_action", required=True)
 
@@ -746,6 +983,8 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--output-dir")
     migrate.add_argument("--no-write", action="store_true")
     migrate.set_defaults(handler=_migrate)
+    migrate.add_argument("--layout", choices=("hidden",), help="plan or apply a v2 control-state relocation into .harness/state")
+    migrate.add_argument("--apply", action="store_true", help="apply --layout hidden after inspecting its default dry-run report")
     return parser
 
 
@@ -760,6 +999,15 @@ def _status(args: argparse.Namespace) -> int:
 
 def _migrate(args: argparse.Namespace) -> int:
     root = _project(args)
+    if args.layout:
+        if args.manifest or args.output_dir or args.no_write:
+            raise ValueError("--layout hidden cannot be combined with v1 migration flags")
+        report = migrate_flat_control_state_to_hidden(root, apply=args.apply)
+        human = "hidden control-state migration applied" if args.apply else "hidden control-state migration plan ready; rerun with --apply to move state"
+        _emit(report, machine=args.json, human=human)
+        return 0
+    if args.apply:
+        raise ValueError("--apply requires --layout hidden")
     command = [sys.executable, str(SCRIPT_DIR / "migrate_v1_to_v2.py"), "--project", str(root)]
     if args.manifest:
         command.extend(["--manifest", args.manifest])
@@ -773,6 +1021,7 @@ def _migrate(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_utf8_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

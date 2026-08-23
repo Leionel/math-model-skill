@@ -33,10 +33,27 @@ harness --help
 references、assets 和模板打入可独立分发的 wheel。发布型 wheel 属未来平台化
 范围，不能用一次 `pip install .` 的成功替代资源完整性验证。
 
-`init` 只写 v2 的四个最小文件：`competition_profile.json`、
-`run_manifest.json`、`artifact_dag.json`、`run_index.json`。它不创建几十个
-空 JSON，也不生成不存在的 model、result、paper 或 receipt。新项目会停在
-M1，直到用户提供真实题面、数据边界、模型合同、验证计划和人工确认。
+`init` 只写四个最小 **machine-state** 文件：`competition_profile.json`、
+`run_manifest.json`、`artifact_dag.json`、`run_index.json`。它不创建几十个空
+JSON，也不生成不存在的 model、result、paper 或 receipt。同时它只在缺失时
+建立作者工作面：`00_PROJECT_BRIEF.md`、`01_RESEARCH_NOTES.md`、
+`02_MODEL_DECISION.md`、`03_SOLUTION_REPORT.md`、`paper/00_PAPER_PLAN.md`
+和空的 `.harness/` 分层目录；这些是待填写的工作文档，不是已经完成的研究。
+新项目会停在 M1，直到用户提供真实题面、数据边界、模型合同、验证计划和人工确认。
+
+### 可选：迁移 v2 control state 到隐藏目录
+
+为保留旧脚本兼容性，`init` 目前仍从根目录建立这四个控制文件。已有 v2 项目可先
+生成只读迁移计划，再显式执行移动：
+
+```powershell
+python scripts/harness.py migrate --project C:\work\math-q1 --layout hidden --json
+python scripts/harness.py migrate --project C:\work\math-q1 --layout hidden --apply --json
+```
+
+它只移动并重写这四份 mutable control document 的内部路径；不会改写 receipts、冻结
+结果、evidence 或作者文档。迁移完成后根目录不能残留同名控制文件，避免双真源；
+`status`、`prepare`、`run`、`review` 与 `model --compile` 会自动解析 `.harness/state/`。
 
 `init` 还把 AI 使用状态设为 `unknown`。它不会根据空数组猜测“未使用”。由人
 明确确认未使用时运行：
@@ -49,11 +66,36 @@ python scripts/harness.py ai confirm-none --project C:\work\math-q1 `
 使用过外部 AI 时，每次用 `harness ai record` 登记工具、模型、阶段、用途、交互
 记录、采纳方式、人工修改和核验方式。Harness 自己通过 `--backend-cmd` 触发的
 review 会自动登记为 `pending`，人审后运行 `harness ai verify --usage-id ...`。
-`record` / `verify` / `confirm-none` 会同步刷新 `AI_USAGE_LEDGER.md`。
+`record` / `verify` / `confirm-none` 会同步刷新
+`.harness/views/AI_USAGE_LEDGER.md`。
 `prepare S1` 前状态必须从 `unknown` 解析为 `none` 或 `used`；未知状态或未完成人工
 核验的自动记录会阻断正式 Gate。
 
-## Authoring Plane：给人和 Agent 看的确定性投影
+## Human Working Surface：先写研究，再投影机器状态
+
+作者和 Agent 日常只需要阅读根目录的 `00_PROJECT_BRIEF.md`、
+`01_RESEARCH_NOTES.md`、`02_MODEL_DECISION.md`、`03_SOLUTION_REPORT.md`，
+以及 `paper/` 与 `figures/`。它们不会被 `prepare` 覆盖。需要 JSON 消费者时，
+将明确的 YAML source block 编译为 IR，例如：
+
+```powershell
+python scripts/harness.py research --project C:\work\math-q1 --json
+python scripts/harness.py model --project C:\work\math-q1 --json
+python scripts/harness.py model --project C:\work\math-q1 --compile --json
+python scripts/harness.py solve --project C:\work\math-q1 --stage smoke -- python model.py
+python scripts/harness.py paper write q1 --project C:\work\math-q1 --json
+python scripts/harness.py figure FIG-01 --semantic-type workflow --prepare-pptx --project C:\work\math-q1 --json
+python scripts/harness.py context --stage paper:q1 --project C:\work\math-q1 --json
+```
+
+`model --compile` creates validated JSON IR only; it does not pass M1. `solve`
+without a command reports that no computation ran. Section commands scaffold
+only the named section. The figure router selects a locally inspected PPTX
+source slide for conceptual diagrams and can stage a non-overwriting editable
+copy; use `--diagram-backend drawio` only for an explicit native-XML fallback.
+Data figures remain deterministic Python, and illustrations use image generation.
+
+## Machine Views：给人核对的确定性投影
 
 ```powershell
 python scripts/harness.py prepare M1 --project C:\work\math-q1 --json
@@ -62,9 +104,9 @@ python scripts/harness.py prepare W2 --project C:\work\math-q1 --json
 python scripts/harness.py prepare S1 --project C:\work\math-q1 --json
 ```
 
-这些命令生成或刷新 `MODELING_PLAN.md`、`PAPER_OUTLINE.md`、
-`PROJECT_BRIEF.md`、`APPENDIX_PLAN.md`、`AI_USAGE_LEDGER.md` 和
-`SUBMISSION_CHECKLIST.md`。每份文档都列出源文件 SHA-256，并明确自己只是
+这些命令在 `.harness/views/` 中生成或刷新 `M1_STATE.md`、`W1_STATE.md`、
+`W2_STATE.md`、`PROJECT_BRIEF.md`、`APPENDIX_PLAN.md`、`AI_USAGE_LEDGER.md`
+和 `SUBMISSION_STATE.md`。每份文档都列出源文件 SHA-256，并明确自己只是
 projection；手改 Markdown 不会让 Gate 通过。`prepare S1` 只创建 mutable
 `submission/staging/` 与 disclosure draft，不复制到 `submission/final/`、
 不上传，也不声称 submission ready。
@@ -112,18 +154,18 @@ bundle、工作目录、receipt 与报告的绑定；它不是 OS 级沙箱。su
 
 ## 给指挥 Agent 的可复制 Prompt
 
-先替换开头 5 个变量，再把整段交给 Codex、Claude 或其他执行 Agent。Harness
-目录与比赛项目目录必须分开；同一上下文里的作者自审只能标为 L0，不能冒充
-fresh reviewer。
+先替换开头 5 个变量，再把整段交给 Codex、Claude 或其他执行 Agent。`PROJECT_ROOT`
+必须是当前赛题的独立绝对路径；Harness 目录与比赛项目目录必须分开。同一上下文
+里的作者自审只能标为 L0，不能冒充 fresh reviewer。
 
 ```text
 你要使用现有 Math Modeling Evidence Harness 完成一次证据约束的数模任务。
 
 固定参数：
 - HARNESS_ROOT = D:\Projects\随便做做\math-modeling-skill-sion
-- PROJECT_ROOT = D:\Competitions\当前赛题
-- COMPETITION = cumcm            # 可改为 mcm_icm / apmcm
-- PRESET = research              # sprint / research / submission
+- PROJECT_ROOT = 当前赛题的绝对路径
+- COMPETITION = mcm_icm           # 可改为 mcm_icm / apmcm
+- PRESET = submission
 - INPUTS = 题面、附件数据及用户给定参考资料的绝对路径
 
 执行规则：
@@ -134,26 +176,49 @@ fresh reviewer。
    的代码、schema 或测试。
 3. 先显式切换到 Harness 根目录：
    Set-Location "HARNESS_ROOT"
-   若 "PROJECT_ROOT\run_manifest.json" 不存在，先运行：
+   若 "PROJECT_ROOT\run_manifest.json" 与 "PROJECT_ROOT\.harness\state\run_manifest.json"
+   都不存在，先运行：
    python scripts\harness.py init --project "PROJECT_ROOT" --competition COMPETITION --preset PRESET --json
    然后始终运行：
    python scripts\harness.py doctor --project "PROJECT_ROOT" --offline --json
    python scripts\harness.py status --project "PROJECT_ROOT" --json
-   已初始化项目的 doctor/status 非零表示真实阻断；不要吞掉退出码。
+   已初始化项目的 doctor/status 非零表示真实阻断；不要吞掉退出码。若需迁移旧
+   v2 control state，必须先运行不带 `--apply` 的迁移计划，再取得明确授权执行。
 4. 严格按 S0 -> M1 -> P1 -> P2 -> W1 -> W2 -> S1 -> F1 推进。每次先读
    status 的 first blocker，只修当前 blocker；不得通过手改 manifest、receipt、
    hash、DAG freshness、review verdict 或 Gate 状态来跳关。
-   在 M1/W1/W2/S1 人审前运行对应的 `harness prepare <STAGE>`，优先阅读
-   PROJECT_BRIEF 和阶段投影；这些 Markdown 只能帮助审阅，不能作为 PASS 证据。
-5. 遇到缺失题面/数据、官方规则未确认、命令 FAIL/ERROR、pending human
+   在 M1/W1/W2/S1 人审前运行对应的 `python scripts\harness.py prepare <STAGE> --project "PROJECT_ROOT" --json`，
+   优先阅读 `.harness/views/PROJECT_BRIEF.md` 和阶段投影；这些 Markdown 只能帮助审阅，不能作为 PASS 证据。
+   研究和写作使用作者工作面，需机器消费时才编译或运行，并始终绑定同一 project root：
+   `python scripts\harness.py research --project "PROJECT_ROOT" --json`、
+   `python scripts\harness.py context --stage research --project "PROJECT_ROOT" --json`、
+   `python scripts\harness.py model --project "PROJECT_ROOT" --json`、
+   `python scripts\harness.py model --project "PROJECT_ROOT" --compile --json`、
+   `python scripts\harness.py solve --project "PROJECT_ROOT" --stage smoke -- <真实命令>`、
+   `python scripts\harness.py paper plan --project "PROJECT_ROOT" --json`、
+   `python scripts\harness.py paper write <section> --project "PROJECT_ROOT" --json` 和
+   `python scripts\harness.py context --stage paper:<section> --project "PROJECT_ROOT" --json`。
+   `model --compile` 只生成经校验的 JSON IR，不等于 M1 通过；没有真实命令的
+   `solve` 不得声称完成计算。
+5. 概念流程图/框架图默认走 PPTX：先用
+   `python scripts\harness.py figure FIG-01 --semantic-type workflow --prepare-pptx --project "PROJECT_ROOT" --json`
+   选择并复制仓库内已检查的参考页，再在
+   `PROJECT_ROOT\figures\FIG-01\FIG-01.pptx` 中编辑，导出并做最终纸面尺寸审查。
+   选择前先阅读 `assets\pptx_workflow\README.md` 的逐页结构/预览 catalog；如有新
+   deck，先提取每页的形状、连接关系、文字层级并生成预览，不得只凭文件名选页。
+   不得照搬参考 deck 的
+   题目文字、数据或结论。Draw.io 只在明确指定 `--diagram-backend drawio` 并说明
+   fallback 理由时使用。数据图和结果图仍必须用真实数据的确定性绘图生成；PPTX
+   图文件本身不产生 claim、receipt 或 Gate 结果。
+6. 遇到缺失题面/数据、官方规则未确认、命令 FAIL/ERROR、pending human
    checkpoint、哈希漂移或证据不足，立即停止下游阶段并报告。不得编造数据、
    文献、运行结果、最优性、因果解释、获奖概率或测试通过状态。
-6. 所有模型/代码结论必须走真实运行与 receipt；关键数字必须能从 paper claim
+7. 所有模型/代码结论必须走真实运行与 receipt；关键数字必须能从 paper claim
    反向追到 evidence_registry -> frozen_results -> receipt/code -> raw data。
    frozen artifact 如需改变，回到上游 Gate 生成新版本，不得原地改写。
-7. W2 的 review 命令会先运行 deterministic QA；只有 QA 通过才 dispatch reviewer：
-   - 同上下文自审：运行 harness review 获取 routing instructions，按
-     review_report.schema.json 产出 L0 报告，再运行 --recheck；不得声称独立。
+8. W2 的 review 命令会先运行 deterministic QA；只有 QA 通过才 dispatch reviewer：
+   - 同上下文自审：运行 `python scripts\harness.py review --project "PROJECT_ROOT" --json` 获取 routing instructions，按
+     review_report.schema.json 产出 L0 报告，再运行 `python scripts\harness.py review --project "PROJECT_ROOT" --recheck --json`；不得声称独立。
    - 真正 fresh review：只有在独立新上下文/模型 backend 已提供时，才运行
      python scripts\harness.py review --project "PROJECT_ROOT" --fresh
        --backend-cmd "<独立 reviewer 命令>" --ai-tool-name "<工具>"
@@ -161,14 +226,18 @@ fresh reviewer。
    `--fresh` 绑定 bundle/cwd/receipt/report，但不是 OS 沙箱。submission 至少
    需要一个 current L1+ 或人工 L3 报告。open blocker/high/medium 未解决时
    不得通过 W2；论文改动后旧报告 stale，必须重新审查。
-8. `run_manifest.ai_usage_state` 初始为 unknown。若完全未使用 AI，必须由人运行
-   `harness ai confirm-none`；若使用过外部 AI，必须逐次运行 `harness ai record`
-   并绑定交互记录和人工核验。Harness 触发的 reviewer 会自动写 pending 记录，
-   人审后用 `harness ai verify` 完成核验。不得仅因 ai_usage 为空就写“未使用”。
-9. review evidence current 后，运行：
-   python scripts\harness.py validate --project "PROJECT_ROOT" --strict
-   然后再次运行 status。没有用户明确授权时，不 commit、不 push、不上传，
-   也不执行 Final Freeze。
+9. `run_manifest.ai_usage_state` 初始为 unknown。若完全未使用 AI，必须由人运行
+   `python scripts\harness.py ai confirm-none --project "PROJECT_ROOT" --confirmed-by <role> --reason "<reason>"`。
+   若使用过外部 AI，必须逐次运行 `python scripts\harness.py ai record --project "PROJECT_ROOT"`，完整填写
+   tool/model/provider、stage、purpose、prompt-summary、output-use、human-changes、
+   interaction-record、checked-by-role 和 verification-method，并绑定交互记录和人工核验。
+   Harness 触发的 reviewer 会自动写 pending 记录，人审后运行
+   `python scripts\harness.py ai verify --project "PROJECT_ROOT" --usage-id <usage-id> --checked-by-role <role> --verification-method "<method>" --human-changes "<changes>"` 完成核验。
+   不得仅因 ai_usage 为空就写“未使用”。
+10. review evidence current 后，运行：
+    python scripts\harness.py validate --project "PROJECT_ROOT" --strict
+    然后再次运行 `python scripts\harness.py status --project "PROJECT_ROOT" --json`。没有用户明确授权时，不 commit、不 push、不上传，
+    也不执行 Final Freeze。
 
 最终汇报必须包含：
 - 当前 preset、stage、first blocker、各 Gate 的事实状态；
@@ -176,6 +245,8 @@ fresh reviewer。
 - 新增/更新 artifact 的绝对路径；
 - receipt ID、selected run、frozen result、review report 与关键 hash；
 - 已通过的检查、未通过/未运行的检查、人工待办和剩余风险；
+- 概念图的 PPTX 源页、项目内编辑副本、导出文件和纸面尺寸审查状态；若使用
+  Draw.io，说明 fallback 理由；
 - 明确区分“研究草稿完成”“W2 通过”“submission ready”“F1 已冻结”，
   不得把前一种状态宣传成后一种。
 ```
@@ -184,20 +255,21 @@ fresh reviewer。
 
 ```text
 project-root/
+├── 00_PROJECT_BRIEF.md         # 人类/Agent 的项目工作源
+├── 01_RESEARCH_NOTES.md        # 调研、候选与排除理由
+├── 02_MODEL_DECISION.md        # 模型决策；可显式编译为 JSON IR
+├── 03_SOLUTION_REPORT.md       # 真实运行后的求解和失败记录
 ├── competition_profile.json   # 独立比赛规则合同（seed/unresolved/verified）
 ├── run_manifest.json           # v2 control plane：preset、roots、policy、人审/安全
 ├── artifact_dag.json           # artifact_id、依赖、生命周期、现场 freshness
 ├── run_index.json              # 可重建 projection：receipt IDs 与 selection
-├── PROJECT_BRIEF.md            # 确定性人类投影，不是 Gate 真源
-├── MODELING_PLAN.md             # prepare M1 生成
-├── PAPER_OUTLINE.md             # prepare W1 生成
-├── APPENDIX_PLAN.md             # prepare W1 生成
-├── AI_USAGE_LEDGER.md           # prepare S1 生成
-├── SUBMISSION_CHECKLIST.md      # prepare S1 生成
+├── .harness/
+│   ├── contracts/               # 新编译合同的默认位置
+│   ├── receipts/ evidence/ results/ reports/ indexes/ cache/
+│   └── views/                   # prepare 产生的机器投影，不是作者文档
 ├── receipts/                   # 真实进程生成；不要手写
-├── model_contract.json         # M1 后由项目产生
-├── frozen_results.json         # P2 freeze 后由 producer 产生
-└── paper/                      # W1/W2 论文项目，可与 Harness 分离
+├── figures/                    # 每图先有 brief.md，再选择工具
+└── paper/                      # 包含 00_PAPER_PLAN.md 与 section-local drafts
 ```
 
 三层 ownership 固定如下：
@@ -224,13 +296,17 @@ F1 是不可覆盖交付绑定。详细最低 I/O 见
 [Gate policy](references/workflow/gate_policy.md) 与
 [Review Execution Design](docs/REVIEW_EXECUTION_DESIGN.md)。
 
-概念流程图/框架图支持五种与配色解耦的学术构图 archetype：
-`research_framework`、`computational_pipeline`、`parallel_integration`、
-`method_architecture`、`iterative_optimization`。示例 spec 与原生 `.drawio`
-位于 [`assets/drawio/archetypes`](assets/drawio/archetypes/README.md)。这些样例
-吸收的是第 16 节所列外部项目的构图机制，不复制外部 XML、不引入运行时依赖；
-数据图仍走确定性绘图，图数仍由 evidence coverage 决定。详见
-[`drawio_backend.md`](references/visualization/drawio_backend.md)。
+概念流程图/框架图默认使用仓库内已检查的 PPTX 参考页：
+[`assets/pptx_workflow`](assets/pptx_workflow/README.md)。
+`harness figure ... --prepare-pptx` 会选择参考页并只复制一次源 deck 到
+项目的 `figures/<FIG-ID>/`，后续在 PPTX 内编辑并导出/人审；它不替代
+Figure Contract、source evidence 或最终纸面尺寸检查。
+
+五种 Draw.io archetype（`research_framework`、`computational_pipeline`、
+`parallel_integration`、`method_architecture`、`iterative_optimization`）及其
+[原生 XML 样例](assets/drawio/archetypes/README.md) 保留为明确选择的 fallback，
+适用于需要 native topology/XML QA 的场景。数据图仍走确定性绘图，图数仍由
+evidence coverage 决定。
 
 ## 三个 preset
 

@@ -49,3 +49,29 @@ required_fix / confidence / status。只有 `verdict=pass`
 
 严重度：`blocker` 影响正确性/规则/复现安全；`high` 很可能改变结论可信度；
 `medium` 应在本轮修复或明确接受（accepted_risk 需写明理由）；`low` 只影响润色。
+
+## Prose-semantic pass
+
+For each drafted section, also review reasoning quality rather than repeating
+schema, hash, path, bibliography, or registered-number checks. Report findings
+in the normal `review_report` contract; a section-local `review.md` may be a
+working projection, never a Gate substitute.
+
+Look specifically for:
+
+1. 100–200 word paragraphs that add no mechanism, constraint, result boundary,
+   comparison, or decision;
+2. formula narration that names an equation without explaining what its terms
+   mean or why the relation fits the problem;
+3. figure/table narration that only says what is displayed rather than why the
+   evidence changes the reader's conclusion;
+4. repeated template phrasing such as “为了…/本文…/由此可见…/具有较好…”, where
+   replacing the topic would leave the paragraph unchanged;
+5. a logical jump between paragraphs, an unexplained numerical change, or a
+   circular claim that a model works because it is powerful; and
+6. an observation promoted to mechanism, causal statement, optimality claim,
+   or recommendation without the necessary comparison and boundary.
+
+For every finding, name the exact section/paragraph or figure, why it impairs
+reasoning, and the minimum revision required. Do not emit a synthetic numeric
+score such as `87/100`.

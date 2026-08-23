@@ -153,7 +153,7 @@ class HarnessCliTest(unittest.TestCase):
         manifest = self.read("run_manifest.json")
         self.assertEqual(manifest["ai_usage_state"], "none")
         self.assertEqual(manifest["ai_usage_declaration"]["confirmed_by"], "team-lead")
-        self.assertIn("Declaration state: `none`", (self.project / "AI_USAGE_LEDGER.md").read_text(encoding="utf-8"))
+        self.assertIn("Declaration state: `none`", (self.project / ".harness" / "views" / "AI_USAGE_LEDGER.md").read_text(encoding="utf-8"))
 
         interaction = self.project / "ai_interaction.md"
         interaction.write_text("prompt and response summary\n", encoding="utf-8")
@@ -171,7 +171,7 @@ class HarnessCliTest(unittest.TestCase):
         self.assertEqual(manifest["ai_usage_state"], "used")
         self.assertNotIn("ai_usage_declaration", manifest)
         self.assertEqual(manifest["ai_usage"][0]["interaction_record"]["sha256"], hashlib.sha256(interaction.read_bytes()).hexdigest())
-        self.assertIn("AI-TEST-1", (self.project / "AI_USAGE_LEDGER.md").read_text(encoding="utf-8"))
+        self.assertIn("AI-TEST-1", (self.project / ".harness" / "views" / "AI_USAGE_LEDGER.md").read_text(encoding="utf-8"))
 
     def test_ai_record_is_serialized_and_rejects_external_evidence(self) -> None:
         self.init()
@@ -217,13 +217,13 @@ class HarnessCliTest(unittest.TestCase):
         self.init()
         first = self.run_cli("prepare", "M1", "--project", str(self.project), "--json")
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
-        plan = (self.project / "MODELING_PLAN.md").read_text(encoding="utf-8")
+        plan = (self.project / ".harness" / "views" / "M1_STATE.md").read_text(encoding="utf-8")
         self.assertIn("Generated projection", plan)
         self.assertIn("model_contract` is missing", plan)
-        first_bytes = (self.project / "PROJECT_BRIEF.md").read_bytes()
+        first_bytes = (self.project / ".harness" / "views" / "PROJECT_BRIEF.md").read_bytes()
         second = self.run_cli("prepare", "M1", "--project", str(self.project), "--json")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertEqual(first_bytes, (self.project / "PROJECT_BRIEF.md").read_bytes())
+        self.assertEqual(first_bytes, (self.project / ".harness" / "views" / "PROJECT_BRIEF.md").read_bytes())
 
         s1 = self.run_cli("prepare", "S1", "--project", str(self.project), "--json")
         self.assertEqual(s1.returncode, 0, s1.stdout + s1.stderr)
@@ -232,7 +232,7 @@ class HarnessCliTest(unittest.TestCase):
         self.assertTrue((self.project / "submission" / "staging" / "ai_disclosure" / "AI工具使用详情.md").is_file())
         self.assertTrue((self.project / "submission" / "final").is_dir())
         self.assertFalse(any((self.project / "submission" / "final").iterdir()))
-        checklist = (self.project / "SUBMISSION_CHECKLIST.md").read_text(encoding="utf-8")
+        checklist = (self.project / ".harness" / "views" / "SUBMISSION_STATE.md").read_text(encoding="utf-8")
         self.assertIn("AI usage is explicitly and consistently declared (current: `unknown`)", checklist)
         self.assertIn("does not assert submission readiness", checklist)
 

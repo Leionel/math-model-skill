@@ -27,6 +27,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from _common import load_structured, rel_path, write_json  # noqa: E402
 from profiles.artifact_projection import normalize_run_index  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from project_layout import manifest_policy_ref  # noqa: E402
 
 
 def sha256_file(path: Path) -> str:
@@ -52,12 +53,12 @@ def _read_manifest_schema(path: Path) -> str | None:
     return str(value.get("schema_version")) if isinstance(value, dict) else None
 
 
-def _v2_policy(args: argparse.Namespace, manifest_path: Path | None) -> tuple[str, str]:
+def _v2_policy(args: argparse.Namespace, manifest_path: Path | None, root: Path) -> tuple[str, str]:
     preset = "research"
     rule = args.selection_policy
     if manifest_path is not None:
         try:
-            state = load_runtime_state(manifest_path, project_root=manifest_path.parent, allow_legacy=False)
+            state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
             preset = state.preset
             policy = state.manifest.get("control", {}).get("selection_policy", {})
             if isinstance(policy, dict) and isinstance(policy.get("rule"), str) and policy["rule"].strip():
@@ -99,6 +100,7 @@ def _append_v2_index(
     selected: bool,
     finished_at: str,
     policy_rule: str,
+    policy_path: str,
 ) -> None:
     if index_path.is_file():
         raw = load_structured(index_path)
@@ -134,7 +136,7 @@ def _append_v2_index(
             "selection": {
                 "policy_ref": {
                     "owner": "run_manifest.control",
-                    "path": "run_manifest.json#/control/selection_policy",
+                    "path": policy_path,
                     "version": "2.0",
                 },
                 "selected_receipt_ids": [],
@@ -159,7 +161,7 @@ def _append_v2_index(
         raise ValueError("v2 run_index.selection must be an object")
     selection.setdefault("policy_ref", {
         "owner": "run_manifest.control",
-        "path": "run_manifest.json#/control/selection_policy",
+        "path": policy_path,
         "version": "2.0",
     })
     selected_ids = selection.setdefault("selected_receipt_ids", [])
@@ -174,7 +176,8 @@ def _append_v2_index(
 
 
 def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, argv: list[str]) -> int:
-    mode, policy_rule = _v2_policy(args, manifest_path)
+    mode, policy_rule = _v2_policy(args, manifest_path, root)
+    policy_path = manifest_policy_ref(root, manifest_path) if manifest_path is not None else "run_manifest.json#/control/selection_policy"
     receipt_path = (root / args.receipt).resolve() if not Path(args.receipt).is_absolute() else Path(args.receipt).resolve()
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     if receipt_path.exists():
@@ -248,7 +251,8 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
         index_path = (root / args.index).resolve() if not Path(args.index).is_absolute() else Path(args.index).resolve()
         _append_v2_index(index_path, root=root, run_id=args.run_id, receipt_id=receipt_id,
                           receipt_path=receipt_path, stage=args.stage, selected=selected,
-                          finished_at=finished.isoformat(), policy_rule=policy_rule)
+                           finished_at=finished.isoformat(), policy_rule=policy_rule,
+                           policy_path=policy_path)
     if missing_outputs:
         print(json.dumps({"ok": False, "command_id": command_id, "receipt_id": receipt_id, "exit_code": result.returncode,
                           "receipt": str(receipt_path), "index_entry": bool(args.index),

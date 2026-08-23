@@ -33,6 +33,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import append_ai_usage_record, child_env, load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
+from project_layout import resolve_control_path, resolve_manifest_path  # noqa: E402
 from v2_gate_runtime import _v2_dag_nodes, _v2_role_entries, _v2_role_path  # noqa: E402
 try:  # Package import in tests versus direct script execution.
     from qa.review_evidence import (  # type: ignore  # noqa: E402
@@ -283,7 +284,7 @@ def run_backend_reviewer(
         "--manifest", str(state.manifest_path),
         "--run-id", state.run_id, "--stage", "review",
         "--receipt", rel_path(receipt, root), "--receipt-id", receipt_id,
-        "--index", "run_index.json", "--freeze", "--note", note,
+        "--index", rel_path(state.root_path("run_index", required=True), root), "--freeze", "--note", note,
         "--input", rel_path(bundle_manifest_path, root),
         "--output-artifact", rel_path(report_path, root),
         "--project-root", str(root),
@@ -460,7 +461,7 @@ def quarantine_rejected_report(root: Path, report_path: Path) -> str | None:
 def register_review_report(root: Path, report: dict[str, Any], report_path: Path) -> bool:
     """Append one review_report node to the canonical DAG; idempotent by path."""
 
-    dag_path = root / "artifact_dag.json"
+    dag_path = resolve_control_path(root, "artifact_dag.json")
     if not dag_path.is_file():
         return False
     try:
@@ -562,7 +563,7 @@ def _human(result: dict[str, Any]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", default="run_manifest.json")
+    parser.add_argument("--manifest", default=None)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--semantic", action="store_true", help="run only the semantic critic perspective")
     parser.add_argument("--judge", action="store_true", help="run only the judge lens perspective")
@@ -577,8 +578,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
-    manifest_path = resolve_path(args.manifest, root).resolve()
     try:
+        manifest_path = resolve_manifest_path(root, args.manifest)
         state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
     except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
         print(json.dumps({"ok": False, "errors": [f"v2 manifest resolution failed: {exc}"]}, ensure_ascii=False))
