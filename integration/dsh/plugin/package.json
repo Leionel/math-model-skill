@@ -1,0 +1,22 @@
+{
+  "name": "mm-phase3",
+  "version": "0.1.0",
+  "description": "Math-modeling harness Phase 3 host plugin (static, restart-persistent): contest_checkpoint + harness_freeze_results registered via ctx.tools.register. The Phase 3 panels stay in the dynamic client package (../native/checkpoint.client.js).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

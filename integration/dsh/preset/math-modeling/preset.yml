@@ -1,0 +1,2 @@
+name: 数模模式 Math Modeling
+description: Evidence-bound math-modeling workflow agent (research → model → solve → paper → review → submit) wired to the local Harness MCP read/query facade.

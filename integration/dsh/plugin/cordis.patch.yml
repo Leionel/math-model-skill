@@ -1,0 +1,6 @@
+# mm-phase3 bundle patch: one host row mounting the static Phase 3 plugin.
+# The package's module-level `inject: ['subprocess']` declares the hard
+# dependency; the Loader wires the row into the composition on web restart.
+- insert:
+    - id: mm-phase3
+      name: mm-phase3
