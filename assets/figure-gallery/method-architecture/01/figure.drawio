@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="Electron" modified="" version="26.0.0">
+  <diagram id="page-1" name="Page-1">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="message" value="&lt;div align=&quot;left&quot;&gt;Inputs, predictions, objective, and constraints meet in one optimization core before decision and validation.&lt;/div&gt;" style="shape=text;html=1;align=left;verticalAlign=middle;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=14;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="20" width="1260" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="node-001" value="&lt;div align=&quot;center&quot;&gt;Observed inputs&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#F0F5FA;strokeColor=#386FA4;strokeWidth=1.2;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=0;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=10;" vertex="1" parent="1" tags="harness-node;input;archetype:method_architecture;primitive:input_lane;source-refs:D1">
+          <mxGeometry x="484" y="78" width="176" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="node-002" value="&lt;div align=&quot;center&quot;&gt;Demand predictor&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#EEF3F7;strokeColor=#386FA4;strokeWidth=1.2;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=1;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=10;" vertex="1" parent="1" tags="harness-node;predictor;archetype:method_architecture;primitive:model_block;source-refs:M1">
+          <mxGeometry x="70" y="78" width="244" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="node-003" value="&lt;div align=&quot;center&quot;&gt;Feasibility constraints&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7B8794;strokeWidth=1.2;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=0;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=10;" vertex="1" parent="1" tags="harness-node;constraints;archetype:method_architecture;primitive:stage;source-refs:C1">
+          <mxGeometry x="70" y="198" width="200" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="node-004" value="&lt;div align=&quot;center&quot;&gt;Risk-adjusted objective&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7B8794;strokeWidth=1.2;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=0;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=10;" vertex="1" parent="1" tags="harness-node;objective;archetype:method_architecture;primitive:stage;source-refs:O1">
+          <mxGeometry x="70" y="318" width="200" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="node-005" value="&lt;div align=&quot;center&quot;&gt;&lt;b&gt;Optimization core&lt;/b&gt;&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#EEF3F7;strokeColor=#386FA4;strokeWidth=2.4;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=1;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=12;" vertex="1" parent="1" tags="harness-node;core;archetype:method_architecture;primitive:hero_container;source-refs:M2">
+          <mxGeometry x="500" y="170" width="280" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="node-006" value="&lt;div align=&quot;center&quot;&gt;&lt;b&gt;Decision plan&lt;/b&gt;&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#EAF2F8;strokeColor=#386FA4;strokeWidth=2;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=1;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=10;" vertex="1" parent="1" tags="harness-node;decision;archetype:method_architecture;primitive:output_block;source-refs:R1">
+          <mxGeometry x="906" y="78" width="220" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="node-007" value="&lt;div align=&quot;center&quot;&gt;Replay and sensitivity&lt;/div&gt;" style="whiteSpace=wrap;html=1;fillColor=#F6F7F8;strokeColor=#667085;strokeWidth=1.2;fontColor=#263238;fontFamily=Microsoft YaHei;fontSize=16;fontStyle=0;align=center;verticalAlign=middle;spacing=8;shadow=0;glass=0;rounded=1;arcSize=6;" vertex="1" parent="1" tags="harness-node;validation;archetype:method_architecture;primitive:validation_rail;source-refs:V1">
+          <mxGeometry x="500" y="386" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-001" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#718096;strokeWidth=1.4;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=13;labelBackgroundColor=#FFFFFF;labelBorderColor=none;spacing=4;" edge="1" parent="1" source="node-001" target="node-002" tags="harness-edge;e1;relation:data;source-refs:D1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-002" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#718096;strokeWidth=1.4;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=13;labelBackgroundColor=#FFFFFF;labelBorderColor=none;spacing=4;" edge="1" parent="1" source="node-002" target="node-005" tags="harness-edge;e2;relation:dependency;source-refs:M1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-003" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#718096;strokeWidth=1.4;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=13;labelBackgroundColor=#FFFFFF;labelBorderColor=none;spacing=4;" edge="1" parent="1" source="node-003" target="node-005" tags="harness-edge;e3;relation:dependency;source-refs:C1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-004" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#718096;strokeWidth=1.4;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=13;labelBackgroundColor=#FFFFFF;labelBorderColor=none;spacing=4;" edge="1" parent="1" source="node-004" target="node-005" tags="harness-edge;e4;relation:dependency;source-refs:O1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-005" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#718096;strokeWidth=1.4;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=13;labelBackgroundColor=#FFFFFF;labelBorderColor=none;spacing=4;" edge="1" parent="1" source="node-005" target="node-006" tags="harness-edge;e5;relation:control;source-refs:R1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-006" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#718096;strokeWidth=1.4;fontColor=#667085;fontFamily=Microsoft YaHei;fontSize=13;labelBackgroundColor=#FFFFFF;labelBorderColor=none;spacing=4;" edge="1" parent="1" source="node-005" target="node-007" tags="harness-edge;e6;relation:dependency;source-refs:V1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

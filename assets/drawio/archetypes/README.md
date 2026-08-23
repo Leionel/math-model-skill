@@ -2,7 +2,7 @@
 
 These fixtures are visual-regression inputs for the Harness composition engine. They are **not** fixed XML templates with replaceable labels.
 
-This batch covers native XML, schema, geometry, and deterministic-source regression. SVG/PNG previews are exported with draw.io Desktop when needed; they are not checked in as a substitute for target-size paper review.
+This batch covers native XML, schema, geometry, and deterministic-generator regression. SVG/PNG previews are exported with draw.io Desktop when needed; they are not checked in as a substitute for target-size paper review.
 
 The implementation borrows only the mechanisms identified in section 16 of `docs/drawio_academic_archetype_upgrade_prompt.md`:
 
@@ -23,7 +23,7 @@ Each directory contains:
 
 - `example_spec.json`: semantic source used by the planner;
 - `README.md`: expected composition grammar and review points;
-- `example.drawio`: deterministic native output generated from the spec.
+- `example.drawio`: editable native reference whose graph semantics must match the spec; its geometry may be hand-tuned in Draw.io. The generator itself is checked for byte-determinism separately.
 
 The files are examples and QA fixtures only. Runtime figures must still flow
 from `diagram_spec -> archetype resolver -> composition grammar -> primitive

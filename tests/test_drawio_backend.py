@@ -89,6 +89,15 @@ def archetype_spec(archetype: str, style_profile: str = "academic_minimal") -> d
     return spec
 
 
+def semantic_cell_snapshot(path: Path) -> set[tuple[str | None, ...]]:
+    """Keep editable geometry out of the source-versus-spec contract."""
+    return {
+        tuple(cell.get(key) for key in ("id", "value", "source", "target", "tags"))
+        for cell in ET.parse(path).getroot().findall(".//mxCell")
+        if cell.get("tags", "").startswith("harness-")
+    }
+
+
 class DrawioBackendTest(unittest.TestCase):
     def test_drawio_cli_honors_explicit_override(self) -> None:
         with tempfile.TemporaryDirectory(prefix="drawio-cli-") as temp:
@@ -228,8 +237,14 @@ class DrawioBackendTest(unittest.TestCase):
                     self.assertIn(str(node["node_id"]), tags)
                 with tempfile.TemporaryDirectory(prefix=f"drawio-{name}-") as temp:
                     regenerated = Path(temp) / "example.drawio"
+                    regenerated_again = Path(temp) / "example-again.drawio"
                     write_drawio(spec, regenerated)
-                    self.assertEqual(drawio_path.read_bytes(), regenerated.read_bytes())
+                    write_drawio(spec, regenerated_again)
+                    self.assertEqual(regenerated.read_bytes(), regenerated_again.read_bytes())
+                    self.assertEqual(
+                        semantic_cell_snapshot(drawio_path),
+                        semantic_cell_snapshot(regenerated),
+                    )
 
 
 
