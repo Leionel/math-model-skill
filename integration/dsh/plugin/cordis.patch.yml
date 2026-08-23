@@ -1,6 +1,8 @@
 # mm-phase3 bundle patch: one host row mounting the static Phase 3 plugin.
-# The package's module-level `inject: ['subprocess']` declares the hard
-# dependency; the Loader wires the row into the composition on web restart.
+# The package's module-level `inject: ['subprocess', 'tools']` declares the
+# hard dependencies (subprocess: spawns; tools: ctx.tools.register — the
+# cordis proxy refuses undeclared service property access); the Loader wires
+# the row into the composition on web restart.
 - insert:
     - id: mm-phase3
       name: mm-phase3

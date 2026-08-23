@@ -20,7 +20,13 @@
 //   evaluator, never from here;
 // - failed calls throw (isError) and produce no Deliverables chip.
 export const name = 'mm-phase3'
-export const inject = ['subprocess']
+// Cordis guard: every service accessed as a ctx property must be declared
+// here, or property access throws "cannot get property X without inject".
+// `tools` is the host-plane tool-registry service used below; `subprocess`
+// backs the freeze/hash spawns. userQuestions/sandboxPolicy stay on
+// ctx.get() (guard-free accessor) — they are read-only lookups, and
+// userQuestions is hard-checked manually right after.
+export const inject = ['subprocess', 'tools']
 
 const HARNESS_CLI = 'D:/Projects/随便做做/math-modeling-skill-sion/scripts/harness.py'
 

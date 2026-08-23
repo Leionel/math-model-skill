@@ -78,6 +78,8 @@ Internal checkers（单 Gate 透传之外的原始 QA 输出等）本阶段不�
 
 **持久化部署（2026-08-23 混合方案，已实施）**：机制核查确认 `harness.*`/`host.call` 为动态沙箱专属，静态 profile 插件无法携带面板 RPC（api-remotes 网关能力集构建期写死）。落地混合——静态插件 `integration/dsh/plugin/`（`mm-phase3`，两个工具经 `ctx.tools.register` 注册，canonical ToolDefinition 零依赖；`dsh plugin --profile web add` 已安装进 web profile bundles）＋ 面板保持会话级动态插件；激活需重启 `dsh web`。静态插件验证：`node integration/dsh/plugin/verify-static.cjs tmp/phase3-fixture` 13 项断言通过。详见 `integration/dsh/native/README.md`。
 
+**修复（2026-08-23）**：首次 `dsh web` 加载报 `cannot get property "tools" without inject`——cordis 代理要求一切以属性形式访问的服务都声明进 `inject`，插件只声明了 `['subprocess']` 而在 apply 内访问 `ctx.tools`。修正为 `inject: ['subprocess', 'tools']`（userQuestions/sandboxPolicy 维持 `ctx.get()` 旁路读取不变）；`verify-static.cjs` 增补 inject 断言（现 14 项全过）。profile bundle 直接引用仓库路径，重启即生效，无需重装。
+
 ## 4. 验证命令备忘
 
 ```powershell

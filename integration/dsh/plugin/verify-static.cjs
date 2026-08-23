@@ -61,6 +61,7 @@ async function main() {
   const mod = await import(pathToFileURL(path.join(__dirname, 'lib', 'index.js')).href)
   check('module exports name/inject/apply', mod.name === 'mm-phase3' && Array.isArray(mod.inject) && typeof mod.apply === 'function')
   check('inject declares subprocess', mod.inject.includes('subprocess'))
+  check('inject declares tools (ctx.tools.register needs it)', mod.inject.includes('tools'))
 
   mod.apply(fakeCtx)
   check('registers exactly two tools', tools.size === 2, [...tools.keys()].join(','))
