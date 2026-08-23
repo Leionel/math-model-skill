@@ -69,7 +69,7 @@ class AuthoringPlaneTest(unittest.TestCase):
 
         result = self.run_cli("prepare", "M1", "--project", str(self.project), "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        projection = (self.project / "MODELING_PLAN.md").read_text(encoding="utf-8")
+        projection = (self.project / ".harness" / "views" / "M1_STATE.md").read_text(encoding="utf-8")
         self.assertIn("**UNRESOLVED**", projection)
         self.assertIn("service >= 0.95 ratio", projection)
         self.assertIn("Candidate comparison", projection)
@@ -92,8 +92,8 @@ class AuthoringPlaneTest(unittest.TestCase):
 
         result = self.run_cli("prepare", "W1", "--project", str(self.project), "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        outline = (self.project / "PAPER_OUTLINE.md").read_text(encoding="utf-8")
-        appendix = (self.project / "APPENDIX_PLAN.md").read_text(encoding="utf-8")
+        outline = (self.project / ".harness" / "views" / "W1_STATE.md").read_text(encoding="utf-8")
+        appendix = (self.project / ".harness" / "views" / "APPENDIX_PLAN.md").read_text(encoding="utf-8")
         self.assertIn("MISSING EVIDENCE", outline)
         self.assertIn("D-AI", outline)
         self.assertIn("Remaining evidence gaps", outline)
@@ -145,7 +145,7 @@ class AuthoringPlaneTest(unittest.TestCase):
         self.assertTrue(report["warnings"])
         disclosure = self.project / "submission" / "staging" / "ai_disclosure" / "AI工具使用详情.md"
         self.assertIn("DRAFT BLOCKED", disclosure.read_text(encoding="utf-8"))
-        checklist = (self.project / "SUBMISSION_CHECKLIST.md").read_text(encoding="utf-8")
+        checklist = (self.project / ".harness" / "views" / "SUBMISSION_STATE.md").read_text(encoding="utf-8")
         self.assertIn("[ ] AI usage is explicitly and consistently declared", checklist)
         self.assertIn("submission/final/` is already non-empty", checklist)
 
@@ -166,7 +166,7 @@ class AuthoringPlaneTest(unittest.TestCase):
 
         result = self.run_cli("prepare", "W1", "--project", str(self.project), "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        outline = (self.project / "PAPER_OUTLINE.md").read_text(encoding="utf-8")
+        outline = (self.project / ".harness" / "views" / "W1_STATE.md").read_text(encoding="utf-8")
         self.assertIn("paper_plan` is missing or unreadable", outline)
         self.assertNotIn("stale-paper-plan.json", outline)
 
