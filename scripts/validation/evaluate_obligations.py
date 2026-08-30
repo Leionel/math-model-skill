@@ -12,7 +12,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path, write_json  # noqa: E402
+from qa.validate_contracts import validate_value  # noqa: E402
 from validation.obligations import build_validation_report, file_ref  # noqa: E402
+
+
+VALIDATION_REPORT_SCHEMA = SCRIPT_DIR.parents[1] / "schemas" / "validation_report.schema.json"
 
 
 def main() -> int:
@@ -42,6 +46,9 @@ def main() -> int:
             file_ref(model_path, root),
             file_ref(measurements_path, root),
         )
+        schema_errors = validate_value(report, VALIDATION_REPORT_SCHEMA)
+        if schema_errors:
+            raise ValueError("generated validation report violates schema: " + "; ".join(schema_errors))
         write_json(output_path, report)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

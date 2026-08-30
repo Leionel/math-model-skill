@@ -51,6 +51,7 @@ from ode_system import solve_ode_system, sir_model_deriv
 from metaheuristics import run_genetic_algorithm
 from publication_plots import plot_bar_comparison, generate_latex_figure_snippet
 from check_diagram_spec import audit_diagram_spec
+from generate_drawio import write_drawio
 from problem_decomposer import decompose_problem
 
 
@@ -278,13 +279,6 @@ class EnhancementsTest(unittest.TestCase):
     def test_editable_diagram_spec_supports_vector_and_raster_delivery(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-diagram-spec-") as temp:
             project = Path(temp)
-            (project / "diagram.drawio").write_text(
-                '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>'
-                '<mxCell id="2" value="Input data" parent="1"/>'
-                '<mxCell id="3" value="Model" parent="1"/>'
-                '<mxCell id="4" value="Validated result" parent="1"/></root></mxGraphModel>',
-                encoding="utf-8",
-            )
             (project / "diagram.svg").write_text("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>", encoding="utf-8")
             spec = {
                 "schema_version": "1.0", "diagram_id": "FIG-01", "kind": "overview",
@@ -305,6 +299,7 @@ class EnhancementsTest(unittest.TestCase):
                     {"edge_id": "e2", "from": "model", "to": "result", "relation": "data", "source_refs": ["R1"]},
                 ],
             }
+            write_drawio(spec, project / "diagram.drawio")
             report = audit_diagram_spec(spec, root=project, strict=True, require_reviewed=True)
             self.assertTrue(report["ok"], report)
             spec["delivery_mode"] = "raster_only"

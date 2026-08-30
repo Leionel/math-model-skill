@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import child_env, load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
 from artifact_dag_projector import project_artifact_dag  # noqa: E402
+from qa.smoke_coverage import smoke_coverage_errors  # noqa: E402
 
 def _v2_root_artifacts(state: Any, role: str) -> list[tuple[dict[str, Any], Path]]:
     """Return canonical DAG nodes for a role; manifest artifacts are not read."""
@@ -138,6 +139,7 @@ def _v2_profile_errors(state: Any, *, require_verified: bool = False) -> list[st
 
 _V2_ROLE_ALIASES: dict[str, tuple[str, ...]] = {
     "model_contract": ("model_contract", "model"),
+    "implementation_map": ("implementation_map",),
     "evidence_registry": ("evidence_registry", "evidence"),
     "paper_plan": ("paper_plan",),
     "frozen_results": ("frozen_results", "freeze"),
@@ -448,416 +450,511 @@ def _v2_require_dag_digests(state: Any, roles: tuple[str, ...], errors: list[str
                 errors.append(f"{role} artifact SHA-256 drift: {raw_path}")
 
 
-def _v2_gate(state: Any, gate: str) -> tuple[bool, list[str], list[str], dict[str, Any]]:
-    errors: list[str] = []
-    warnings: list[str] = []
-    evidence: dict[str, Any] = {"manifest": rel_path(state.manifest_path, state.root), "profile": rel_path(state.profile_path, state.root)}
-    capabilities = state.capabilities
+def _v2_checkpoint_required(state: Any, capabilities: Any, gate: str, errors: list[str]) -> None:
+    if not capabilities.require_human_checkpoints:
+        return
+    checkpoints = state.manifest.get("human_checkpoints", [])
+    if not isinstance(checkpoints, list) or not any(
+        isinstance(row, dict)
+        and row.get("stage") == gate
+        and row.get("decision") in {"pass", "confirm"}
+        for row in checkpoints
+    ):
+        errors.append(f"{gate.upper()} requires a confirmed {gate.upper()} human checkpoint")
 
-    def checkpoint_required(stage: str) -> None:
-        if not capabilities.require_human_checkpoints:
-            return
-        checkpoints = state.manifest.get("human_checkpoints", [])
-        if not isinstance(checkpoints, list) or not any(
-            isinstance(row, dict)
-            and row.get("stage") == stage
-            and row.get("decision") in {"pass", "confirm"}
-            for row in checkpoints
-        ):
-            errors.append(f"{gate.upper()} requires a confirmed {stage.upper()} human checkpoint")
 
-    def run_safety_checker() -> None:
-        if not capabilities.require_contest_safety:
-            return
+def _v2_run_safety_checker(state: Any, capabilities: Any, evidence: dict[str, Any], errors: list[str]) -> None:
+    if not capabilities.require_contest_safety:
+        return
+    _v2_run_checker(
+        state,
+        "contest_safety",
+        [
+            str(SCRIPT_DIR / "check_contest_safety.py"),
+            "--project-root", str(state.root),
+            "--manifest", str(state.manifest_path),
+            "--strict",
+        ],
+        evidence,
+        errors,
+    )
+
+
+def _v2_gate_m1(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
+    errors.extend(_v2_profile_errors(state))
+    _, model_contract = _v2_require_role(state, "model_contract", errors)
+    _, evidence_registry = _v2_require_role(state, "evidence_registry", errors)
+    if model_contract is not None and evidence_registry is not None and model_contract.is_file() and evidence_registry.is_file():
+        modeling_args = [
+            str(SCRIPT_DIR / "check_modeling_plan.py"),
+            "--project-root", str(state.root),
+            "--model-contract", str(model_contract),
+            "--evidence-registry", str(evidence_registry),
+            "--strict",
+        ]
+        if state.preset != "sprint":
+            modeling_args.append("--formal")
+        if capabilities.require_scope_contract:
+            modeling_args.append("--require-scope-contract")
+        _v2_run_checker(state, "check_modeling_plan", modeling_args, evidence, errors)
+    if model_contract is not None and model_contract.is_file():
         _v2_run_checker(
             state,
-            "contest_safety",
+            "check_units",
             [
-                str(SCRIPT_DIR / "check_contest_safety.py"),
+                str(SCRIPT_DIR / "check_units.py"),
                 "--project-root", str(state.root),
-                "--manifest", str(state.manifest_path),
+                "--model-contract", str(model_contract),
                 "--strict",
             ],
             evidence,
             errors,
         )
+    dag_path = state.root_path("artifact_dag")
+    if dag_path is not None and dag_path.is_file():
+        _v2_run_checker(
+            state,
+            "check_artifact_dag",
+            [str(SCRIPT_DIR / "check_artifact_dag.py"), "--project-root", str(state.root), "--dag", str(dag_path), "--strict"],
+            evidence,
+            errors,
+        )
+    _v2_checkpoint_required(state, capabilities, "m1", errors)
+    _v2_run_safety_checker(state, capabilities, evidence, errors)
+    evidence["capabilities"] = state.capabilities.to_dict()
 
-    if gate == "m1":
-        errors.extend(_v2_profile_errors(state))
+def _v2_gate_p1(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
+    _, receipts, receipt_errors = _v2_receipt_projection(state)
+    errors.extend(receipt_errors)
+    smoke = [
+        row for row in receipts.values()
+        if row.get("stage") == "smoke"
+        and row.get("run_id") == state.run_id
+        and _v2_receipt_success(row)
+    ]
+    if not smoke:
+        errors.append("P1 requires at least one successful process-captured smoke receipt")
+    evidence["smoke_receipt_ids"] = [row.get("receipt_id") for row in smoke]
+    if capabilities.require_full_evidence_chain and smoke:
+        # Enhanced P1: at least one successful smoke receipt must have
+        # exercised the contracted math. Earlier exploratory receipts may
+        # remain in history; coverage stays bound to the qualifying receipt.
+        contract_path = state.root_path("model_contract")
+        contract = None
+        if contract_path is not None and contract_path.is_file():
+            try:
+                contract = load_structured(contract_path)
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append(f"cannot inspect model_contract for P1 coverage: {exc}")
+        coverage_failures: list[tuple[str, list[str]]] = []
+        qualified_ids: list[str] = []
+        for receipt in smoke:
+            metadata = receipt.get("metadata") if isinstance(receipt.get("metadata"), dict) else {}
+            coverage_errors = smoke_coverage_errors(metadata.get("smoke_coverage"), contract)
+            receipt_id = str(receipt.get("receipt_id"))
+            if coverage_errors:
+                coverage_failures.append((receipt_id, coverage_errors))
+            else:
+                qualified_ids.append(receipt_id)
+        if not qualified_ids:
+            errors.append("P1 has no successful smoke receipt with complete smoke_coverage")
+            for receipt_id, messages in coverage_failures:
+                errors.extend(f"P1 receipt {receipt_id}: {message}" for message in messages)
+        evidence["smoke_coverage_receipt_ids"] = qualified_ids
+
+def _v2_gate_p2(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
+    index, receipts, receipt_errors = _v2_receipt_projection(state)
+    errors.extend(receipt_errors)
+    selected_ids = index.get("selection", {}).get("selected_receipt_ids", []) if isinstance(index, dict) else []
+    if not isinstance(selected_ids, list) or len(selected_ids) != 1:
+        errors.append("P2 requires exactly one selected receipt in the run_index projection")
+        selected_ids = selected_ids if isinstance(selected_ids, list) else []
+    selected = [receipts[str(value)] for value in selected_ids if str(value) in receipts]
+    full = [
+        row for row in selected
+        if row.get("stage") == "full"
+        and row.get("run_id") == state.run_id
+        and _v2_receipt_success(row)
+    ]
+    if len(full) != 1:
+        errors.append("P2 requires exactly one selected successful full receipt")
+    if full:
+        selected_receipt = full[0]
+        if selected_receipt.get("selection", {}).get("selected") is not True:
+            errors.append("P2 selected full receipt must carry its own selected execution fact")
+        errors.extend(
+            _v2_io_digest_errors(
+                selected_receipt,
+                root=state.root,
+                owner=f"selected receipt {selected_receipt.get('receipt_id')}",
+                require_hash=bool(capabilities.require_selected_io_hash),
+            )
+        )
+    freeze = [
+        row for row in receipts.values()
+        if row.get("stage") == "freeze"
+        and row.get("run_id") == state.run_id
+        and _v2_receipt_success(row)
+    ]
+    if len(freeze) != 1:
+        errors.append("P2 requires exactly one successful freeze receipt")
+    frozen_nodes = _v2_root_artifacts(state, "frozen_results")
+    if len(frozen_nodes) != 1:
+        errors.append("P2 requires exactly one canonical frozen_results artifact")
+    frozen_value: dict[str, Any] = {}
+    if len(frozen_nodes) == 1:
+        _, frozen_path = frozen_nodes[0]
+        if not frozen_path.is_file():
+            errors.append("canonical frozen_results artifact does not exist")
+        else:
+            try:
+                loaded = load_structured(frozen_path)
+                frozen_value = loaded if isinstance(loaded, dict) else {}
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append(f"cannot inspect frozen_results: {exc}")
+    if frozen_value.get("status") != "frozen":
+        errors.append("P2 requires frozen_results.status=frozen")
+    if frozen_value.get("claimable") is not True or frozen_value.get("validation_verdict") != "PASS":
+        errors.append("P2 requires frozen_results.claimable=true and validation_verdict=PASS")
+    if full and frozen_value.get("run_id") != full[0].get("run_id"):
+        errors.append("frozen_results.run_id does not match selected full receipt")
+    if full:
+        expected_receipt = f"receipt:{full[0].get('receipt_id')}"
+        if frozen_value.get("command") != expected_receipt:
+            errors.append("frozen_results is not bound to the selected full receipt")
+    if len(frozen_nodes) == 1 and len(freeze) == 1:
+        frozen_node, frozen_path = frozen_nodes[0]
+        matching = [
+            ref for ref in freeze[0].get("output_refs", [])
+            if isinstance(ref, dict)
+            and isinstance(ref.get("path"), str)
+            and resolve_path(ref["path"], state.root).resolve() == frozen_path.resolve()
+        ]
+        if len(matching) != 1:
+            errors.append("freeze receipt must bind exactly one canonical frozen_results path")
+        else:
+            expected = matching[0].get("sha256")
+            if capabilities.require_frozen_result_hash:
+                if not isinstance(expected, str):
+                    errors.append("freeze receipt canonical frozen_results output is missing its SHA-256 binding")
+                elif frozen_path.is_file() and sha256_file(frozen_path) != expected:
+                    errors.append("freeze receipt canonical frozen_results SHA-256 drift")
+            elif isinstance(expected, str) and frozen_path.is_file() and sha256_file(frozen_path) != expected:
+                errors.append("freeze receipt canonical frozen_results SHA-256 drift")
+    if capabilities.require_frozen_result_hash:
+        _v2_require_dag_digests(state, ("frozen_results",), errors)
+    if capabilities.require_full_evidence_chain:
+        _, implementation_map = _v2_require_role(state, "implementation_map", errors)
         _, model_contract = _v2_require_role(state, "model_contract", errors)
-        _, evidence_registry = _v2_require_role(state, "evidence_registry", errors)
-        if model_contract is not None and evidence_registry is not None and model_contract.is_file() and evidence_registry.is_file():
-            modeling_args = [
-                str(SCRIPT_DIR / "check_modeling_plan.py"),
+        if (
+            implementation_map is not None
+            and model_contract is not None
+            and implementation_map.is_file()
+            and model_contract.is_file()
+        ):
+            implementation_args = [
+                str(SCRIPT_DIR / "check_implementation_map.py"),
                 "--project-root", str(state.root),
+                "--implementation-map", str(implementation_map),
                 "--model-contract", str(model_contract),
-                "--evidence-registry", str(evidence_registry),
                 "--strict",
             ]
-            if state.preset != "sprint":
-                modeling_args.append("--formal")
-            if capabilities.require_scope_contract:
-                modeling_args.append("--require-scope-contract")
-            _v2_run_checker(state, "check_modeling_plan", modeling_args, evidence, errors)
-        dag_path = state.root_path("artifact_dag")
-        if dag_path is not None and dag_path.is_file():
+            if capabilities.require_strict_math:
+                implementation_args.append("--require-objective-binding")
             _v2_run_checker(
                 state,
-                "check_artifact_dag",
-                [str(SCRIPT_DIR / "check_artifact_dag.py"), "--project-root", str(state.root), "--dag", str(dag_path), "--strict"],
+                "check_implementation_map",
+                implementation_args,
                 evidence,
                 errors,
             )
-        checkpoint_required("m1")
-        run_safety_checker()
-        evidence["capabilities"] = state.capabilities.to_dict()
-    elif gate == "p1":
-        _, receipts, receipt_errors = _v2_receipt_projection(state)
-        errors.extend(receipt_errors)
-        smoke = [
-            row for row in receipts.values()
-            if row.get("stage") == "smoke"
-            and row.get("run_id") == state.run_id
-            and _v2_receipt_success(row)
-        ]
-        if not smoke:
-            errors.append("P1 requires a successful process-captured smoke receipt")
-        evidence["smoke_receipt_ids"] = [row.get("receipt_id") for row in smoke]
-    elif gate == "p2":
-        index, receipts, receipt_errors = _v2_receipt_projection(state)
-        errors.extend(receipt_errors)
-        selected_ids = index.get("selection", {}).get("selected_receipt_ids", []) if isinstance(index, dict) else []
-        if not isinstance(selected_ids, list) or len(selected_ids) != 1:
-            errors.append("P2 requires exactly one selected receipt in the run_index projection")
-            selected_ids = selected_ids if isinstance(selected_ids, list) else []
-        selected = [receipts[str(value)] for value in selected_ids if str(value) in receipts]
-        full = [
-            row for row in selected
-            if row.get("stage") == "full"
-            and row.get("run_id") == state.run_id
-            and _v2_receipt_success(row)
-        ]
-        if len(full) != 1:
-            errors.append("P2 requires exactly one selected successful full receipt")
-        if full:
-            selected_receipt = full[0]
-            if selected_receipt.get("selection", {}).get("selected") is not True:
-                errors.append("P2 selected full receipt must carry its own selected execution fact")
-            errors.extend(
-                _v2_io_digest_errors(
-                    selected_receipt,
-                    root=state.root,
-                    owner=f"selected receipt {selected_receipt.get('receipt_id')}",
-                    require_hash=bool(capabilities.require_selected_io_hash),
-                )
-            )
-        freeze = [
-            row for row in receipts.values()
-            if row.get("stage") == "freeze"
-            and row.get("run_id") == state.run_id
-            and _v2_receipt_success(row)
-        ]
-        if len(freeze) != 1:
-            errors.append("P2 requires exactly one successful freeze receipt")
-        frozen_nodes = _v2_root_artifacts(state, "frozen_results")
-        if len(frozen_nodes) != 1:
-            errors.append("P2 requires exactly one canonical frozen_results artifact")
-        frozen_value: dict[str, Any] = {}
-        if len(frozen_nodes) == 1:
-            _, frozen_path = frozen_nodes[0]
-            if not frozen_path.is_file():
-                errors.append("canonical frozen_results artifact does not exist")
-            else:
-                try:
-                    loaded = load_structured(frozen_path)
-                    frozen_value = loaded if isinstance(loaded, dict) else {}
-                except (OSError, ValueError, TypeError) as exc:
-                    errors.append(f"cannot inspect frozen_results: {exc}")
-        if frozen_value.get("status") != "frozen":
-            errors.append("P2 requires frozen_results.status=frozen")
-        if frozen_value.get("claimable") is not True or frozen_value.get("validation_verdict") != "PASS":
-            errors.append("P2 requires frozen_results.claimable=true and validation_verdict=PASS")
-        if full and frozen_value.get("run_id") != full[0].get("run_id"):
-            errors.append("frozen_results.run_id does not match selected full receipt")
-        if full:
-            expected_receipt = f"receipt:{full[0].get('receipt_id')}"
-            if frozen_value.get("command") != expected_receipt:
-                errors.append("frozen_results is not bound to the selected full receipt")
-        if len(frozen_nodes) == 1 and len(freeze) == 1:
-            frozen_node, frozen_path = frozen_nodes[0]
-            matching = [
-                ref for ref in freeze[0].get("output_refs", [])
-                if isinstance(ref, dict)
-                and isinstance(ref.get("path"), str)
-                and resolve_path(ref["path"], state.root).resolve() == frozen_path.resolve()
-            ]
-            if len(matching) != 1:
-                errors.append("freeze receipt must bind exactly one canonical frozen_results path")
-            else:
-                expected = matching[0].get("sha256")
-                if capabilities.require_frozen_result_hash:
-                    if not isinstance(expected, str):
-                        errors.append("freeze receipt canonical frozen_results output is missing its SHA-256 binding")
-                    elif frozen_path.is_file() and sha256_file(frozen_path) != expected:
-                        errors.append("freeze receipt canonical frozen_results SHA-256 drift")
-                elif isinstance(expected, str) and frozen_path.is_file() and sha256_file(frozen_path) != expected:
-                    errors.append("freeze receipt canonical frozen_results SHA-256 drift")
-        if capabilities.require_frozen_result_hash:
-            _v2_require_dag_digests(state, ("frozen_results",), errors)
-        evidence["selected_full_receipt_ids"] = [row.get("receipt_id") for row in full]
-        evidence["freeze_receipt_ids"] = [row.get("receipt_id") for row in freeze]
-        checkpoint_required("p2")
-    elif gate == "w1":
-        frozen_nodes = _v2_root_artifacts(state, "frozen_results")
-        if len(frozen_nodes) != 1 or not frozen_nodes[0][1].is_file():
-            errors.append("W1 requires a current frozen_results artifact")
-        else:
-            try:
-                frozen = load_structured(frozen_nodes[0][1])
-                if not isinstance(frozen, dict) or frozen.get("claimable") is not True or frozen.get("status") != "frozen":
-                    errors.append("W1 requires a claimable frozen_results.status=frozen artifact")
-            except (OSError, ValueError, TypeError) as exc:
-                errors.append(f"cannot inspect frozen_results: {exc}")
-        paths = _v2_contract_paths(state, errors)
-        if paths is not None:
+        if model_contract is not None and model_contract.is_file():
             _v2_run_checker(
                 state,
-                "check_paper_readiness",
+                "check_units",
                 [
-                    str(SCRIPT_DIR / "check_paper_readiness.py"),
+                    str(SCRIPT_DIR / "check_units.py"),
                     "--project-root", str(state.root),
-                    "--paper-plan", str(paths["paper_plan"]),
-                    "--evidence-registry", str(paths["evidence_registry"]),
-                    "--minimum-stage", "technical_draft",
+                    "--model-contract", str(model_contract),
                     "--strict",
                 ],
                 evidence,
                 errors,
             )
-            _v2_dispatch_contracts(state, evidence, errors)
-        checkpoint_required("w1")
-    elif gate == "w2":
-        dag_path = state.root_path("artifact_dag")
-        if dag_path is None or not dag_path.is_file():
-            errors.append("W2 requires the canonical artifact DAG")
-        else:
-            try:
-                dag = load_structured(dag_path)
-                if not isinstance(dag, dict) or dag.get("schema_version") != "2.0":
-                    errors.append("W2 artifact DAG must be v2")
-                else:
-                    projection, dag_errors, events = project_artifact_dag(dag, project_root=state.root)
-                    errors.extend(dag_errors)
-                    if events:
-                        errors.append("W2 artifact DAG has stale or invalidated artifacts")
-                    evidence["dag_freshness"] = {str(node.get("artifact_id")): node.get("freshness") for node in projection.get("nodes", []) if isinstance(node, dict)}
-            except (OSError, ValueError, TypeError) as exc:
-                errors.append(f"cannot inspect artifact DAG: {exc}")
-        # W2 rechecks frozen truth from bytes/JSON rather than trusting an
-        # upstream ``hash_verified`` or human status field.
-        for _, frozen_path in _v2_root_artifacts(state, "frozen_results"):
-            try:
-                frozen = load_structured(frozen_path)
-                if not isinstance(frozen, dict):
-                    raise ValueError("frozen_results must be an object")
-                if frozen.get("results_sha256") != __import__("hashlib").sha256(
-                    __import__("json").dumps(frozen.get("results", []), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-                ).hexdigest():
-                    errors.append("W2 frozen_results.results_sha256 drift")
-                for field in ("model_contract_snapshot", "source_snapshot", "input_snapshot", "code_snapshot", "validation_snapshot"):
-                    refs = frozen.get(field, []) if field.endswith("_snapshot") and field not in {"model_contract_snapshot", "source_snapshot"} else [frozen.get(field)]
-                    if not isinstance(refs, list):
-                        refs = []
-                    for ref in refs:
-                        if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
-                            continue
-                        path = resolve_path(ref["path"], state.root).resolve()
-                        if not path.is_file() or ref.get("sha256") != sha256_file(path):
-                            errors.append(f"W2 frozen_results {field} SHA-256 drift: {ref.get('path')}")
-            except (OSError, ValueError, TypeError) as exc:
-                errors.append(f"cannot recheck frozen_results evidence: {exc}")
-        contract_paths = _v2_contract_paths(state, errors)
-        required_roles = ("abstract", "paper", "conclusion")
-        role_paths: dict[str, Path] = {}
-        role_nodes: dict[str, dict[str, Any]] = {}
-        for role in required_roles:
-            node, path = _v2_require_role(state, role, errors)
-            if node is not None and path is not None and path.is_file():
-                role_nodes[role] = node
-                role_paths[role] = path
-        writer_node, writer_path = _v2_role_path(state, "writer_package")
-        if capabilities.require_full_evidence_chain:
-            if writer_node is None or writer_path is None or not writer_path.is_file():
-                errors.append("W2 requires canonical writer_package for the selected capability profile")
-            else:
-                role_paths["writer_package"] = writer_path
-        pdf_node, pdf_path = _v2_role_path(state, "pdf")
-        pdf_source_node, pdf_source_path = _v2_role_path(state, "pdf_source")
-        presentation_node, presentation_path = _v2_role_path(state, "presentation_contract")
-        tex_node, tex_path = _v2_role_path(state, "tex")
-        bib_node, bib_path = _v2_role_path(state, "bib")
-        if capabilities.require_strict_math:
-            if pdf_path is None or not pdf_path.is_file():
-                errors.append("W2 strict math requires a canonical final PDF artifact")
-            if pdf_source_path is None or not pdf_source_path.is_file():
-                errors.append("W2 strict math requires a canonical PDF source artifact")
-        if capabilities.require_verified_bibliography and (tex_path is None or bib_path is None):
-            errors.append("W2 requires canonical tex and bib artifacts for verified bibliography")
-        if capabilities.require_canonical_paper_evidence_hash:
-            _v2_require_dag_digests(state, ("paper", "evidence_registry"), errors)
-        if capabilities.require_final_pdf_hash:
-            _v2_require_dag_digests(state, ("pdf",), errors)
-        if contract_paths is not None and len(role_paths) >= 3:
-            temp_output: Path | None = None
-            try:
-                handle, raw_temp = tempfile.mkstemp(prefix="v2-deterministic-qa-", suffix=".json")
-                os.close(handle)
-                Path(raw_temp).unlink(missing_ok=True)
-                temp_output = Path(raw_temp)
-                deterministic_args = [
-                    str(SCRIPT_DIR / "run_deterministic_qa.py"),
-                    "--project-root", str(state.root),
-                    "--model-contract", str(contract_paths["model_contract"]),
-                    "--run-manifest", str(state.manifest_path),
-                    "--frozen-results", str(contract_paths["frozen_results"]),
-                    "--evidence-registry", str(contract_paths["evidence_registry"]),
-                    "--paper-plan", str(contract_paths["paper_plan"]),
-                    "--abstract", str(role_paths["abstract"]),
-                    "--paper", str(role_paths["paper"]),
-                    "--conclusion", str(role_paths["conclusion"]),
-                    "--output", str(temp_output),
-                    "--force",
-                    "--profile", "strict" if capabilities.require_strict_math else ("enhanced" if capabilities.require_full_evidence_chain else "baseline"),
-                ]
-                if "writer_package" in role_paths:
-                    deterministic_args.extend(["--writer-package", str(role_paths["writer_package"])])
-                if dag_path.is_file():
-                    deterministic_args.extend(["--artifact-dag", str(dag_path), "--require-canonical-source"])
-                if capabilities.require_full_evidence_chain:
-                    deterministic_args.extend(["--require-first-draft-coverage", "--require-math-writing-coverage", "--require-derivation-integrity"])
-                if capabilities.require_scope_contract:
-                    deterministic_args.append("--require-scope-contract")
-                if capabilities.require_formula_replay:
-                    deterministic_args.append("--require-formula-replay")
-                if capabilities.require_figure_result_lineage:
-                    deterministic_args.append("--require-figure-lineage")
-                if capabilities.require_strict_math:
-                    deterministic_args.extend([
-                        "--require-replay-bindings", "--require-pdf-math-consistency",
-                        "--require-objective-contract", "--require-inference-role-consistency",
-                    ])
-                    if pdf_path is not None and pdf_path.is_file():
-                        deterministic_args.extend(["--pdf", str(pdf_path)])
-                    if pdf_source_path is not None and pdf_source_path.is_file():
-                        deterministic_args.extend(["--pdf-source", str(pdf_source_path)])
-                if capabilities.require_strict_editorial:
-                    deterministic_args.append("--style-check")
-                if presentation_path is not None and presentation_path.is_file():
-                    deterministic_args.extend(["--presentation-contract", str(presentation_path)])
-                if tex_path is not None and bib_path is not None and tex_path.is_file() and bib_path.is_file():
-                    deterministic_args.extend(["--tex", str(tex_path), "--bib", str(bib_path)])
-                    if capabilities.require_verified_bibliography:
-                        deterministic_args.append("--require-verified-bibliography")
-                _v2_run_checker(
-                    state,
-                    "run_deterministic_qa",
-                    deterministic_args,
-                    evidence,
-                    errors,
-                    report_path=temp_output,
-                )
-            finally:
-                if temp_output is not None:
-                    try:
-                        temp_output.unlink(missing_ok=True)
-                    except OSError:
-                        pass
-        _v2_dispatch_contracts(state, evidence, errors)
-        # Review Execution Plane: W2 consumes real review reports only. The
-        # manifest stores no review status, so nothing is self-reported here.
+    evidence["selected_full_receipt_ids"] = [row.get("receipt_id") for row in full]
+    evidence["freeze_receipt_ids"] = [row.get("receipt_id") for row in freeze]
+    _v2_checkpoint_required(state, capabilities, "p2", errors)
+
+def _v2_gate_w1(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
+    frozen_nodes = _v2_root_artifacts(state, "frozen_results")
+    if len(frozen_nodes) != 1 or not frozen_nodes[0][1].is_file():
+        errors.append("W1 requires a current frozen_results artifact")
+    else:
         try:
-            from qa.review_evidence import evaluate_w2_review  # type: ignore
-
-            review_summary, review_errors = evaluate_w2_review(state.root, state.preset, run_id=state.run_id)
-        except ImportError:  # pragma: no cover - direct-script import edge
-            from review_evidence import evaluate_w2_review  # type: ignore
-
-            review_summary, review_errors = evaluate_w2_review(state.root, state.preset, run_id=state.run_id)
-        errors.extend(review_errors)
-        evidence["review"] = review_summary
-        checkpoint_required("w2")
-        run_safety_checker()
-    elif gate == "s1":
-        errors.extend(_v2_profile_errors(state, require_verified=True))
-        if state.preset != "submission":
-            errors.append("S1 requires preset=submission")
-        if capabilities.require_final_pdf_hash:
-            # check_submission also records the PDF bytes, but the canonical
-            # digest owner remains the DAG.  Recompute it here so a stale or
-            # hand-edited final_pdf node cannot make S1 appear current.
-            _v2_require_dag_digests(state, ("pdf",), errors)
-        checkpoint_required("s1")
-        paper_node, paper_path = _v2_require_role(state, "pdf", errors)
-        if paper_path is not None and paper_path.is_file():
-            page_meta = paper_node.get("metadata", {}) if isinstance(paper_node, dict) else {}
-            if not isinstance(page_meta, dict):
-                page_meta = {}
-            report_handle, report_temp = tempfile.mkstemp(prefix="v2-s1-", suffix=".json")
-            os.close(report_handle)
-            Path(report_temp).unlink(missing_ok=True)
-            report_path = Path(report_temp)
-            submission_args = [
-                str(SCRIPT_DIR / "check_submission.py"),
+            frozen = load_structured(frozen_nodes[0][1])
+            if not isinstance(frozen, dict) or frozen.get("claimable") is not True or frozen.get("status") != "frozen":
+                errors.append("W1 requires a claimable frozen_results.status=frozen artifact")
+        except (OSError, ValueError, TypeError) as exc:
+            errors.append(f"cannot inspect frozen_results: {exc}")
+    paths = _v2_contract_paths(state, errors)
+    if paths is not None:
+        _v2_run_checker(
+            state,
+            "check_paper_readiness",
+            [
+                str(SCRIPT_DIR / "check_paper_readiness.py"),
                 "--project-root", str(state.root),
+                "--paper-plan", str(paths["paper_plan"]),
+                "--evidence-registry", str(paths["evidence_registry"]),
+                "--minimum-stage", "technical_draft",
+                "--strict",
+            ],
+            evidence,
+            errors,
+        )
+        _v2_dispatch_contracts(state, evidence, errors)
+    _v2_checkpoint_required(state, capabilities, "w1", errors)
+
+def _v2_gate_w2(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
+    dag_path = state.root_path("artifact_dag")
+    if dag_path is None or not dag_path.is_file():
+        errors.append("W2 requires the canonical artifact DAG")
+    else:
+        try:
+            dag = load_structured(dag_path)
+            if not isinstance(dag, dict) or dag.get("schema_version") != "2.0":
+                errors.append("W2 artifact DAG must be v2")
+            else:
+                projection, dag_errors, events = project_artifact_dag(dag, project_root=state.root)
+                errors.extend(dag_errors)
+                if events:
+                    errors.append("W2 artifact DAG has stale or invalidated artifacts")
+                evidence["dag_freshness"] = {str(node.get("artifact_id")): node.get("freshness") for node in projection.get("nodes", []) if isinstance(node, dict)}
+        except (OSError, ValueError, TypeError) as exc:
+            errors.append(f"cannot inspect artifact DAG: {exc}")
+    # W2 rechecks frozen truth from bytes/JSON rather than trusting an
+    # upstream ``hash_verified`` or human status field.
+    for _, frozen_path in _v2_root_artifacts(state, "frozen_results"):
+        try:
+            frozen = load_structured(frozen_path)
+            if not isinstance(frozen, dict):
+                raise ValueError("frozen_results must be an object")
+            if frozen.get("results_sha256") != __import__("hashlib").sha256(
+                __import__("json").dumps(frozen.get("results", []), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest():
+                errors.append("W2 frozen_results.results_sha256 drift")
+            for field in ("model_contract_snapshot", "source_snapshot", "input_snapshot", "code_snapshot", "validation_snapshot"):
+                refs = frozen.get(field, []) if field.endswith("_snapshot") and field not in {"model_contract_snapshot", "source_snapshot"} else [frozen.get(field)]
+                if not isinstance(refs, list):
+                    refs = []
+                for ref in refs:
+                    if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
+                        continue
+                    path = resolve_path(ref["path"], state.root).resolve()
+                    if not path.is_file() or ref.get("sha256") != sha256_file(path):
+                        errors.append(f"W2 frozen_results {field} SHA-256 drift: {ref.get('path')}")
+        except (OSError, ValueError, TypeError) as exc:
+            errors.append(f"cannot recheck frozen_results evidence: {exc}")
+    contract_paths = _v2_contract_paths(state, errors)
+    required_roles = ("abstract", "paper", "conclusion")
+    role_paths: dict[str, Path] = {}
+    role_nodes: dict[str, dict[str, Any]] = {}
+    for role in required_roles:
+        node, path = _v2_require_role(state, role, errors)
+        if node is not None and path is not None and path.is_file():
+            role_nodes[role] = node
+            role_paths[role] = path
+    writer_node, writer_path = _v2_role_path(state, "writer_package")
+    if capabilities.require_full_evidence_chain:
+        if writer_node is None or writer_path is None or not writer_path.is_file():
+            errors.append("W2 requires canonical writer_package for the selected capability profile")
+        else:
+            role_paths["writer_package"] = writer_path
+    pdf_node, pdf_path = _v2_role_path(state, "pdf")
+    pdf_source_node, pdf_source_path = _v2_role_path(state, "pdf_source")
+    presentation_node, presentation_path = _v2_role_path(state, "presentation_contract")
+    tex_node, tex_path = _v2_role_path(state, "tex")
+    bib_node, bib_path = _v2_role_path(state, "bib")
+    if capabilities.require_strict_math:
+        if pdf_path is None or not pdf_path.is_file():
+            errors.append("W2 strict math requires a canonical final PDF artifact")
+        if pdf_source_path is None or not pdf_source_path.is_file():
+            errors.append("W2 strict math requires a canonical PDF source artifact")
+    if capabilities.require_verified_bibliography and (tex_path is None or bib_path is None):
+        errors.append("W2 requires canonical tex and bib artifacts for verified bibliography")
+    if capabilities.require_canonical_paper_evidence_hash:
+        _v2_require_dag_digests(state, ("paper", "evidence_registry"), errors)
+    if capabilities.require_final_pdf_hash:
+        _v2_require_dag_digests(state, ("pdf",), errors)
+    if contract_paths is not None and len(role_paths) >= 3:
+        temp_output: Path | None = None
+        try:
+            handle, raw_temp = tempfile.mkstemp(prefix="v2-deterministic-qa-", suffix=".json")
+            os.close(handle)
+            Path(raw_temp).unlink(missing_ok=True)
+            temp_output = Path(raw_temp)
+            deterministic_args = [
+                str(SCRIPT_DIR / "run_deterministic_qa.py"),
+                "--project-root", str(state.root),
+                "--model-contract", str(contract_paths["model_contract"]),
                 "--run-manifest", str(state.manifest_path),
-                "--paper", str(paper_path),
-                "--output", str(report_path),
+                "--frozen-results", str(contract_paths["frozen_results"]),
+                "--evidence-registry", str(contract_paths["evidence_registry"]),
+                "--paper-plan", str(contract_paths["paper_plan"]),
+                "--abstract", str(role_paths["abstract"]),
+                "--paper", str(role_paths["paper"]),
+                "--conclusion", str(role_paths["conclusion"]),
+                "--output", str(temp_output),
                 "--force",
+                "--profile", "strict" if capabilities.require_strict_math else ("enhanced" if capabilities.require_full_evidence_chain else "baseline"),
             ]
-            pages = page_meta.get("pages", page_meta.get("total_pages"))
-            page_method = page_meta.get("page_count_method", page_meta.get("method"))
-            if isinstance(pages, int):
-                submission_args.extend(["--paper-pages", str(pages)])
-            if isinstance(page_method, str):
-                submission_args.extend(["--page-count-method", page_method])
-            ai_pages = page_meta.get("ai_report_pages")
-            if isinstance(ai_pages, int):
-                submission_args.extend(["--ai-report-pages", str(ai_pages)])
-            for _, support_path in _v2_role_entries(state, "support"):
-                if support_path.is_file():
-                    submission_args.extend(["--support", str(support_path)])
-            _, ai_path = _v2_role_path(state, "ai_disclosure")
-            if ai_path is not None and ai_path.is_file():
-                submission_args.extend(["--ai-disclosure", str(ai_path)])
-            try:
-                _v2_run_checker(
-                    state,
-                    "check_submission",
-                    submission_args,
-                    evidence,
-                    errors,
-                    report_path=report_path,
-                )
-            finally:
+            if "writer_package" in role_paths:
+                deterministic_args.extend(["--writer-package", str(role_paths["writer_package"])])
+            if dag_path.is_file():
+                deterministic_args.extend(["--artifact-dag", str(dag_path), "--require-canonical-source"])
+            if capabilities.require_full_evidence_chain:
+                deterministic_args.extend(["--require-first-draft-coverage", "--require-math-writing-coverage", "--require-derivation-integrity"])
+            if capabilities.require_scope_contract:
+                deterministic_args.append("--require-scope-contract")
+            if capabilities.require_formula_replay:
+                deterministic_args.append("--require-formula-replay")
+            if capabilities.require_figure_result_lineage:
+                deterministic_args.append("--require-figure-lineage")
+            if capabilities.require_strict_math:
+                deterministic_args.extend([
+                    "--require-replay-bindings", "--require-pdf-math-consistency",
+                    "--require-objective-contract", "--require-inference-role-consistency",
+                ])
+                if pdf_path is not None and pdf_path.is_file():
+                    deterministic_args.extend(["--pdf", str(pdf_path)])
+                if pdf_source_path is not None and pdf_source_path.is_file():
+                    deterministic_args.extend(["--pdf-source", str(pdf_source_path)])
+            if capabilities.require_strict_editorial:
+                deterministic_args.append("--style-check")
+            if presentation_path is not None and presentation_path.is_file():
+                deterministic_args.extend(["--presentation-contract", str(presentation_path)])
+            if tex_path is not None and bib_path is not None and tex_path.is_file() and bib_path.is_file():
+                deterministic_args.extend(["--tex", str(tex_path), "--bib", str(bib_path)])
+                if capabilities.require_verified_bibliography:
+                    deterministic_args.append("--require-verified-bibliography")
+            _v2_run_checker(
+                state,
+                "run_deterministic_qa",
+                deterministic_args,
+                evidence,
+                errors,
+                report_path=temp_output,
+            )
+        finally:
+            if temp_output is not None:
                 try:
-                    report_path.unlink(missing_ok=True)
+                    temp_output.unlink(missing_ok=True)
                 except OSError:
                     pass
-        submission_path = state.root_path("submission_manifest")
-        if submission_path is not None:
-            if not submission_path.is_file():
-                errors.append("S1 submission_manifest root does not exist")
-            else:
-                _v2_run_checker(
-                    state,
-                    "check_submission_manifest",
-                    [str(SCRIPT_DIR / "check_submission_manifest.py"), "--project-root", str(state.root), "--submission-manifest", str(submission_path)],
-                    evidence,
-                    errors,
-                )
-        run_safety_checker()
-        checkpoints = state.manifest.get("human_checkpoints", [])
-        evidence["profile_status"] = state.profile.get("status")
-    else:
+    _v2_dispatch_contracts(state, evidence, errors)
+    # Review Execution Plane: W2 consumes real review reports only. The
+    # manifest stores no review status, so nothing is self-reported here.
+    try:
+        from qa.review_evidence import evaluate_w2_review  # type: ignore
+
+        review_summary, review_errors = evaluate_w2_review(state.root, state.preset, run_id=state.run_id)
+    except ImportError:  # pragma: no cover - direct-script import edge
+        from review_evidence import evaluate_w2_review  # type: ignore
+
+        review_summary, review_errors = evaluate_w2_review(state.root, state.preset, run_id=state.run_id)
+    errors.extend(review_errors)
+    evidence["review"] = review_summary
+    _v2_checkpoint_required(state, capabilities, "w2", errors)
+    _v2_run_safety_checker(state, capabilities, evidence, errors)
+
+def _v2_gate_s1(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
+    errors.extend(_v2_profile_errors(state, require_verified=True))
+    if state.preset != "submission":
+        errors.append("S1 requires preset=submission")
+    if capabilities.require_final_pdf_hash:
+        # check_submission also records the PDF bytes, but the canonical
+        # digest owner remains the DAG.  Recompute it here so a stale or
+        # hand-edited final_pdf node cannot make S1 appear current.
+        _v2_require_dag_digests(state, ("pdf",), errors)
+    _v2_checkpoint_required(state, capabilities, "s1", errors)
+    paper_node, paper_path = _v2_require_role(state, "pdf", errors)
+    if paper_path is not None and paper_path.is_file():
+        page_meta = paper_node.get("metadata", {}) if isinstance(paper_node, dict) else {}
+        if not isinstance(page_meta, dict):
+            page_meta = {}
+        report_handle, report_temp = tempfile.mkstemp(prefix="v2-s1-", suffix=".json")
+        os.close(report_handle)
+        Path(report_temp).unlink(missing_ok=True)
+        report_path = Path(report_temp)
+        submission_args = [
+            str(SCRIPT_DIR / "check_submission.py"),
+            "--project-root", str(state.root),
+            "--run-manifest", str(state.manifest_path),
+            "--paper", str(paper_path),
+            "--output", str(report_path),
+            "--force",
+        ]
+        pages = page_meta.get("pages", page_meta.get("total_pages"))
+        page_method = page_meta.get("page_count_method", page_meta.get("method"))
+        if isinstance(pages, int):
+            submission_args.extend(["--paper-pages", str(pages)])
+        if isinstance(page_method, str):
+            submission_args.extend(["--page-count-method", page_method])
+        ai_pages = page_meta.get("ai_report_pages")
+        if isinstance(ai_pages, int):
+            submission_args.extend(["--ai-report-pages", str(ai_pages)])
+        for _, support_path in _v2_role_entries(state, "support"):
+            if support_path.is_file():
+                submission_args.extend(["--support", str(support_path)])
+        _, ai_path = _v2_role_path(state, "ai_disclosure")
+        if ai_path is not None and ai_path.is_file():
+            submission_args.extend(["--ai-disclosure", str(ai_path)])
+        try:
+            _v2_run_checker(
+                state,
+                "check_submission",
+                submission_args,
+                evidence,
+                errors,
+                report_path=report_path,
+            )
+        finally:
+            try:
+                report_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    submission_path = state.root_path("submission_manifest")
+    if submission_path is not None:
+        if not submission_path.is_file():
+            errors.append("S1 submission_manifest root does not exist")
+        else:
+            _v2_run_checker(
+                state,
+                "check_submission_manifest",
+                [str(SCRIPT_DIR / "check_submission_manifest.py"), "--project-root", str(state.root), "--submission-manifest", str(submission_path)],
+                evidence,
+                errors,
+            )
+    _v2_run_safety_checker(state, capabilities, evidence, errors)
+    evidence["profile_status"] = state.profile.get("status")
+
+_V2_GATE_BRANCHES = {
+    "m1": _v2_gate_m1,
+    "p1": _v2_gate_p1,
+    "p2": _v2_gate_p2,
+    "w1": _v2_gate_w1,
+    "w2": _v2_gate_w2,
+    "s1": _v2_gate_s1,
+}
+
+
+def _v2_gate(state: Any, gate: str) -> tuple[bool, list[str], list[str], dict[str, Any]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    evidence: dict[str, Any] = {"manifest": rel_path(state.manifest_path, state.root), "profile": rel_path(state.profile_path, state.root)}
+    branch = _V2_GATE_BRANCHES.get(gate)
+    if branch is None:
         errors.append(f"unsupported v2 gate: {gate}")
+    else:
+        branch(state, state.capabilities, errors, evidence)
     return not errors, errors, warnings, evidence

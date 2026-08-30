@@ -214,6 +214,120 @@ class DrawioBackendTest(unittest.TestCase):
         self.assertIn("CARD_WALL_RISK", custom_codes)
         self.assertIn("WEAK_HIERARCHY", custom_codes)
 
+    def test_native_geometry_qa_records_complete_node_mapping(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="drawio-geometry-") as temp:
+            project = Path(temp)
+            spec = sample_spec()
+            spec["source_artifact"] = "figure.drawio"
+            write_drawio(spec, project / "figure.drawio")
+
+            report = audit_diagram_spec(spec, root=project)
+
+            self.assertTrue(report["ok"], report["errors"])
+            geometry = report["source_geometry"]
+            self.assertTrue(geometry["checked"])
+            self.assertEqual(geometry["mapped_nodes"], geometry["expected_nodes"])
+            self.assertEqual(geometry["collisions"], [])
+
+    def test_native_geometry_qa_blocks_node_collision(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="drawio-collision-") as temp:
+            project = Path(temp)
+            spec = sample_spec()
+            spec["source_artifact"] = "figure.drawio"
+            source = project / "figure.drawio"
+            write_drawio(spec, source)
+            tree = ET.parse(source)
+            cells = [
+                cell for cell in tree.getroot().findall(".//mxCell")
+                if cell.get("tags", "").startswith("harness-node;")
+            ]
+            first_geometry = cells[0].find("mxGeometry")
+            second_geometry = cells[1].find("mxGeometry")
+            self.assertIsNotNone(first_geometry)
+            self.assertIsNotNone(second_geometry)
+            second_geometry.attrib.update(first_geometry.attrib)
+            tree.write(source, encoding="utf-8", xml_declaration=True)
+
+            report = audit_diagram_spec(spec, root=project)
+
+            self.assertFalse(report["ok"])
+            self.assertTrue(any("DRAWIO_NODE_COLLISION" in message for message in report["errors"]))
+
+    def test_native_geometry_qa_blocks_undeclared_tagged_node(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="drawio-mapping-") as temp:
+            project = Path(temp)
+            spec = sample_spec()
+            spec["source_artifact"] = "figure.drawio"
+            source = project / "figure.drawio"
+            write_drawio(spec, source)
+            tree = ET.parse(source)
+            graph_root = tree.getroot().find(".//root")
+            self.assertIsNotNone(graph_root)
+            extra = ET.SubElement(
+                graph_root,
+                "mxCell",
+                {"id": "extra", "value": "Extra", "style": "fontSize=16;", "vertex": "1", "parent": "1", "tags": "harness-node;extra"},
+            )
+            ET.SubElement(extra, "mxGeometry", {"x": "10", "y": "100", "width": "80", "height": "40", "as": "geometry"})
+            tree.write(source, encoding="utf-8", xml_declaration=True)
+
+            report = audit_diagram_spec(spec, root=project)
+
+            self.assertFalse(report["ok"])
+            self.assertEqual(report["source_geometry"]["unexpected_nodes"], ["extra"])
+            self.assertTrue(any("undeclared harness-node" in message for message in report["errors"]))
+
+    def test_native_geometry_qa_blocks_out_of_bounds_and_small_font(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="drawio-bounds-") as temp:
+            project = Path(temp)
+            spec = sample_spec()
+            spec["font_size"] = 16
+            spec["source_artifact"] = "figure.drawio"
+            source = project / "figure.drawio"
+            write_drawio(spec, source)
+            tree = ET.parse(source)
+            cell = next(
+                row for row in tree.getroot().findall(".//mxCell")
+                if row.get("tags", "").startswith("harness-node;input;")
+            )
+            geometry = cell.find("mxGeometry")
+            self.assertIsNotNone(geometry)
+            geometry.set("x", "99999")
+            cell.set("style", cell.get("style", "").replace("fontSize=16", "fontSize=7"))
+            tree.write(source, encoding="utf-8", xml_declaration=True)
+
+            report = audit_diagram_spec(spec, root=project)
+
+            self.assertFalse(report["ok"])
+            self.assertTrue(any("DRAWIO_OUT_OF_BOUNDS" in message for message in report["errors"]))
+            self.assertTrue(any("DRAWIO_FONT_SIZE" in message for message in report["errors"]))
+
+    def test_native_geometry_qa_blocks_declared_reading_order_violation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="drawio-order-") as temp:
+            project = Path(temp)
+            spec = sample_spec()
+            spec["source_artifact"] = "figure.drawio"
+            source = project / "figure.drawio"
+            write_drawio(spec, source)
+            tree = ET.parse(source)
+            cells = {
+                row.get("tags", "").split(";")[1]: row
+                for row in tree.getroot().findall(".//mxCell")
+                if row.get("tags", "").startswith("harness-node;")
+            }
+            input_geometry = cells["input"].find("mxGeometry")
+            model_geometry = cells["model"].find("mxGeometry")
+            self.assertIsNotNone(input_geometry)
+            self.assertIsNotNone(model_geometry)
+            input_geometry.set("x", str(float(model_geometry.get("x", "0")) + 500))
+            tree.write(source, encoding="utf-8", xml_declaration=True)
+
+            report = audit_diagram_spec(spec, root=project)
+
+            self.assertFalse(report["ok"])
+            self.assertIn("e1", report["source_geometry"]["misaligned_edges"])
+            self.assertTrue(any("DRAWIO_READING_ORDER" in message for message in report["errors"]))
+
     def test_section_16_archetype_assets_are_schema_valid_native_sources(self) -> None:
         schema = ROOT / "schemas" / "diagram_spec.schema.json"
         asset_root = ROOT / "assets" / "drawio" / "archetypes"

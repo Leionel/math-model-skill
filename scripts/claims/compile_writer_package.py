@@ -16,6 +16,87 @@ from _common import load_structured, rel_path, resolve_path, sha256_file, write_
 from qa.check_paper_readiness import evaluate_readiness  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
 
+PATTERN_LIBRARY: tuple[dict[str, Any], ...] = (
+    {
+        "pattern_id": "problem_framing",
+        "reference": "references/writing/narrative_patterns.md#problem-framing",
+        "purpose": "Turn the task into a decision problem before introducing a model.",
+        "moves": ["task tension", "decision object", "known conditions", "modeling difficulty", "mathematical abstraction", "paper route"],
+    },
+    {
+        "pattern_id": "model_exposition",
+        "reference": "references/writing/narrative_patterns.md#model-exposition",
+        "purpose": "Derive equations from the mechanism and explain their behavior.",
+        "moves": ["real mechanism", "mathematical object", "variables", "core relation", "equation", "constraints", "behavior"],
+    },
+    {
+        "pattern_id": "alternative_rejection",
+        "reference": "references/writing/narrative_patterns.md#alternative-rejection",
+        "purpose": "Explain a model choice as a trade-off rather than a label.",
+        "moves": ["candidate capability", "failure under this task", "repair", "selection cost", "decision rationale"],
+    },
+    {
+        "pattern_id": "result_interpretation",
+        "reference": "references/writing/narrative_patterns.md#result-interpretation",
+        "purpose": "Make results change the reader's decision through CEEL and trade-offs.",
+        "moves": ["claim", "evidence", "explanation", "limitation", "surprise or ranking condition when relevant"],
+    },
+    {
+        "pattern_id": "cross_question_synthesis",
+        "reference": "references/writing/narrative_patterns.md#cross-question-synthesis",
+        "purpose": "Show what carries from one question into the next and why it changes the decision.",
+        "moves": ["previous output", "new decision", "inherited assumption", "new constraint", "downstream consequence"],
+    },
+    {
+        "pattern_id": "model_critique",
+        "reference": "references/writing/narrative_patterns.md#model-critique-and-conclusion",
+        "purpose": "Bind strengths, weaknesses, and extensions to actual evidence.",
+        "moves": ["strength with evidence", "weakness with evidence", "boundary", "specific extension"],
+    },
+)
+
+
+def select_writer_patterns(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project only the positive narrative patterns relevant to this plan."""
+
+    units = [row for row in plan.get("argument_units", []) if isinstance(row, dict)]
+    roles_by_unit = {
+        str(row["unit_id"]): str(row.get("rhetorical_role", ""))
+        for row in units
+        if isinstance(row.get("unit_id"), str)
+    }
+    scopes_by_unit = {
+        str(row["unit_id"]): row.get("scope", {}).get("type")
+        if isinstance(row.get("scope"), dict)
+        else "question"
+        for row in units
+        if isinstance(row.get("unit_id"), str)
+    }
+    role_sets = {
+        "problem_framing": {"problem_tension"},
+        "model_exposition": {"model_choice", "mechanism_derivation", "parameter_evidence"},
+        "alternative_rejection": {"model_choice"},
+        "result_interpretation": {"result_observation", "comparison", "interpretation"},
+        "model_critique": {"validation", "boundary", "recommendation"},
+    }
+    cross_question_units = {
+        unit_id
+        for unit_id, scope_type in scopes_by_unit.items()
+        if scope_type in {"cross_question", "global"}
+    }
+    selected: list[dict[str, Any]] = []
+    for card in PATTERN_LIBRARY:
+        pattern_id = str(card["pattern_id"])
+        unit_ids = [
+            unit_id
+            for unit_id, role in roles_by_unit.items()
+            if role in role_sets.get(pattern_id, set())
+        ]
+        if pattern_id == "cross_question_synthesis":
+            unit_ids.extend(cross_question_units - set(unit_ids))
+        if unit_ids:
+            selected.append({**card, "unit_ids": sorted(unit_ids)})
+    return selected
 
 def file_ref(path: Path, root: Path, integrity_mode: str) -> dict[str, str]:
     ref = {"path": rel_path(path, root)}
@@ -170,10 +251,19 @@ def main() -> int:
             "schema_version": "1.0",
             "run_id": plan["run_id"],
             "central_thesis": plan["central_thesis"],
+            "requirements": plan.get("requirements", []),
+            "sections": plan.get("sections", []),
+            "figures": plan.get("figures", []),
+            "tables": plan.get("tables", []),
+            "terminology": plan.get("terminology", []),
+            "canonical_recommendation": plan.get("canonical_recommendation"),
+            "nonresearch_numeric_literals": plan.get("nonresearch_numeric_literals", []),
+            "depth": plan.get("depth_allocation") or plan.get("depth_budget") or [],
             "precision_policy": plan["precision_policy"],
             "abstract_results": plan["abstract_results"],
             "argument_units": plan["argument_units"],
             "draft_coverage": plan.get("draft_coverage"),
+            "writing_patterns": select_writer_patterns(plan),
             "claims": claims,
             "derived_results": derived_rows,
             "source_snapshots": {
@@ -189,8 +279,11 @@ def main() -> int:
                 "Preserve every claim boundary and support_level.",
                 "Preserve every claim inference_strength; do not turn descriptive or associational evidence into a mechanistic or causal statement.",
                 "Use each argument unit's rhetorical_role as its single primary research action.",
+                "Follow the section order in sections[]; draft decisive results and validation first, then mechanism, then synthesis, and compile the abstract last from abstract_results.",
                 "For every question, write the formulation, results, validation, and interpretation units before compressing prose.",
                 "A short first draft is not acceptable when it omits an equation/derivation, validation evidence, or result boundary planned for that question.",
+                "Use only listed writing_patterns as positive structure guidance; they never extend evidence or boundaries.",
+                "Use the canonical_recommendation text verbatim when stating the recommended option; use each terminology canonical form and avoid forbidden variants.",
             ],
         }
         write_json(output_path, package)

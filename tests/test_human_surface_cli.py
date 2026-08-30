@@ -6,11 +6,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 import yaml
 
 from tests.test_competition_upgrades import base_contract
+from tests import test_p0_harness as p0_harness
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +80,8 @@ class HumanSurfaceCliTest(unittest.TestCase):
         editorial = next(row for row in report["loaded_files"] if row["path"] == "references/writing/editorial_style.md")
         self.assertEqual(editorial["location"], "harness")
         self.assertTrue(editorial["exists"])
+        patterns = next(row for row in report["loaded_files"] if row["path"] == "references/writing/narrative_patterns.md")
+        self.assertEqual(patterns["location"], "harness")
 
     def test_pptx_figure_copy_preserves_existing_edits_and_drawio_is_explicit(self) -> None:
         self.init()
@@ -124,6 +128,78 @@ class HumanSurfaceCliTest(unittest.TestCase):
         self.assertTrue((self.project / report["output"]).is_file())
         manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["roots"]["model_contract"]["path"], report["output"])
+
+    def test_solution_report_compiles_and_registers_implementation_map_root(self) -> None:
+        self.init()
+        digest = "0" * 64
+        mapping = {
+            "schema_version": "1.0",
+            "run_id": "run-1",
+            "model_contract": {"path": ".harness/contracts/model_contract.json", "sha256": digest},
+            "symbols": [{
+                "symbol_id": "S-X", "latex": "x", "meaning": "state", "unit": "1",
+                "scope": "q1", "model_id": "M1",
+            }],
+            "equations": [{
+                "equation_id": "EQ1", "model_id": "M1", "question_id": "q1", "kind": "identity",
+                "latex": "x=x", "symbol_ids": ["S-X"], "contract_item_ids": ["EQ1"],
+                "code_refs": [{"path": "solver.py", "sha256": digest, "symbol": "solve"}],
+                "tests": [{
+                    "test_id": "TEST-EQ1", "path": "test_solver.py", "sha256": digest,
+                    "purpose": "unit", "status": "pass",
+                }],
+                "status": "verified",
+            }],
+            "status": "verified",
+        }
+        source = self.project / "03_SOLUTION_REPORT.md"
+        source.write_text(
+            "# 求解与实现记录\n\n## Machine contract source (optional)\n\n```yaml\n"
+            + yaml.safe_dump({"implementation_map": mapping}, allow_unicode=True, sort_keys=False)
+            + "```\n",
+            encoding="utf-8",
+        )
+        result = self.run_cli("solve", "--compile", "--project", str(self.project), "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["roots"]["implementation_map"]["path"], report["output"])
+
+    def test_paper_plan_compiles_v13_markdown_source_without_overwriting_it(self) -> None:
+        self.init()
+        fixture_project = Path(self.temp.name) / "complete-plan-fixture"
+        fixture_project.mkdir()
+        fixture = p0_harness.P0HarnessTest(methodName="runTest")
+        fixture_paths = fixture.build_fixture(fixture_project)
+        plan = deepcopy(p0_harness.read_json(fixture_paths["plan"]))
+        plan["schema_version"] = "1.3"
+        plan.pop("depth_budget", None)
+        for index, unit in enumerate(plan["argument_units"]):
+            unit.pop("target_words", None)
+            unit["depth_priority"] = {
+                "level": "core" if index == 0 else "supporting",
+                "rationale": "This unit is needed to support the tested argument chain.",
+            }
+
+        source = self.project / "paper" / "00_PAPER_PLAN.md"
+        source.write_text(
+            "# Paper Director Plan\n\n## Machine contract source (optional)\n\n```yaml\n"
+            + yaml.safe_dump({"paper_plan": plan}, allow_unicode=True, sort_keys=False)
+            + "```\n",
+            encoding="utf-8",
+        )
+        source_before = source.read_text(encoding="utf-8")
+
+        result = self.run_cli("paper", "plan", "--compile", "--project", str(self.project), "--json")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["source"], "paper/00_PAPER_PLAN.md")
+        self.assertEqual(report["output"], ".harness/contracts/paper_plan.json")
+        self.assertEqual(source.read_text(encoding="utf-8"), source_before)
+        self.assertEqual(p0_harness.read_json(self.project / report["output"]), plan)
+        manifest = p0_harness.read_json(self.project / "run_manifest.json")
+        self.assertEqual(manifest["roots"]["paper_plan"]["path"], report["output"])
 
     def test_top_level_help_works_with_a_legacy_windows_encoding(self) -> None:
         result = subprocess.run(

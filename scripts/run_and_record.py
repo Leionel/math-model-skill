@@ -24,10 +24,14 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_structured, rel_path, write_json  # noqa: E402
+from _common import load_structured, rel_path, require_within, write_json  # noqa: E402
 from profiles.artifact_projection import normalize_run_index  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from project_layout import manifest_policy_ref  # noqa: E402
+from qa.validate_contracts import validate_value  # noqa: E402
+
+
+COMMAND_RECEIPT_SCHEMA = SCRIPT_DIR.parent / "schemas" / "command_receipt.schema.json"
 
 
 def sha256_file(path: Path) -> str:
@@ -177,17 +181,28 @@ def _append_v2_index(
 
 def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, argv: list[str]) -> int:
     mode, policy_rule = _v2_policy(args, manifest_path, root)
+    coverage_declared = bool(args.covers_model or args.covers_question or args.covers_contract_item)
+    if coverage_declared and args.stage != "smoke":
+        raise ValueError("--covers-* arguments are only valid for a smoke receipt")
+    if coverage_declared and not (args.covers_model and args.covers_question and args.covers_contract_item):
+        raise ValueError(
+            "smoke coverage requires --covers-model, --covers-question, and --covers-contract-item"
+        )
     policy_path = manifest_policy_ref(root, manifest_path) if manifest_path is not None else "run_manifest.json#/control/selection_policy"
-    receipt_path = (root / args.receipt).resolve() if not Path(args.receipt).is_absolute() else Path(args.receipt).resolve()
-    receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    if receipt_path.exists():
-        raise ValueError(f"refusing to overwrite immutable receipt: {receipt_path}")
+    receipt_path = require_within(root / args.receipt if not Path(args.receipt).is_absolute() else Path(args.receipt), root, label="--receipt")
     receipt_id = args.receipt_id or f"REC-{uuid.uuid4().hex[:16]}"
     if re.fullmatch(r"REC-[A-Za-z0-9._-]+", receipt_id) is None:
         raise ValueError("--receipt-id must match REC-[A-Za-z0-9._-]+")
     command_id = f"CMD-{uuid.uuid4().hex[:12]}"
     stdout_path = receipt_path.with_suffix(receipt_path.suffix + ".stdout")
     stderr_path = receipt_path.with_suffix(receipt_path.suffix + ".stderr")
+    occupied = [path for path in (receipt_path, stdout_path, stderr_path) if path.exists()]
+    if occupied:
+        raise ValueError(f"refusing to overwrite immutable receipt file: {occupied[0]}")
+    index_path = None
+    if args.index:
+        raw_index = root / args.index if not Path(args.index).is_absolute() else Path(args.index)
+        index_path = require_within(raw_index, root, label="--index")
     selected = bool(args.selected)
     hash_io = mode == "submission" or (mode == "research" and selected) or bool(args.freeze)
     input_targets: list[Path] = []
@@ -205,7 +220,8 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
     ]
     output_targets: list[tuple[Path, bool]] = []
     for raw in args.output_artifact:
-        path = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+        unresolved = root / raw if not Path(raw).is_absolute() else Path(raw)
+        path = require_within(unresolved, root, label="--output-artifact")
         output_targets.append((path, path.is_file()))
     command_cwd = (root / args.command_cwd).resolve() if args.command_cwd else root
     try:
@@ -214,6 +230,7 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
         raise ValueError("--command-cwd must stay within --project-root") from exc
     if not command_cwd.is_dir():
         raise ValueError(f"--command-cwd is not a directory: {command_cwd}")
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc)
     result = subprocess.run(argv, cwd=str(command_cwd), text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
     finished = datetime.now(timezone.utc)
@@ -239,6 +256,12 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
     }
     if args.note:
         receipt["metadata"]["note"] = args.note
+    if coverage_declared:
+        receipt["metadata"]["smoke_coverage"] = {
+            "model_ids": list(dict.fromkeys(args.covers_model)),
+            "question_ids": list(dict.fromkeys(args.covers_question)),
+            "covered_contract_item_ids": list(dict.fromkeys(args.covers_contract_item)),
+        }
     if hash_io:
         receipt["stdout_sha256"] = sha256_file(stdout_path)
         receipt["stderr_sha256"] = sha256_file(stderr_path)
@@ -246,9 +269,11 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
         receipt["metadata"].update({"outcome": "failed", "failure_reason": "declared_output_missing", "missing_outputs": missing_outputs})
     else:
         receipt["metadata"]["outcome"] = "success" if result.returncode == 0 else "failed"
+    schema_errors = validate_value(receipt, COMMAND_RECEIPT_SCHEMA)
+    if schema_errors:
+        raise ValueError("generated command receipt violates schema: " + "; ".join(schema_errors))
     write_json(receipt_path, receipt)
-    if args.index:
-        index_path = (root / args.index).resolve() if not Path(args.index).is_absolute() else Path(args.index).resolve()
+    if index_path is not None:
         _append_v2_index(index_path, root=root, run_id=args.run_id, receipt_id=receipt_id,
                           receipt_path=receipt_path, stage=args.stage, selected=selected,
                            finished_at=finished.isoformat(), policy_rule=policy_rule,
@@ -266,11 +291,17 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
 def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
     """Historical writer retained solely for v1 compatibility projects."""
 
-    receipt_path = (root / args.receipt).resolve() if not Path(args.receipt).is_absolute() else Path(args.receipt).resolve()
-    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path = require_within(root / args.receipt if not Path(args.receipt).is_absolute() else Path(args.receipt), root, label="--receipt")
     command_id = f"CMD-{uuid.uuid4().hex[:12]}"
     stdout_path = receipt_path.with_suffix(receipt_path.suffix + ".stdout")
     stderr_path = receipt_path.with_suffix(receipt_path.suffix + ".stderr")
+    occupied = [path for path in (receipt_path, stdout_path, stderr_path) if path.exists()]
+    if occupied:
+        raise ValueError(f"refusing to overwrite immutable receipt file: {occupied[0]}")
+    index_path = None
+    if args.index:
+        raw_index = root / args.index if not Path(args.index).is_absolute() else Path(args.index)
+        index_path = require_within(raw_index, root, label="--index")
     input_refs = []
     for raw in args.input:
         path = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
@@ -280,7 +311,8 @@ def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
         input_refs.append({"path": str(path), "sha256": sha256_file(path)})
     output_targets = []
     for raw in args.output_artifact:
-        path = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+        unresolved = root / raw if not Path(raw).is_absolute() else Path(raw)
+        path = require_within(unresolved, root, label="--output-artifact")
         output_targets.append((path, path.is_file()))
     command_cwd = (root / args.command_cwd).resolve() if args.command_cwd else root
     try:
@@ -289,6 +321,7 @@ def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
         raise ValueError("--command-cwd must stay within --project-root") from exc
     if not command_cwd.is_dir():
         raise ValueError(f"--command-cwd is not a directory: {command_cwd}")
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc)
     result = subprocess.run(argv, cwd=str(command_cwd), text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
     finished = datetime.now(timezone.utc)
@@ -311,9 +344,11 @@ def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
         "input_refs": input_refs, "output_refs": output_refs,
         "env_note": "environment inherited from parent process; not captured",
     }
+    schema_errors = validate_value(receipt, COMMAND_RECEIPT_SCHEMA)
+    if schema_errors:
+        raise ValueError("generated command receipt violates schema: " + "; ".join(schema_errors))
     write_json(receipt_path, receipt)
-    if args.index:
-        index_path = (root / args.index).resolve() if not Path(args.index).is_absolute() else Path(args.index).resolve()
+    if index_path is not None:
         if index_path.is_file():
             index = json.loads(index_path.read_text(encoding="utf-8"))
         else:
@@ -349,6 +384,9 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--input", action="append", default=[])
     parser.add_argument("--output-artifact", action="append", default=[])
+    parser.add_argument("--covers-model", action="append", default=[], help="model id exercised by this smoke command")
+    parser.add_argument("--covers-question", action="append", default=[], help="question id exercised by this smoke command")
+    parser.add_argument("--covers-contract-item", action="append", default=[], help="equation, constraint, or validation-obligation id exercised by this smoke command")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--command-cwd", help="child working directory, relative to project root")
     parser.add_argument("argv", nargs=argparse.REMAINDER)

@@ -108,6 +108,15 @@ HUMAN_DOCUMENTS: dict[str, str] = {
 ## 9. 仍未解决的问题
 
 - [ ]
+
+## Machine contract source (optional)
+
+仅当模型合同或研究审阅实际需要结构化调研基础时填写。只写能被下游消费的检索、候选、排除和未决问题；运行 `harness research --compile` 生成 research-basis IR，不能把它当作文献已核验或模型已通过的证据。
+
+```yaml
+# research_basis:
+#   status: draft
+```
 """,
     "02_MODEL_DECISION.md": """# 模型选型报告
 
@@ -233,28 +242,72 @@ Only add a complete contract after this decision is ready for a machine consumer
 ### 12. 可以进入论文的结果
 
 ### 13. 暂时不能进入论文的结果
+## Machine contract source (optional)
+
+仅当现有 implementation-map consumer 需要可追溯的实现映射时填写。这里不复制 receipt、exit code 或冻结结果；真实运行事实继续由 receipt 和 frozen results 负责。运行 `harness solve --compile` 只生成 schema-valid implementation-map IR。
+
+```yaml
+# implementation_map:
+#   schema_version: "1.0"
+```
+
 """,
-    "paper/00_PAPER_PLAN.md": """# 论文规划
+    "paper/00_PAPER_PLAN.md": """# 论文导演稿 / Paper Director Plan
 
-> 这是正文写作的作者规划；`paper_plan.json`（若存在）仍是机器 IR，二者不能互相假装为 Gate 事实。
+> 这是正文写作的作者规划，不是 `paper_plan.json` 的人话副本。先用它决定整篇论文如何回答问题、组织论证和暴露薄弱点；需要机器消费者时，才在末尾填入完整 YAML source block 并编译。`paper_plan.json` 仍是机器 IR，二者都不能假装为 Gate 事实。
 
-## 中心主线
+## 1. 全文中心问题
 
-这篇论文最终要证明什么？
+这篇论文到底要解决什么？
 
-## 每个小问的主要结论
+## 2. 中心结论 / Central Thesis
 
-## 章节安排
+评委读完整篇后最应该记住什么？
 
-## 模型之间的关系
+## 3. 论证主线
 
-## 最关键结果
+Q1 得到什么 → 如何进入 Q2 → Q2 新增什么决策 → 后续问题如何验证或扩展 → 最终建议如何形成。
 
-## 必须出现的验证
+## 4. 小问依赖关系
 
-## Figure / Table Plan
+| 小问 | 输入来自 | 主要输出 | 输出流向 |
+|---|---|---|---|
 
-## Appendix Plan
+## 5. 各章角色
+
+| Section | 为什么存在 | 读完应该相信什么 | 主要证据 |
+|---|---|---|---|
+
+## 6. 模型与候选选择
+
+## 7. 决定性结果
+
+## 8. 必须展示的验证
+
+## 9. Figure / Table Narrative
+
+哪些结论靠文字即可，哪些必须由表或图承担；每个 Figure/Table 在全文叙事中解决什么阅读问题。
+
+## 10. Appendix Strategy
+
+正文保留什么；哪些推导、表格或代码移到附录。
+
+## 11. 当前弱点
+
+- 仍缺什么 evidence：
+- 哪个 claim 还太弱：
+- 哪一节最容易写空：
+
+## Machine contract source (optional)
+
+Machine source 中的每个 `argument_unit` 可用 `depth_priority: {level: core|supporting|compact, rationale: ...}` 标出论证优先级；它服务于叙事取舍，不是前置字数 Gate。
+
+只在 W1/W2 的机器消费者确实需要完整 `paper_plan` IR 时填写。不要直接手写 `.harness/contracts/paper_plan.json`；运行 `harness paper plan --compile` 从本 block 编译。
+
+```yaml
+# paper_plan:
+#   schema_version: "1.3"
+```
 """,
 }
 
@@ -270,6 +323,15 @@ HIDDEN_DIRECTORIES = (
 )
 
 SECTION_TEMPLATE = """# Section Brief
+
+> Soft structural role: {role}. It guides drafting only and does not create a Gate, claim, or fixed question scope.
+
+## Section role
+
+## Argument scope
+
+- Type: question | cross_question | global
+- Question IDs:
 
 ## 本节回答什么问题
 
@@ -344,15 +406,44 @@ Do not copy:
 
 ## Must not include
 
-## Output
+## Output (choose the route declared for this figure)
 
-- editable PPTX copy by default; editable Draw.io only when explicitly selected
-- PDF/SVG/PNG export
-- preview PNG
+- data figure: deterministic plotting script + frozen-result source; never a generated bitmap
+- diagram (editable): PPTX reference copy or Draw.io XML source + PDF/SVG/PNG export + preview PNG
+- illustration: native image generation when the agent exposes it and the competition profile allows it
+  - generation request record (prompt, parameters, DPI) via `harness figure {figure_id} --request-illustration`
+  - collected raster + SHA-256 + AI usage entry + scientific/visual/final-size review before any formal use
+  - it must not carry quantitative claims, formulas, or fabricated labels
+
+## Machine contract source (optional)
+
+仅在 machine diagram producer 确实需要结构化图规格时填写完整 `diagram_spec`；运行 `harness figure {figure_id} --compile`。探索性草图无需补 JSON，且本 block 不会产生 figure claim、receipt 或 Gate 结论。
+
+```yaml
+# diagram_spec:
+#   schema_version: "1.0"
+```
 """
 
-_SECTION_ID = re.compile(r"^(?:q[1-9][0-9]*|validation|discussion|conclusion|appendix|abstract)$", re.IGNORECASE)
+_SECTION_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_SECTION_ROLE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]*$")
 _FIGURE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _normalize_section_id(section_id: str) -> str:
+    normalized = section_id.strip().casefold()
+    if not _SECTION_SLUG.fullmatch(normalized):
+        raise ValueError("section slug must start with a letter or digit and use only letters, digits, dots, underscores, or hyphens")
+    return normalized
+
+
+def _normalize_section_role(role: str | None) -> str | None:
+    if role is None:
+        return None
+    normalized = role.strip()
+    if not normalized or not _SECTION_ROLE.fullmatch(normalized):
+        raise ValueError("section role must use only letters, digits, spaces, underscores, or hyphens")
+    return normalized
 
 
 def _write_if_missing(path: Path, content: str) -> bool:
@@ -381,18 +472,23 @@ def ensure_human_surface(root: Path) -> dict[str, list[str]]:
     return {"created": created, "existing": existing}
 
 
-def ensure_section(root: Path, section_id: str) -> dict[str, Any]:
-    normalized = section_id.casefold()
-    if not _SECTION_ID.fullmatch(normalized):
-        raise ValueError("section must be q<number>, validation, discussion, conclusion, appendix, or abstract")
+def ensure_section(root: Path, section_id: str, *, role: str | None = None) -> dict[str, Any]:
+    normalized = _normalize_section_id(section_id)
+    normalized_role = _normalize_section_role(role)
     ensure_human_surface(root)
     section = root / "paper" / "sections" / normalized
+    brief = SECTION_TEMPLATE.format(role=normalized_role or "unspecified")
     created = [
         name
-        for name, content in (("brief.md", SECTION_TEMPLATE), ("draft.md", DRAFT_TEMPLATE), ("review.md", REVIEW_TEMPLATE))
+        for name, content in (("brief.md", brief), ("draft.md", DRAFT_TEMPLATE), ("review.md", REVIEW_TEMPLATE))
         if _write_if_missing(section / name, content)
     ]
-    return {"section": normalized, "path": str(section), "created": created}
+    return {
+        "section": normalized,
+        "role": normalized_role,
+        "path": str(section),
+        "created": created,
+    }
 
 
 def ensure_figure_brief(root: Path, figure_id: str) -> dict[str, Any]:
@@ -404,12 +500,44 @@ def ensure_figure_brief(root: Path, figure_id: str) -> dict[str, Any]:
     return {"figure_id": figure_id, "path": str(directory), "created": ["brief.md"] if created else []}
 
 
-def _read_contract_source(source: Path) -> dict[str, Any]:
+_MACHINE_SOURCE_HEADING = re.compile(
+    r"^## Machine contract source(?: \(optional\))?\s*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _project_relative(path: Path, root: Path, *, label: str) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"{label} must stay inside the project root") from exc
+
+
+def _resolve_authoring_source(root: Path, source: str | None, default_source: str, *, label: str) -> Path:
+    source_path = resolve_path(source or default_source, root).resolve()
+    _project_relative(source_path, root, label=label)
+    if not source_path.is_file():
+        raise ValueError(f"{label} does not exist: {source_path}")
+    return source_path
+
+
+def _resolve_compiled_output(root: Path, output: str | None, default_output: str, *, label: str) -> Path:
+    output_path = resolve_path(output or default_output, root).resolve()
+    _project_relative(output_path, root, label=label)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def _read_contract_source(source: Path, *, root_key: str, source_label: str) -> dict[str, Any]:
     text = source.read_text(encoding="utf-8")
-    heading = re.search(r"^## Machine contract source \(optional\)\s*$", text, flags=re.MULTILINE)
+    heading = _MACHINE_SOURCE_HEADING.search(text)
     if heading is None:
-        raise ValueError("02_MODEL_DECISION.md is missing the 'Machine contract source (optional)' section")
-    block = re.search(r"```(?:yaml|yml|json)\s*\n(.*?)\n```", text[heading.end():], flags=re.DOTALL | re.IGNORECASE)
+        raise ValueError(f"{source_label} is missing the 'Machine contract source' section")
+    block = re.search(
+        r"```(?:yaml|yml|json)\s*\n(.*?)\n```",
+        text[heading.end():],
+        flags=re.DOTALL | re.IGNORECASE,
+    )
     if block is None:
         raise ValueError("Machine contract source must contain a fenced YAML or JSON block")
     payload = block.group(1)
@@ -418,28 +546,121 @@ def _read_contract_source(source: Path) -> dict[str, Any]:
     try:
         import yaml
     except ImportError as exc:  # pragma: no cover - requirements-dev installs PyYAML
-        raise RuntimeError("model compilation requires PyYAML; install requirements-dev.txt") from exc
+        raise RuntimeError("authoring compilation requires PyYAML; install requirements-dev.txt") from exc
     loaded = yaml.safe_load(payload)
     if not isinstance(loaded, Mapping):
         raise ValueError("Machine contract source must be a YAML object")
-    candidate = loaded.get("model_contract", loaded)
+    candidate = loaded.get(root_key, loaded)
     if not isinstance(candidate, Mapping):
-        raise ValueError("model_contract must be an object")
+        raise ValueError(f"{root_key} must be an object")
     return dict(candidate)
 
 
-def _validate_model_contract(contract: Mapping[str, Any], schema_path: Path) -> None:
+def _validate_contract(
+    contract: Mapping[str, Any],
+    schema_path: Path,
+    *,
+    label: str,
+    schema_ref: str | None = None,
+) -> None:
     try:
         import jsonschema
     except ImportError as exc:  # pragma: no cover - requirements-dev installs jsonschema
-        raise RuntimeError("model compilation requires jsonschema; install requirements-dev.txt") from exc
+        raise RuntimeError("authoring compilation requires jsonschema; install requirements-dev.txt") from exc
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    if schema_ref is not None:
+        definitions = schema.get("$defs")
+        if not isinstance(definitions, Mapping):
+            raise ValueError(f"{schema_path.name} has no definitions for {schema_ref}")
+        schema = {
+            "$schema": schema.get("$schema", "https://json-schema.org/draft/2020-12/schema"),
+            "$defs": definitions,
+            "$ref": schema_ref,
+        }
     validator = jsonschema.Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(dict(contract)), key=lambda error: list(error.absolute_path))
     if errors:
         first = errors[0]
         location = ".".join(str(item) for item in first.absolute_path) or "root"
-        raise ValueError(f"model contract schema validation failed at {location}: {first.message}")
+        raise ValueError(f"{label} schema validation failed at {location}: {first.message}")
+
+
+def _update_manifest_root(root: Path, manifest_path: Path, role: str, output_path: Path) -> str | None:
+    if not manifest_path.is_file():
+        return None
+    manifest = load_structured(manifest_path)
+    if not isinstance(manifest, Mapping):
+        raise ValueError("run_manifest must be an object")
+    updated = dict(manifest)
+    roots = dict(updated.get("roots", {})) if isinstance(updated.get("roots"), Mapping) else {}
+    roots[role] = {"path": _project_relative(output_path, root, label="compiled contract")}
+    updated["roots"] = roots
+    write_json_atomic(manifest_path, updated)
+    return rel_path(manifest_path, root)
+
+
+def _compile_contract(
+    root: Path,
+    *,
+    source: str | None,
+    output: str | None,
+    default_source: str,
+    default_output: str,
+    root_key: str,
+    source_label: str,
+    schema_path: Path,
+    schema_ref: str | None = None,
+) -> tuple[dict[str, Any], Path, Path]:
+    ensure_human_surface(root)
+    source_path = _resolve_authoring_source(root, source, default_source, label=source_label)
+    contract = _read_contract_source(source_path, root_key=root_key, source_label=source_label)
+    _validate_contract(contract, schema_path, label=root_key, schema_ref=schema_ref)
+    output_path = _resolve_compiled_output(root, output, default_output, label="compiled contract")
+    write_json_atomic(output_path, contract)
+    return contract, source_path, output_path
+
+
+def _research_basis_from_source(source_path: Path, schema_path: Path) -> dict[str, Any]:
+    basis = _read_contract_source(
+        source_path,
+        root_key="research_basis",
+        source_label="research notes source",
+    )
+    _validate_contract(
+        basis,
+        schema_path,
+        label="research_basis",
+        schema_ref="#/$defs/research_basis",
+    )
+    return basis
+
+
+def compile_research_basis(
+    root: Path,
+    *,
+    source: str | None,
+    output: str | None,
+    model_schema_path: Path,
+) -> dict[str, Any]:
+    """Compile the optional research-basis block without asserting research facts."""
+
+    _, source_path, output_path = _compile_contract(
+        root,
+        source=source,
+        output=output,
+        default_source="01_RESEARCH_NOTES.md",
+        default_output=".harness/contracts/research_basis.json",
+        root_key="research_basis",
+        source_label="research notes source",
+        schema_path=model_schema_path,
+        schema_ref="#/$defs/research_basis",
+    )
+    return {
+        "source": _project_relative(source_path, root, label="research notes source"),
+        "output": _project_relative(output_path, root, label="compiled research basis"),
+        "compiled": True,
+        "authority_note": "This is planning IR only; it does not verify literature, create evidence, or pass a Gate.",
+    }
 
 
 def compile_model_contract(
@@ -449,38 +670,137 @@ def compile_model_contract(
     output: str | None,
     schema_path: Path,
     manifest_path: Path | None = None,
+    research_source: str | None = None,
 ) -> dict[str, Any]:
-    """Compile the explicit YAML block from the authoring document to JSON IR."""
+    """Compile explicit Markdown/YAML authoring sources to model-contract IR."""
 
     ensure_human_surface(root)
-    source_path = resolve_path(source or "02_MODEL_DECISION.md", root).resolve()
-    if not source_path.is_file():
-        raise ValueError(f"model decision source does not exist: {source_path}")
-    contract = _read_contract_source(source_path)
-    _validate_model_contract(contract, schema_path)
-    manifest_path = manifest_path.resolve() if manifest_path is not None else resolve_manifest_path(root)
-    output_path = resolve_path(output or ".harness/contracts/model_contract.json", root).resolve()
-    try:
-        output_path.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("compiled model contract must stay inside the project root") from exc
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path = _resolve_authoring_source(root, source, "02_MODEL_DECISION.md", label="model decision source")
+    contract = _read_contract_source(source_path, root_key="model_contract", source_label="model decision source")
+    research_path: Path | None = None
+    if research_source is not None:
+        research_path = _resolve_authoring_source(
+            root,
+            research_source,
+            "01_RESEARCH_NOTES.md",
+            label="research notes source",
+        )
+        if "research_basis" in contract:
+            raise ValueError("model contract already contains research_basis; use one Markdown source of truth")
+        contract["research_basis"] = _research_basis_from_source(research_path, schema_path)
+    _validate_contract(contract, schema_path, label="model contract")
+    output_path = _resolve_compiled_output(
+        root,
+        output,
+        ".harness/contracts/model_contract.json",
+        label="compiled model contract",
+    )
     write_json_atomic(output_path, contract)
-    if manifest_path.is_file():
-        manifest = load_structured(manifest_path)
-        if not isinstance(manifest, Mapping):
-            raise ValueError("run_manifest must be an object")
-        updated = dict(manifest)
-        roots = dict(updated.get("roots", {})) if isinstance(updated.get("roots"), Mapping) else {}
-        roots["model_contract"] = {"path": output_path.relative_to(root).as_posix()}
-        updated["roots"] = roots
-        write_json_atomic(manifest_path, updated)
+    active_manifest = manifest_path.resolve() if manifest_path is not None else resolve_manifest_path(root)
+    manifest = _update_manifest_root(root, active_manifest, "model_contract", output_path)
     return {
-        "source": source_path.relative_to(root).as_posix(),
-        "output": output_path.relative_to(root).as_posix(),
+        "source": _project_relative(source_path, root, label="model decision source"),
+        "research_source": (
+            _project_relative(research_path, root, label="research notes source")
+            if research_path is not None
+            else None
+        ),
+        "output": _project_relative(output_path, root, label="compiled model contract"),
         "compiled": True,
-        "manifest": rel_path(manifest_path, root) if manifest_path.is_file() else None,
+        "manifest": manifest,
         "gate_note": "Compilation creates machine IR only; run the existing M1 checker for a factual Gate verdict.",
+    }
+
+
+def compile_paper_plan(
+    root: Path,
+    *,
+    source: str | None,
+    output: str | None,
+    schema_path: Path,
+    manifest_path: Path | None = None,
+) -> dict[str, Any]:
+    """Compile the Paper Director Plan's explicit YAML block to existing W1 IR."""
+
+    _, source_path, output_path = _compile_contract(
+        root,
+        source=source,
+        output=output,
+        default_source="paper/00_PAPER_PLAN.md",
+        default_output=".harness/contracts/paper_plan.json",
+        root_key="paper_plan",
+        source_label="paper plan source",
+        schema_path=schema_path,
+    )
+    active_manifest = manifest_path.resolve() if manifest_path is not None else resolve_manifest_path(root)
+    manifest = _update_manifest_root(root, active_manifest, "paper_plan", output_path)
+    return {
+        "source": _project_relative(source_path, root, label="paper plan source"),
+        "output": _project_relative(output_path, root, label="compiled paper plan"),
+        "compiled": True,
+        "manifest": manifest,
+        "gate_note": "Compilation creates paper-plan IR only; evidence, freshness, human review, and W1/W2 verdicts remain separate.",
+    }
+
+
+def compile_solution_implementation_map(
+    root: Path,
+    *,
+    source: str | None,
+    output: str | None,
+    schema_path: Path,
+    manifest_path: Path | None = None,
+) -> dict[str, Any]:
+    """Compile implementation mapping only; receipts and frozen facts stay authoritative."""
+
+    _, source_path, output_path = _compile_contract(
+        root,
+        source=source,
+        output=output,
+        default_source="03_SOLUTION_REPORT.md",
+        default_output=".harness/contracts/implementation_map.json",
+        root_key="implementation_map",
+        source_label="solution report source",
+        schema_path=schema_path,
+    )
+    active_manifest = manifest_path.resolve() if manifest_path is not None else resolve_manifest_path(root)
+    manifest = _update_manifest_root(root, active_manifest, "implementation_map", output_path)
+    return {
+        "source": _project_relative(source_path, root, label="solution report source"),
+        "output": _project_relative(output_path, root, label="compiled implementation map"),
+        "compiled": True,
+        "manifest": manifest,
+        "authority_note": "This maps implementation intent only; run receipts, selected runs, validation facts, and frozen results are not copied from this document.",
+    }
+
+
+def compile_figure_diagram_spec(
+    root: Path,
+    figure_id: str,
+    *,
+    source: str | None,
+    output: str | None,
+    schema_path: Path,
+) -> dict[str, Any]:
+    """Compile a figure brief only when a structured diagram producer needs it."""
+
+    brief = ensure_figure_brief(root, figure_id)
+    _, source_path, output_path = _compile_contract(
+        root,
+        source=source,
+        output=output,
+        default_source=f"figures/{figure_id}/brief.md",
+        default_output=f".harness/contracts/figures/{figure_id}_diagram_spec.json",
+        root_key="diagram_spec",
+        source_label="figure brief source",
+        schema_path=schema_path,
+    )
+    return {
+        "brief": brief,
+        "source": _project_relative(source_path, root, label="figure brief source"),
+        "output": _project_relative(output_path, root, label="compiled diagram spec"),
+        "compiled": True,
+        "authority_note": "This is a diagram producer input only; it does not create a figure claim, receipt, rendered artifact, or Gate outcome.",
     }
 
 
@@ -503,6 +823,7 @@ def authoring_context(root: Path, stage: str) -> dict[str, Any]:
         rows = [
             ("00_PROJECT_BRIEF.md", "problem scope", True),
             ("01_RESEARCH_NOTES.md", "research findings and rejected methods", True),
+            (".harness/contracts/research_basis.json", "compiled research basis when available", False),
             ("02_MODEL_DECISION.md", "current authoring target", True),
             ("references/research/model_planning.md", "model-selection guidance", True),
         ]
@@ -512,19 +833,24 @@ def authoring_context(root: Path, stage: str) -> dict[str, Any]:
             ("02_MODEL_DECISION.md", "selected-model rationale and failure plan", True),
             (".harness/contracts/model_contract.json", "compiled machine contract when available", False),
             ("03_SOLUTION_REPORT.md", "run/result narrative to update", True),
+            (".harness/contracts/implementation_map.json", "compiled implementation map when available", False),
             ("references/validation/validation_obligations.md", "declared validation duties", True),
         ]
         skipped = ["paper-writing references", "submission references"]
     elif normalized.startswith("paper:"):
-        section = normalized.split(":", 1)[1]
-        if not _SECTION_ID.fullmatch(section):
-            raise ValueError("paper context stage must be paper:<q-number|validation|discussion|conclusion|appendix|abstract>")
+        section = _normalize_section_id(normalized.split(":", 1)[1])
         rows = [
+            ("paper/00_PAPER_PLAN.md", "paper-wide narrative and section role", True),
             (f"paper/sections/{section}/brief.md", "section scope and evidence boundary", True),
             (f"paper/sections/{section}/draft.md", "only draft allowed to change", True),
+            (".harness/reports/writer_package.json", "controlled claim/fact source for formal drafting; prefer it over raw frozen results", False),
+            (f".harness/views/sections/{section}_brief.md", "compiled section Writer Brief projection when a plan exists", False),
+            (".harness/views/WRITING_SPINE.md", "whole-paper argument-chain projection when a plan exists", False),
+            (".harness/contracts/paper_plan.json", "compiled paper plan when available", False),
             (".harness/contracts/model_contract.json", "model definitions when available", False),
-            (".harness/results/frozen_results.json", "claimable results when available", False),
+            (".harness/results/frozen_results.json", "frozen numbers; only consult when the writer package is absent", False),
             ("references/writing/editorial_style.md", "section-writing guidance", True),
+            ("references/writing/narrative_patterns.md", "positive narrative patterns for the current argument", True),
         ]
         skipped = ["other paper sections", "full Harness repository", "submission references"]
     else:

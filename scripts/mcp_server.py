@@ -30,6 +30,8 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
+from redaction import redact_text
+
 HARNESS_REPO = Path(__file__).resolve().parent.parent
 HARNESS_CLI = HARNESS_REPO / "scripts" / "harness.py"
 ALLOWED_ROOTS_ENV = "MATH_HARNESS_ALLOWED_ROOTS"
@@ -153,7 +155,13 @@ def _build_submission_check(arguments: Mapping[str, Any]) -> list[str]:
 
 
 def _build_doctor(arguments: Mapping[str, Any]) -> list[str]:
-    return ["doctor", "--offline"]
+    argv = ["doctor", "--offline"]
+    stage = arguments.get("stage")
+    if stage is not None:
+        if stage not in ("S0", "M1", "P1", "P2", "W1", "W2", "S1", "F1"):
+            raise ToolCallError("stage must be one of S0 / M1 / P1 / P2 / W1 / W2 / S1 / F1")
+        argv.extend(["--stage", str(stage)])
+    return argv
 
 
 def _build_ai_status(arguments: Mapping[str, Any]) -> list[str]:
@@ -206,7 +214,7 @@ FACADE_TOOLS: list[dict[str, Any]] = [
     _tool(
         "doctor",
         "Check Python, optional dependencies, schemas, and critical files for a project root.",
-        PROJECT_ROOT_PROPERTY,
+        {**PROJECT_ROOT_PROPERTY, "stage": {"type": "string", "enum": ["S0", "M1", "P1", "P2", "W1", "W2", "S1", "F1"], "description": "Optional workflow stage whose required capabilities should be evaluated."}},
         ["project_root"],
     ),
     _tool(
@@ -247,8 +255,8 @@ def run_harness(argv: list[str], project_root: Path, timeout: float = CALL_TIMEO
     env["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(argv, cwd=str(project_root), capture_output=True, env=env, timeout=timeout, check=False)
     decode_errors = "backslashreplace"
-    stdout = completed.stdout.decode("utf-8", errors=decode_errors)
-    stderr = completed.stderr.decode("utf-8", errors=decode_errors)
+    stdout = redact_text(completed.stdout.decode("utf-8", errors=decode_errors))
+    stderr = redact_text(completed.stderr.decode("utf-8", errors=decode_errors))
     return completed.returncode, stdout, stderr
 
 

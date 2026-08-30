@@ -51,6 +51,20 @@ BLOCKING_SEVERITIES = ("blocker", "high")
 SEVERITIES = ("blocker", "high", "medium", "low")
 GATE_SEVERITIES = ("blocker", "high", "medium")
 
+# Evidence scopes are ordered by what can be established, not by reviewer
+# seniority.  A paper-only pass cannot become a rerunnable conclusion merely
+# because a reviewer used stronger language.
+EVIDENCE_SCOPES = ("paper_only", "paper_source", "result_artifacts", "rerunnable")
+EVIDENCE_SCOPE_RANK: Mapping[str, int] = {
+    scope: rank for rank, scope in enumerate(EVIDENCE_SCOPES)
+}
+SOURCE_SCOPE_ROLES = frozenset({
+    "problem_snapshot", "data_contract", "model_contract", "paper_plan",
+    "writer_package", "rules_ref",
+})
+RESULT_SCOPE_ROLES = frozenset({
+    "validation_report", "frozen_results", "evidence_registry", "figure", "table",
+})
 # A perspective is not a real review of the paper if it binds only an
 # arbitrary convenient file. Each group means "at least one of these roles".
 REQUIRED_BINDING_ROLE_GROUPS: Mapping[str, tuple[frozenset[str], ...]] = {
@@ -208,12 +222,59 @@ def _schema_errors(report: Mapping[str, Any]) -> list[str]:
         temp_path.unlink(missing_ok=True)
 
 
+def _inferred_evidence_scope(report: Mapping[str, Any]) -> str:
+    """Infer the strongest scope established by the current review bundle.
+
+    The current bundle can establish paper, source-contract, and result-level
+    inspection.  It cannot establish ``rerunnable``: that future scope needs
+    structured bindings to code, data, environment, and a model-run receipt.
+    Reviewer-process receipts and free-text locators do not satisfy it.
+    """
+
+    roles = {
+        str(ref.get("role"))
+        for ref in report.get("reviewed_artifacts", [])
+        if isinstance(ref, Mapping) and isinstance(ref.get("role"), str)
+    }
+    if roles & RESULT_SCOPE_ROLES:
+        return "result_artifacts"
+    if roles & SOURCE_SCOPE_ROLES:
+        return "paper_source"
+    return "paper_only"
+
+
+def _available_evidence_scope(report: Mapping[str, Any]) -> str:
+    declared = report.get("available_evidence_scope")
+    return str(declared) if declared in EVIDENCE_SCOPE_RANK else _inferred_evidence_scope(report)
+
+
+def _finding_scope_state(report: Mapping[str, Any], finding: Mapping[str, Any]) -> tuple[str, str, bool]:
+    """Return ``(available, required, insufficient)`` for one finding."""
+
+    available = _available_evidence_scope(report)
+    required_raw = finding.get("required_evidence_scope", "paper_only")
+    required = str(required_raw) if required_raw in EVIDENCE_SCOPE_RANK else "paper_only"
+    insufficient = EVIDENCE_SCOPE_RANK[required] > EVIDENCE_SCOPE_RANK[available]
+    return available, required, insufficient
+
+
+def _scope_limited_finding(report: Mapping[str, Any], finding: Mapping[str, Any]) -> bool:
+    return _finding_scope_state(report, finding)[2]
+
+
 def validate_review_report(report: Mapping[str, Any]) -> list[str]:
     """Deterministic contract checks that do not touch the filesystem."""
 
     errors = _schema_errors(report)
     if errors:
         return errors
+    inferred_scope = _inferred_evidence_scope(report)
+    declared_scope = report.get("available_evidence_scope")
+    if declared_scope is not None and EVIDENCE_SCOPE_RANK[str(declared_scope)] > EVIDENCE_SCOPE_RANK[inferred_scope]:
+        errors.append(
+            f"available_evidence_scope {declared_scope!r} exceeds the bound artifact scope "
+            f"{inferred_scope!r}; a review cannot self-upgrade its evidence boundary"
+        )
     mode = str(report.get("review_mode"))
     level = str(report.get("independence_level"))
     if REVIEW_MODE_LEVEL.get(mode) != level:
@@ -234,7 +295,24 @@ def validate_review_report(report: Mapping[str, Any]) -> list[str]:
     findings = report.get("findings", [])
     if not isinstance(findings, list):
         return errors
+    for row in findings:
+        if not isinstance(row, dict):
+            continue
+        available, required_scope, insufficient = _finding_scope_state(report, row)
+        if insufficient:
+            if row.get("severity") in GATE_SEVERITIES and row.get("requires_external_check") is not True:
+                errors.append(
+                    f"finding {row.get('finding_id')} requires {required_scope} evidence but report only exposes "
+                    f"{available}; set requires_external_check=true or lower the finding severity"
+                )
     gate_open = [
+        row for row in findings
+        if isinstance(row, dict)
+        and row.get("severity") in GATE_SEVERITIES
+        and row.get("status") == "open"
+        and not _scope_limited_finding(report, row)
+    ]
+    raw_gate_open = [
         row for row in findings
         if isinstance(row, dict) and row.get("severity") in GATE_SEVERITIES and row.get("status") == "open"
     ]
@@ -243,7 +321,7 @@ def validate_review_report(report: Mapping[str, Any]) -> list[str]:
             "verdict=pass conflicts with open blocker/high/medium finding(s): "
             + ", ".join(str(row.get("finding_id")) for row in gate_open)
         )
-    if report.get("verdict") == "fail" and not gate_open:
+    if report.get("verdict") == "fail" and not raw_gate_open:
         errors.append("verdict=fail requires at least one open blocker/high/medium finding")
     accepted = [
         row for row in findings
@@ -522,10 +600,12 @@ class PerspectiveSummary:
     verdict: str | None = None
     independence_level: str | None = None
     degraded_independence: bool = False
+    available_evidence_scope: str = "paper_only"
     freshness: str = "missing"
     severity_counts: dict[str, int] = field(default_factory=lambda: {name: 0 for name in SEVERITIES})
     open_blocking_ids: list[str] = field(default_factory=list)
     open_medium_ids: list[str] = field(default_factory=list)
+    scope_limited_ids: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     next_finding: dict[str, Any] | None = None
 
@@ -576,6 +656,7 @@ def summarize_review(
         summary.verdict = str(report.get("verdict"))
         summary.independence_level = str(report.get("independence_level"))
         summary.degraded_independence = bool(report.get("degraded_independence"))
+        summary.available_evidence_scope = _available_evidence_scope(report)
         summary.errors.extend(validate_review_report(report))
         if not summary.errors:
             freshness, freshness_errors = review_freshness(report, root)
@@ -591,9 +672,12 @@ def summarize_review(
             severity = str(row.get("severity"))
             if severity in summary.severity_counts:
                 summary.severity_counts[severity] += 1
-            if row.get("status") == "open" and severity in BLOCKING_SEVERITIES:
+            scope_limited = _scope_limited_finding(report, row)
+            if row.get("status") == "open" and scope_limited and severity in GATE_SEVERITIES:
+                summary.scope_limited_ids.append(str(row.get("finding_id")))
+            if row.get("status") == "open" and severity in BLOCKING_SEVERITIES and not scope_limited:
                 summary.open_blocking_ids.append(str(row.get("finding_id")))
-            if row.get("status") == "open" and severity == "medium":
+            if row.get("status") == "open" and severity == "medium" and not scope_limited:
                 summary.open_medium_ids.append(str(row.get("finding_id")))
         open_findings = [row for row in findings if row.get("status") == "open"]
         if open_findings:
@@ -609,9 +693,11 @@ def summarize_review(
             "freshness": summary.freshness,
             "independence_level": summary.independence_level,
             "degraded_independence": summary.degraded_independence,
+            "available_evidence_scope": summary.available_evidence_scope,
             "severity_counts": dict(summary.severity_counts),
             "open_blocking_ids": list(summary.open_blocking_ids),
             "open_medium_ids": list(summary.open_medium_ids),
+            "scope_limited_ids": list(summary.scope_limited_ids),
             "errors": list(summary.errors),
             "report_path": summary.report_path,
         }
@@ -657,6 +743,11 @@ def evaluate_w2_review(root: Path, preset: str, *, run_id: str | None = None) ->
         errors.extend(f"{perspective} review: {message}" for message in view["errors"])
         if view["freshness"] != "current":
             errors.append(f"{perspective} review is {view['freshness']}; a stale or unbound review cannot pass W2")
+        if view.get("scope_limited_ids"):
+            errors.append(
+                f"{perspective} review has finding(s) requiring external evidence check: "
+                + ", ".join(str(item) for item in view["scope_limited_ids"])
+            )
         if view["open_blocking_ids"]:
             errors.append(
                 f"{perspective} review has open blocker/high finding(s): {', '.join(view['open_blocking_ids'])}"
@@ -691,6 +782,7 @@ def evaluate_w2_review(root: Path, preset: str, *, run_id: str | None = None) ->
 __all__ = [
     "REVIEW_DIR", "REVIEW_PERSPECTIVES", "REVIEW_MODE_LEVEL", "INDEPENDENCE_RANK",
     "BUNDLE_ALLOW_ROLES", "BUNDLE_DENY_ROLES", "BLOCKING_SEVERITIES",
+    "EVIDENCE_SCOPES", "EVIDENCE_SCOPE_RANK",
     "required_perspectives", "requires_l1_review", "discover_review_reports",
     "validate_review_report", "review_freshness", "validate_bundle_boundary", "validate_execution_binding",
     "summarize_review", "evaluate_w2_review",

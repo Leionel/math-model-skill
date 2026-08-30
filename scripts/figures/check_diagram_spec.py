@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -129,6 +130,171 @@ def _validate_drawio_structure(path: Path) -> list[str]:
     return errors
 
 
+def _style_value(style: str, key: str) -> str | None:
+    prefix = f"{key}="
+    return next((part[len(prefix):] for part in style.split(";") if part.startswith(prefix)), None)
+
+
+def _drawio_geometry_qa(path: Path, spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Check native node geometry that can be determined without visual guessing."""
+
+    try:
+        document_root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError) as exc:
+        return {"checked": False}, [f"cannot parse drawio geometry: {exc}"]
+    model = next(
+        (element for element in document_root.iter() if element.tag.rsplit("}", 1)[-1] == "mxGraphModel"),
+        None,
+    )
+    if model is None:
+        return {"checked": False}, ["DRAWIO_GEOMETRY: source has no mxGraphModel"]
+    try:
+        page_width = float(model.attrib["pageWidth"])
+        page_height = float(model.attrib["pageHeight"])
+    except (KeyError, ValueError):
+        return {"checked": False}, ["DRAWIO_GEOMETRY: pageWidth/pageHeight must be numeric"]
+
+    cells = {
+        cell.attrib["id"]: cell
+        for cell in model.iter()
+        if cell.tag.rsplit("}", 1)[-1] == "mxCell" and "id" in cell.attrib
+    }
+    local_boxes: dict[str, tuple[float, float, float, float]] = {}
+    for cell_id, cell in cells.items():
+        geometry = next(
+            (child for child in cell if child.tag.rsplit("}", 1)[-1] == "mxGeometry"),
+            None,
+        )
+        if geometry is None or cell.attrib.get("vertex") != "1":
+            continue
+        try:
+            box = tuple(float(geometry.attrib.get(key, "0")) for key in ("x", "y", "width", "height"))
+        except ValueError:
+            continue
+        if all(math.isfinite(value) for value in box):
+            local_boxes[cell_id] = box  # type: ignore[assignment]
+
+    def absolute_box(cell_id: str) -> tuple[float, float, float, float] | None:
+        box = local_boxes.get(cell_id)
+        if box is None:
+            return None
+        x, y, width, height = box
+        parent_id = cells[cell_id].attrib.get("parent")
+        visited = {cell_id}
+        while parent_id in local_boxes and parent_id not in visited:
+            visited.add(parent_id)
+            parent_x, parent_y, _, _ = local_boxes[parent_id]
+            x += parent_x
+            y += parent_y
+            parent_id = cells[parent_id].attrib.get("parent")
+        return x, y, width, height
+
+    node_cells: dict[str, str] = {}
+    duplicate_node_tags: set[str] = set()
+    for cell_id, cell in cells.items():
+        tags = cell.attrib.get("tags", "").split(";")
+        if len(tags) >= 2 and tags[0] == "harness-node":
+            if tags[1] in node_cells:
+                duplicate_node_tags.add(tags[1])
+            node_cells[tags[1]] = cell_id
+    expected_nodes = {
+        str(row["node_id"])
+        for row in spec.get("nodes", [])
+        if isinstance(row, dict) and isinstance(row.get("node_id"), str)
+    }
+    missing_nodes = sorted(expected_nodes - node_cells.keys())
+    unexpected_nodes = sorted(node_cells.keys() - expected_nodes)
+    errors = [f"DRAWIO_NODE_MAPPING: no harness-node cell for {node_id!r}" for node_id in missing_nodes]
+    errors.extend(
+        f"DRAWIO_NODE_MAPPING: multiple harness-node cells map to {node_id!r}"
+        for node_id in sorted(duplicate_node_tags)
+    )
+    errors.extend(
+        f"DRAWIO_NODE_MAPPING: source contains undeclared harness-node {node_id!r}"
+        for node_id in unexpected_nodes
+    )
+    boxes = {
+        node_id: box
+        for node_id, cell_id in node_cells.items()
+        if (box := absolute_box(cell_id)) is not None
+    }
+    missing_geometry = sorted(expected_nodes - boxes.keys())
+    errors.extend(f"DRAWIO_NODE_GEOMETRY: no numeric geometry for {node_id!r}" for node_id in missing_geometry)
+
+    out_of_bounds: list[str] = []
+    for node_id, (x, y, width, height) in boxes.items():
+        if width <= 0 or height <= 0 or x < 0 or y < 0 or x + width > page_width or y + height > page_height:
+            out_of_bounds.append(node_id)
+            errors.append(
+                f"DRAWIO_OUT_OF_BOUNDS: node {node_id!r} box {(x, y, width, height)} exceeds "
+                f"page {(page_width, page_height)}"
+            )
+
+    collisions: list[list[str]] = []
+    node_ids = sorted(expected_nodes & boxes.keys())
+    for index, first_id in enumerate(node_ids):
+        ax, ay, aw, ah = boxes[first_id]
+        for second_id in node_ids[index + 1:]:
+            bx, by, bw, bh = boxes[second_id]
+            overlap_width = min(ax + aw, bx + bw) - max(ax, bx)
+            overlap_height = min(ay + ah, by + bh) - max(ay, by)
+            if overlap_width > 0.5 and overlap_height > 0.5:
+                collisions.append([first_id, second_id])
+                errors.append(f"DRAWIO_NODE_COLLISION: nodes {first_id!r} and {second_id!r} overlap")
+
+    minimum_font = float(spec.get("font_size", 8))
+    undersized_fonts: list[str] = []
+    for node_id in sorted(expected_nodes & node_cells.keys()):
+        raw_font = _style_value(cells[node_cells[node_id]].attrib.get("style", ""), "fontSize")
+        try:
+            font_size = float(raw_font) if raw_font is not None else 0.0
+        except ValueError:
+            font_size = 0.0
+        if font_size < minimum_font:
+            undersized_fonts.append(node_id)
+            errors.append(
+                f"DRAWIO_FONT_SIZE: node {node_id!r} fontSize={raw_font!r} is below declared minimum {minimum_font:g}"
+            )
+
+    misaligned_edges: list[str] = []
+    layout = spec.get("layout")
+    for edge in spec.get("edges", []):
+        if not isinstance(edge, dict) or edge.get("relation") in {"feedback", "annotation"}:
+            continue
+        source_id = str(edge.get("from"))
+        target_id = str(edge.get("to"))
+        if source_id not in boxes or target_id not in boxes:
+            continue
+        sx, sy, sw, sh = boxes[source_id]
+        tx, ty, tw, th = boxes[target_id]
+        direction_ok = True
+        if layout == "left_to_right":
+            direction_ok = sx + sw / 2 < tx + tw / 2
+        elif layout == "top_to_bottom":
+            direction_ok = sy + sh / 2 < ty + th / 2
+        if not direction_ok:
+            edge_id = str(edge.get("edge_id", "<no-id>"))
+            misaligned_edges.append(edge_id)
+            errors.append(
+                f"DRAWIO_READING_ORDER: edge {edge_id!r} contradicts declared layout {layout!r}"
+            )
+
+    report = {
+        "checked": True,
+        "page": {"width": page_width, "height": page_height},
+        "mapped_nodes": len(expected_nodes & boxes.keys()),
+        "expected_nodes": len(expected_nodes),
+        "unexpected_nodes": unexpected_nodes,
+        "duplicate_node_tags": sorted(duplicate_node_tags),
+        "collisions": collisions,
+        "out_of_bounds": out_of_bounds,
+        "undersized_fonts": undersized_fonts,
+        "misaligned_edges": misaligned_edges,
+        "boundary": "Native Draw.io node boxes, declared reading order, and node font sizes only; visual semantics still require review.",
+    }
+    return report, errors
+
+
 def audit_diagram_spec(
     spec: dict[str, Any],
     *,
@@ -226,9 +392,12 @@ def audit_diagram_spec(
                 errors.append(f"rendered diagram does not exist: {rel_path(path, root)}")
 
     source_label_report: dict[str, Any] = {"checked": False, "missing_labels": []}
+    source_geometry_report: dict[str, Any] = {"checked": False}
     if source_path is not None and source_path.is_file() and spec.get("source_format") in {"drawio", "svg"}:
         if spec.get("source_format") == "drawio":
             errors.extend(_validate_drawio_structure(source_path))
+            source_geometry_report, geometry_errors = _drawio_geometry_qa(source_path, spec)
+            errors.extend(geometry_errors)
         source_text, parse_errors = _source_labels(source_path, spec["source_format"])
         errors.extend(parse_errors)
         source_label_report["checked"] = True
@@ -248,6 +417,7 @@ def audit_diagram_spec(
         "kind": kind if kind in DIAGRAM_ROLES else None,
         "status": status,
         "source_labels": source_label_report,
+        "source_geometry": source_geometry_report,
         "errors": errors,
         "warnings": warnings,
         "composition_warnings": composition_warnings,

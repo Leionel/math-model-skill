@@ -29,6 +29,69 @@ def png_size(path: Path) -> tuple[int, int] | None:
     return None
 
 
+def rendered_png_checks(path: Path) -> tuple[dict[str, object], list[str], list[str]]:
+    """Pixel-level checks: clipped content, near-blank canvas. Returns (metrics, errors, warnings)."""
+    metrics: dict[str, object] = {"checked": False}
+    errors: list[str] = []
+    warnings: list[str] = []
+    try:
+        import matplotlib.image as mpimg
+        import numpy as np
+    except ImportError as exc:
+        warnings.append(f"rendered QA skipped (numpy/matplotlib unavailable): {exc}")
+        return metrics, errors, warnings
+    try:
+        image = mpimg.imread(str(path))
+    except (OSError, ValueError) as exc:
+        warnings.append(f"rendered QA could not decode PNG: {exc}")
+        return metrics, errors, warnings
+    pixels = np.asarray(image)
+    if pixels.ndim == 3:
+        rgb = pixels[..., :3].astype(float)
+        if rgb.size and float(rgb.max()) > 1.0:
+            rgb /= 255.0
+        if pixels.shape[2] >= 4:
+            alpha = pixels[..., 3].astype(float)
+            if alpha.size and float(alpha.max()) > 1.0:
+                alpha /= 255.0
+            rgb = rgb * alpha[..., None] + (1.0 - alpha[..., None])
+        gray = rgb.mean(axis=2)
+    else:
+        gray = pixels.astype(float)
+    background = float(np.median(gray))
+    content_mask = np.abs(gray - background) > 0.02
+    if not content_mask.any():
+        metrics.update({"checked": True, "coverage": 0.0})
+        errors.append("figure appears blank: no content pixels detected")
+        return metrics, errors, warnings
+    rows = np.any(content_mask, axis=1)
+    cols = np.any(content_mask, axis=0)
+    top, bottom = int(np.argmax(rows)), int(len(rows) - 1 - np.argmax(rows[::-1]))
+    left, right = int(np.argmax(cols)), int(len(cols) - 1 - np.argmax(cols[::-1]))
+    height, width = content_mask.shape
+    metrics.update(
+        {
+            "checked": True,
+            "content_bbox": [int(left), int(top), int(right), int(bottom)],
+            "coverage": round(float(content_mask.mean()), 4),
+        }
+    )
+    clipped = []
+    if top == 0:
+        clipped.append("top")
+    if bottom == height - 1:
+        clipped.append("bottom")
+    if left == 0:
+        clipped.append("left")
+    if right == width - 1:
+        clipped.append("right")
+    if clipped:
+        errors.append(
+            f"figure content touches the {'/'.join(clipped)} edge; rendered elements are likely clipped — add margin before export"
+        )
+    return metrics, errors, warnings
+
+
 def pdf_page_points(path: Path) -> tuple[float, float] | None:
     result = subprocess.run(["pdfinfo", str(path)], text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
     if result.returncode != 0:
@@ -89,6 +152,7 @@ def main() -> int:
     effective_dpi = None
     page_box_ok = None
     font_status = "not_applicable"
+    rendered_metrics: dict[str, object] = {"checked": False}
     if not errors and suffix == ".png":
         size = png_size(figure_path)
         if size is None:
@@ -102,6 +166,9 @@ def main() -> int:
                     severity = profile.get("severity_policy", {}).get("low_resolution", "warning")
                     message = f"effective DPI {effective_dpi:.1f} is below profile minimum {minimum}"
                     (errors if severity == "error" else warnings).append(message)
+            rendered_metrics, rendered_errors, rendered_warnings = rendered_png_checks(figure_path)
+            errors.extend(rendered_errors)
+            warnings.extend(rendered_warnings)
     elif not errors and suffix == ".pdf":
         points = pdf_page_points(figure_path)
         page_box_ok = points is not None and points[0] > 0 and points[1] > 0
@@ -169,6 +236,7 @@ def main() -> int:
             "effective_dpi": effective_dpi,
             "page_box_ok": page_box_ok,
             "font_scan_status": font_status,
+            "rendered": rendered_metrics,
             "warnings": warnings,
             "errors": errors,
         },
@@ -180,6 +248,17 @@ def main() -> int:
         write_json(output_path, report, overwrite=args.force)
     except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    _, report_schema_errors, _ = _validate_document(
+        output_path, Path(__file__).resolve().parents[2] / "schemas" / "figure_qa.schema.json"
+    )
+    if report_schema_errors:
+        print(
+            json.dumps(
+                {"ok": False, "output": rel_path(output_path, root), "errors": [f"figure_qa schema: {m}" for m in report_schema_errors]},
+                ensure_ascii=False,
+            )
+        )
         return 1
     print(json.dumps({"ok": report["ok"], "output": rel_path(output_path, root), "warnings": len(warnings)}, ensure_ascii=False))
     return 0 if report["ok"] else 1

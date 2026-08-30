@@ -23,7 +23,46 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
         self.project = Path(self.temp.name)
         shutil.copy2(FIXTURE / "competition_profile.json", self.project / "competition_profile.json")
         shutil.copy2(FIXTURE / "rules.txt", self.project / "rules.txt")
-        (self.project / "model.json").write_text("{}\n", encoding="utf-8")
+        model = {
+            "schema_version": "1.3",
+            "project_id": "wp2-project",
+            "run_id": "run-1",
+            "status": "ready",
+            "questions": [{"question_id": "q1"}],
+            "models": [{
+                "model_id": "M1",
+                "question_id": "q1",
+                "plan_details": {"equation_plan": [{"equation_id": "EQ1"}]},
+                "constraints": [],
+                "validation_obligations": [],
+            }],
+        }
+        (self.project / "model.json").write_text(json.dumps(model), encoding="utf-8")
+        (self.project / "solver.py").write_text("def solve():\n    return 1\n", encoding="utf-8")
+        (self.project / "test_solver.py").write_text("def test_solve():\n    assert True\n", encoding="utf-8")
+        implementation_map = {
+            "schema_version": "1.0",
+            "run_id": "run-1",
+            "model_contract": {"path": "model.json", "sha256": sha256(self.project / "model.json")},
+            "symbols": [{
+                "symbol_id": "S-X", "latex": "x", "meaning": "state", "unit": "1",
+                "scope": "q1", "model_id": "M1",
+            }],
+            "equations": [{
+                "equation_id": "EQ1", "model_id": "M1", "question_id": "q1", "kind": "identity",
+                "latex": "x=x", "symbol_ids": ["S-X"], "contract_item_ids": ["EQ1"],
+                "code_refs": [{
+                    "path": "solver.py", "sha256": sha256(self.project / "solver.py"), "symbol": "solve",
+                }],
+                "tests": [{
+                    "test_id": "TEST-EQ1", "path": "test_solver.py",
+                    "sha256": sha256(self.project / "test_solver.py"), "purpose": "unit", "status": "pass",
+                }],
+                "status": "verified",
+            }],
+            "status": "verified",
+        }
+        (self.project / "implementation_map.json").write_text(json.dumps(implementation_map), encoding="utf-8")
         self._write_manifest()
 
     def tearDown(self) -> None:
@@ -34,7 +73,12 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
             "schema_version": "2.0", "project_id": "wp2-project", "run_id": "run-1", "status": "active",
             "stage": "results", "preset": preset, "profile_overrides": {},
             "competition_profile_ref": {"path": "competition_profile.json", "profile_id": profile_id},
-            "roots": {"model_contract": {"path": "model.json"}, "run_index": {"path": "run_index.json"}, "artifact_dag": {"path": "artifact_dag.json"}},
+            "roots": {
+                "model_contract": {"path": "model.json"},
+                "implementation_map": {"path": "implementation_map.json"},
+                "run_index": {"path": "run_index.json"},
+                "artifact_dag": {"path": "artifact_dag.json"},
+            },
             "control": {"selection_policy": {"owner": "run_manifest.control", "rule": "exactly one selected receipt", "version": "2.0"}},
             "safety": {}, "ai_usage": [], "human_checkpoints": [],
         }
@@ -46,7 +90,17 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
             text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
         )
 
-    def run_record(self, *, stage: str, receipt: str, selected: bool = False, mode: str = "research", output: str | None = None, input_path: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_record(
+        self,
+        *,
+        stage: str,
+        receipt: str,
+        selected: bool = False,
+        mode: str = "research",
+        output: str | None = None,
+        input_path: str | None = None,
+        coverage: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
         args = ["--v2", "--integrity-mode", mode, "--run-id", "run-1", "--stage", stage,
                 "--receipt", receipt, "--index", "run_index.json", "--project-root", str(self.project)]
         if selected:
@@ -55,6 +109,12 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
             args.extend(["--output-artifact", output])
         if input_path:
             args.extend(["--input", input_path])
+        if coverage:
+            args.extend([
+                "--covers-model", "M1",
+                "--covers-question", "q1",
+                "--covers-contract-item", "EQ1",
+            ])
         code = "from pathlib import Path; Path('result.txt').write_text('result', encoding='utf-8')" if output else "print('ok')"
         args.extend(["--", sys.executable, "-c", code])
         return subprocess.run([sys.executable, str(ROOT / "scripts" / "run_and_record.py"), *args], cwd=self.project,
@@ -91,7 +151,7 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
         self.assertIn("smoke receipt", result.stdout)
 
     def test_index_copy_tamper_does_not_change_verdict_but_receipt_tamper_does(self) -> None:
-        run = self.run_record(stage="smoke", receipt="smoke.json", selected=True)
+        run = self.run_record(stage="smoke", receipt="smoke.json", selected=True, coverage=True)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         index_path = self.project / "run_index.json"
         index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -113,6 +173,14 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("selected receipt", result.stdout)
         self.assertIn("SHA-256 drift", result.stdout)
+
+    def test_research_p2_requires_the_verified_implementation_map_root(self) -> None:
+        manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
+        manifest["roots"].pop("implementation_map")
+        (self.project / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        result = self.gate("p2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("implementation_map", result.stdout)
 
     def test_p2_recomputes_freeze_receipt_binding_digest(self) -> None:
         full = self.run_record(stage="full", receipt="full.json", selected=True, mode="research")

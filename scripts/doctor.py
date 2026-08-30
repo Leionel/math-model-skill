@@ -5,27 +5,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from doctor_core import STAGES, evaluate_capabilities, probe_command  # noqa: E402
 
 
 REQUIRED_COMMANDS = ("git", "latexmk", "xelatex", "lualatex", "pdfinfo", "pdffonts", "pdftoppm")
 
 
 def command_version(command: str) -> dict[str, object]:
-    path = shutil.which(command)
-    if path is None:
-        return {"available": False, "path": None, "version": None}
-    attempts = ([command, "--version"], [command, "-version"])
-    version = None
-    for argv in attempts:
-        result = subprocess.run(argv, text=True, capture_output=True, encoding="utf-8", errors="replace", check=False)
-        if result.returncode == 0:
-            version = (result.stdout or result.stderr).splitlines()[0] if (result.stdout or result.stderr) else "available"
-            break
-    return {"available": True, "path": path, "version": version}
+    row = probe_command(command)
+    return {"available": row["status"] == "available", "path": row["path"], "version": row["version"]}
 
 
 def main() -> int:
@@ -33,11 +28,18 @@ def main() -> int:
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--template-manifest", default="vendor/template_sources.json")
     parser.add_argument("--project-root", default=".")
+    parser.add_argument("--stage", choices=STAGES, help="evaluate only the capabilities required by one workflow stage")
     args = parser.parse_args()
 
     root = Path(args.project_root).resolve()
+    capability_report = evaluate_capabilities(
+        root,
+        stage=args.stage,
+        repo_root=SCRIPT_DIR.parent,
+        strict_commands=args.stage is None,
+    )
     commands = {name: command_version(name) for name in REQUIRED_COMMANDS}
-    errors = [f"required command missing: {name}" for name, row in commands.items() if not row["available"]]
+    errors = list(capability_report["errors"])
     manifest_path = root / args.template_manifest
     templates = []
     if not manifest_path.is_file():
@@ -83,8 +85,12 @@ def main() -> int:
         "offline": args.offline,
         "python": {"path": sys.executable, "version": sys.version.split()[0]},
         "commands": commands,
+        "capabilities": capability_report["capabilities"],
+        "stages": capability_report["stages"],
+        "stage": args.stage,
         "templates": templates,
         "schema_count": schema_count,
+        "warnings": capability_report["warnings"],
         "errors": errors,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

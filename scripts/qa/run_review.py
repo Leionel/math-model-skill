@@ -34,6 +34,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 from _common import append_ai_usage_record, child_env, load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from project_layout import resolve_control_path, resolve_manifest_path  # noqa: E402
+from redaction import redact_text  # noqa: E402
 from v2_gate_runtime import _v2_dag_nodes, _v2_role_entries, _v2_role_path  # noqa: E402
 try:  # Package import in tests versus direct script execution.
     from qa.review_evidence import (  # type: ignore  # noqa: E402
@@ -299,7 +300,7 @@ def run_backend_reviewer(
         "receipt_id": receipt_id,
         "receipt_path": rel_path(receipt, root) if receipt.is_file() else None,
         "exit_code": result.returncode,
-        "stderr_tail": result.stderr[-400:],
+        "stderr_tail": redact_text(result.stderr[-400:]),
         "protected_artifact_mutations": [rel_path(Path(path), root) for path in mutations],
     }
     ok = result.returncode == 0 and report_path.is_file() and not mutations
@@ -387,7 +388,10 @@ def routing_instructions(
         "    contract: review_mode=self_critic, independence_level=L0_same_context",
         "              reviewed_artifacts use only bundle rows with non-null artifact_id + source_path",
         "              map source_path -> path and copy artifact_id/role/sha256; omit structural/rules rows",
-        f"              findings use REV-* ids; verdict=pass requires zero open blocker/high/medium; run_id={state.run_id}",
+        "              available_evidence_scope may narrow but never exceed the scope implied by reviewed_artifacts",
+        "              each finding may declare required_evidence_scope; insufficient gate-severity evidence requires requires_external_check=true",
+        "              rerunnable is not established by a reviewer-process receipt or free-text locator; route it to external checking",
+        f"              findings use REV-* ids; verdict=pass requires zero effective open blocker/high/medium; run_id={state.run_id}",
     ])
 
 
@@ -527,6 +531,9 @@ def _severity_block(name: str, view: dict[str, Any]) -> list[str]:
     lines.append(
         f"    blocker: {counts['blocker']}  high: {counts['high']}  medium: {counts['medium']}  low: {counts['low']}"
     )
+    lines.append(f"    evidence scope: {view.get('available_evidence_scope', 'paper_only')}")
+    if view.get("scope_limited_ids"):
+        lines.append("    external evidence check: " + ", ".join(str(item) for item in view["scope_limited_ids"]))
     lines.append(f"    independence: {view.get('independence_level')}")
     if view.get("degraded_independence"):
         lines.append("    degraded independence: same-context fallback")

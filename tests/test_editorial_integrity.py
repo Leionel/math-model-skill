@@ -410,5 +410,240 @@ class EditorialIntegrityTest(unittest.TestCase):
             self.assertEqual(first_line_hash, sha256(project / "line.pdf"))
 
 
+    def test_plot_templates_render_distribution_and_facet_recipes(self) -> None:
+        if not PLOTTING_PYTHON.is_file():
+            self.skipTest("plotting Python runtime is unavailable")
+        with tempfile.TemporaryDirectory(prefix="math-plots-distribution-") as temp:
+            project = Path(temp)
+            rows = []
+            for series_index, series in enumerate(("North", "South")):
+                for period in range(1, 7):
+                    rows.append({
+                        "period": period,
+                        "value": 10 + series_index * 2 + period * 0.7 + (0.35 if period % 2 else -0.15),
+                        "series": series,
+                        "condition": "Baseline" if period % 2 else "Proposed",
+                    })
+            write_json(project / "distribution_rows.json", rows)
+            cases = [
+                (
+                    "small_multiples",
+                    [
+                        "--x", "period", "--y", "value", "--group", "series",
+                        "--facet-columns", "2", "--paper-placement", "full_width",
+                    ],
+                    False,
+                ),
+                (
+                    "violin",
+                    [
+                        "--category", "condition", "--y", "value", "--show-points",
+                        "--paper-placement", "single_column",
+                    ],
+                    True,
+                ),
+                (
+                    "box",
+                    [
+                        "--category", "condition", "--y", "value", "--raw-points",
+                        "--paper-placement", "single_column",
+                    ],
+                    True,
+                ),
+                (
+                    "beeswarm",
+                    [
+                        "--category", "condition", "--y", "value",
+                        "--paper-placement", "single_column",
+                    ],
+                    False,
+                ),
+                (
+                    "strip",
+                    [
+                        "--category", "condition", "--y", "value", "--seed", "11",
+                        "--paper-placement", "single_column",
+                    ],
+                    False,
+                ),
+            ]
+            for template, extra, shows_points in cases:
+                with self.subTest(template=template):
+                    result = self.run_script(
+                        "figures/plot_templates.py", "--project-root", str(project), "--template", template,
+                        "--input", "distribution_rows.json", "--output", f"{template}.pdf",
+                        "--receipt", f"{template}.json",
+                        "--style", str(ROOT / "assets" / "styles" / "mathmodel.mplstyle"), *extra,
+                        python=PLOTTING_PYTHON,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertTrue((project / f"{template}.pdf").is_file())
+                    receipt = read_json(project / f"{template}.json")
+                    self.assertEqual(receipt["template"], template)
+                    self.assertEqual(receipt["render"]["sizing_mode"], "placement")
+                    self.assertEqual(receipt["arguments"]["show_points"], shows_points)
+
+    def test_plot_templates_render_wp7_recipes_at_declared_paper_sizes(self) -> None:
+        if not PLOTTING_PYTHON.is_file():
+            self.skipTest("plotting Python runtime is unavailable")
+        with tempfile.TemporaryDirectory(prefix="math-plots-wp7-") as temp:
+            project = Path(temp)
+            rows = [
+                {
+                    "category": "A",
+                    "baseline": 100,
+                    "candidate": 92,
+                    "fitted": 0.2,
+                    "residual": -0.04,
+                    "observed": 0.2,
+                    "predicted": 0.22,
+                    "estimate": 92,
+                    "interval_low": 86,
+                    "interval_high": 98,
+                    "period": 1,
+                    "value": 92,
+                    "low": 86,
+                    "high": 98,
+                    "group": "central",
+                    "cost": 4,
+                    "carbon": 7,
+                    "front": True,
+                    "selected": False,
+                    "label": "A",
+                },
+                {
+                    "category": "B",
+                    "baseline": 80,
+                    "candidate": 86,
+                    "fitted": 0.5,
+                    "residual": 0.02,
+                    "observed": 0.5,
+                    "predicted": 0.48,
+                    "estimate": 86,
+                    "interval_low": 80,
+                    "interval_high": 92,
+                    "period": 2,
+                    "value": 86,
+                    "low": 80,
+                    "high": 92,
+                    "group": "central",
+                    "cost": 5,
+                    "carbon": 5,
+                    "front": True,
+                    "selected": True,
+                    "label": "B",
+                },
+                {
+                    "category": "C",
+                    "baseline": 70,
+                    "candidate": 65,
+                    "fitted": 0.8,
+                    "residual": 0.07,
+                    "observed": 0.8,
+                    "predicted": 0.75,
+                    "estimate": 65,
+                    "interval_low": 59,
+                    "interval_high": 71,
+                    "period": 3,
+                    "value": 65,
+                    "low": 59,
+                    "high": 71,
+                    "group": "central",
+                    "cost": 6,
+                    "carbon": 4,
+                    "front": False,
+                    "selected": False,
+                    "label": "C",
+                },
+            ]
+            write_json(project / "wp7_rows.json", rows)
+            cases = [
+                (
+                    "dumbbell",
+                    [
+                        "--category", "category", "--x", "baseline", "--y", "candidate",
+                        "--left-label", "Baseline", "--right-label", "Proposed", "--annotate",
+                        "--paper-placement", "single_column", "--baseline", "0",
+                    ],
+                    "placement",
+                ),
+                (
+                    "slope",
+                    [
+                        "--category", "category", "--x", "baseline", "--y", "candidate",
+                        "--left-label", "Baseline", "--right-label", "Proposed", "--annotate",
+                        "--placement", "half_width",
+                    ],
+                    "placement",
+                ),
+                (
+                    "residual",
+                    ["--x", "fitted", "--y", "residual", "--target-width-mm", "152"],
+                    "target_width_mm",
+                ),
+                (
+                    "calibration",
+                    [
+                        "--x", "observed", "--y", "predicted", "--annotate",
+                        "--paper-placement", "full_width",
+                    ],
+                    "placement",
+                ),
+                (
+                    "interval_comparison",
+                    [
+                        "--category", "category", "--y", "estimate", "--low", "interval_low",
+                        "--high", "interval_high", "--annotate", "--paper-placement", "full_width",
+                    ],
+                    "placement",
+                ),
+                (
+                    "scenario_envelope",
+                    [
+                        "--x", "period", "--y", "value", "--low", "low", "--high", "high",
+                        "--group", "group", "--train-test-boundary", "2",
+                        "--uncertainty-label", "Scenario range", "--paper-placement", "full_page",
+                    ],
+                    "placement",
+                ),
+                (
+                    "pareto",
+                    [
+                        "--x", "cost", "--y", "carbon", "--pareto-flag", "front",
+                        "--selected-flag", "selected", "--label", "label", "--paper-placement",
+                        "half_width",
+                    ],
+                    "placement",
+                ),
+            ]
+            for template, extra, sizing_mode in cases:
+                with self.subTest(template=template):
+                    result = self.run_script(
+                        "figures/plot_templates.py", "--project-root", str(project), "--template", template,
+                        "--input", "wp7_rows.json", "--output", f"{template}.pdf",
+                        "--receipt", f"{template}.json",
+                        "--style", str(ROOT / "assets" / "styles" / "mathmodel.mplstyle"), *extra,
+                        python=PLOTTING_PYTHON,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    receipt = read_json(project / f"{template}.json")
+                    self.assertEqual(receipt["render"]["sizing_mode"], sizing_mode)
+                    self.assertGreater(receipt["render"]["width_in"], 0)
+                    self.assertTrue((project / f"{template}.pdf").is_file())
+
+            custom = read_json(project / "residual.json")["render"]
+            self.assertEqual(custom["target_width_mm"], 152)
+            self.assertIsNone(custom["paper_placement"])
+
+            single_column = read_json(project / "dumbbell.json")["render"]
+            self.assertEqual(single_column["paper_placement"], "single_column")
+            self.assertEqual(single_column["target_width_mm"], 85.0)
+            self.assertEqual(single_column["target_height_mm"], 58.0)
+            self.assertGreater(single_column["font_size_pt"], 0)
+            self.assertGreater(single_column["annotation_limit"], 0)
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

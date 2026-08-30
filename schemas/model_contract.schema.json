@@ -394,6 +394,17 @@
         "preconditions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "transformation_rule": {"type": "string", "minLength": 1},
         "unit_signature": {"type": "string", "minLength": 1},
+        "unit_balance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["left", "right"],
+          "properties": {
+            "left": {"type": "string", "minLength": 1},
+            "right": {"type": "string", "minLength": 1},
+            "notes": {"type": "string"}
+          }
+        },
+        "output_unit": {"type": "string", "minLength": 1},
         "verification": {"$ref": "#/$defs/equation_verification"}
       }
     },

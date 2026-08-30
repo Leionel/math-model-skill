@@ -23,6 +23,7 @@ from _common import load_structured, rel_path, resolve_path  # noqa: E402
 from project_layout import resolve_manifest_path  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_gate  # noqa: E402
+from redaction import redact_text  # noqa: E402
 
 GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
 CONFIRMED = {"pass", "confirm"}
@@ -230,6 +231,57 @@ def _next_action(first_blocked: Any, pending: list[dict[str, Any]], stale: list[
     return "all observed gates pass; continue with the next human checkpoint or submission freeze" + suffix
 
 
+def _failures_summary(
+    gates: Mapping[str, Mapping[str, Any]],
+    pending: list[dict[str, Any]],
+    receipts: Mapping[str, Any],
+    dag: Mapping[str, Any],
+    review: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Derive one repair-oriented view without creating another artifact."""
+
+    items: list[dict[str, Any]] = []
+
+    def add(source: str, message: Any, *, severity: str = "error", identifier: Any = None, next_action: str | None = None) -> None:
+        items.append({
+            "source": source,
+            "id": str(identifier) if identifier is not None else None,
+            "severity": severity,
+            "message": redact_text(str(message)),
+            "next_action": next_action or "inspect the referenced source and rerun the read-only status check",
+        })
+
+    for gate, view in gates.items():
+        if not isinstance(view, Mapping):
+            continue
+        if view.get("status") != "pass":
+            for error in view.get("errors", []) if isinstance(view.get("errors"), list) else []:
+                add("gate", error, identifier=gate, next_action=f"repair {str(gate).upper()} evidence and rerun `harness check {str(gate).upper()}`")
+            for warning in view.get("warnings", []) if isinstance(view.get("warnings"), list) else []:
+                add("gate", warning, severity="warning", identifier=gate)
+    for error in receipts.get("errors", []) if isinstance(receipts.get("errors"), list) else []:
+        add("receipt", error, next_action="repair the run-index/receipt binding, then rerun status")
+    for receipt_id in receipts.get("failed_receipt_ids", []) if isinstance(receipts.get("failed_receipt_ids"), list) else []:
+        add("receipt", "receipt recorded a failed command", identifier=receipt_id, next_action="inspect the receipt and rerun the failed command only after fixing its cause")
+    for row in dag.get("stale_artifacts", []) if isinstance(dag.get("stale_artifacts"), list) else []:
+        if isinstance(row, Mapping):
+            add("artifact", row.get("reason", "artifact is stale"), identifier=row.get("artifact_id"), next_action="refresh the producer output and rerun the downstream Gate")
+    for row in pending:
+        if isinstance(row, Mapping):
+            add("checkpoint", f"human checkpoint pending for stage {row.get('stage', 'unknown')}", severity="pending", identifier=row.get("checkpoint_id"), next_action="obtain the required human decision before continuing")
+    if isinstance(review, Mapping):
+        perspectives = review.get("perspectives", {})
+        if isinstance(perspectives, Mapping):
+            for name, view in perspectives.items():
+                if not isinstance(view, Mapping):
+                    continue
+                for error in view.get("errors", []) if isinstance(view.get("errors"), list) else []:
+                    add("review", error, identifier=name, next_action="repair or rerun the review evidence before W2")
+                for finding_id in view.get("scope_limited_ids", []) if isinstance(view.get("scope_limited_ids"), list) else []:
+                    add("review", "finding requires evidence outside the current review scope", severity="external_check", identifier=finding_id, next_action="perform the required external evidence check before accepting the review")
+    return {"count": len(items), "items": items}
+
+
 def _v2_status(state: Any) -> dict[str, Any]:
     pending = _pending_checkpoints(state.manifest)
     receipts = _receipt_view(state)
@@ -275,6 +327,7 @@ def _v2_status(state: Any) -> dict[str, Any]:
         "dag": dag,
         "stale_artifacts": dag["stale_artifacts"],
         "review": review,
+        "failures_summary": _failures_summary(gate_reports, pending, receipts, dag, review),
         "next_action": _next_action(first_blocked, pending, dag["stale_artifacts"], review),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -385,10 +438,16 @@ def _human(report: Mapping[str, Any]) -> str:
                 degraded = " (degraded)" if view.get("degraded_independence") else ""
                 lines.append(f"    independence: {view.get('independence_level')}{degraded}")
             for error in view.get("errors", [])[:3]:
-                lines.append(f"    error: {error}")
+                lines.append(f"    error: {redact_text(str(error))}")
     if report.get("errors"):
         lines.append("errors:")
-        lines.extend(f"  - {error}" for error in report["errors"])
+        lines.extend(f"  - {redact_text(str(error))}" for error in report["errors"])
+    failures = report.get("failures_summary")
+    if isinstance(failures, Mapping) and failures.get("count"):
+        lines.append(f"failures summary: {failures['count']} actionable item(s)")
+        for item in failures.get("items", [])[:8]:
+            if isinstance(item, Mapping):
+                lines.append(f"  - [{item.get('severity')}] {item.get('source')}: {item.get('message')}")
     lines.append(f"next action: {report.get('next_action')}")
     return "\n".join(lines)
 

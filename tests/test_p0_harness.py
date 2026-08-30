@@ -575,7 +575,7 @@ class P0HarnessTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("invalid for formulation_unit_ids", result.stdout)
 
-    def test_paper_plan_requires_depth_budget_and_observation_result(self) -> None:
+    def test_paper_plan_keeps_legacy_depth_budget_out_of_gate_logic_and_requires_observation_result(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-paper-plan-") as temp:
             project = Path(temp)
             paths = self.build_fixture(project)
@@ -585,7 +585,7 @@ class P0HarnessTest(unittest.TestCase):
             write_json(paths["plan"], plan)
             validate = self.validate_fixture(project)
             self.assertNotEqual(validate.returncode, 0)
-            self.assertIn("depth_budget", validate.stdout)
+            self.assertNotIn("depth_budget", validate.stdout)
             self.assertIn("observation claim", validate.stdout)
 
     def test_verified_citation_requires_full_content_and_status_checks(self) -> None:
@@ -708,7 +708,7 @@ class P0HarnessTest(unittest.TestCase):
             )
             self.assertEqual(qa.returncode, 0, qa.stdout + qa.stderr)
             labels = {row["label"] for row in read_json(paths["qa_report"])["checks"]}
-            self.assertEqual(labels, {"contracts", "scope_consistency", "formula_replay", "math_semantics", "contest_safety", "consistency", "citations"})
+            self.assertEqual(labels, {"contracts", "scope_consistency", "formula_replay", "math_semantics", "units", "contest_safety", "consistency", "citations"})
 
     def test_s1_rejects_missing_manual_check(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-harness-s1-") as temp:

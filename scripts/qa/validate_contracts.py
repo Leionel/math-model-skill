@@ -8,7 +8,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
@@ -162,6 +162,17 @@ def _validate_document(path: Path, schema_path: Path) -> tuple[Any | None, list[
         return value, errors, "fallback"
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return None, [f"{path}: {exc}"], "fallback"
+
+
+def validate_value(value: Any, schema_path: Path) -> list[str]:
+    """Validate an in-memory producer result before its first write."""
+
+    schema = load_structured(schema_path)
+    if not isinstance(schema, dict):
+        return [f"{schema_path}: schema must be an object"]
+    errors: list[str] = []
+    _validate(value, schema, schema, "$", errors)
+    return errors
 
 
 def _cross_references_v2(
@@ -512,9 +523,6 @@ def _cross_references(
     argument_units = plan.get("argument_units", [])
     argument_unit_ids = [row["unit_id"] for row in argument_units]
     argument_unit_set = unique("paper_plan argument unit_id", argument_unit_ids)
-    depth_budget = plan.get("depth_budget", [])
-    depth_question_ids = [row["question_id"] for row in depth_budget]
-    unique("paper_plan depth_budget question_id", depth_question_ids)
     figure_ids = [row["figure_id"] for row in plan["figures"]]
     unique("paper_plan figure_id", figure_ids)
     table_ids = [row["table_id"] for row in plan["tables"]]
@@ -580,17 +588,33 @@ def _cross_references(
     for claim_id in thesis.get("claim_ids", []):
         if claim_id not in claim_set:
             errors.append(f"central_thesis references unknown claim_id {claim_id}")
-    for question_id in depth_question_ids:
-        if question_id not in question_set:
-            errors.append(f"depth_budget references unknown question_id {question_id}")
-    claimed_questions = {claim["question_id"] for claim in plan.get("claims", [])}
-    if not claimed_questions.issubset(set(depth_question_ids)):
-        errors.append("depth_budget must cover every question used by a claim")
+    # Legacy depth_budget remains readable metadata; it no longer controls a plan Gate.
     for unit in argument_units:
         if unit["section_id"] not in section_set:
             errors.append(f"argument unit {unit['unit_id']} references unknown section_id {unit['section_id']}")
         check_claim_refs(f"argument unit {unit.get('unit_id')}", unit)
         check_evidence_refs(f"argument unit {unit.get('unit_id')}", unit)
+        scope = unit.get("scope")
+        if isinstance(scope, Mapping):
+            scope_type = scope.get("type")
+            raw_question_ids = scope.get("question_ids", [])
+            if scope_type not in {"question", "cross_question", "global"}:
+                errors.append(f"argument unit {unit['unit_id']} has an unknown scope type {scope_type!r}")
+            elif scope_type == "global" and "question_ids" in scope:
+                errors.append(f"global argument unit {unit['unit_id']} must not declare question_ids")
+            elif not isinstance(raw_question_ids, list):
+                errors.append(f"argument unit {unit['unit_id']} scope.question_ids must be an array")
+            else:
+                scope_question_ids = [str(item) for item in raw_question_ids]
+                if scope_type == "question" and len(scope_question_ids) != 1:
+                    errors.append(f"question argument unit {unit['unit_id']} requires exactly one question_id")
+                elif scope_type == "cross_question" and len(scope_question_ids) < 2:
+                    errors.append(f"cross_question argument unit {unit['unit_id']} requires at least two question_ids")
+                unknown_scope_questions = sorted(set(scope_question_ids) - question_set)
+                if unknown_scope_questions:
+                    errors.append(
+                        f"argument unit {unit['unit_id']} scope references unknown question_id values: {unknown_scope_questions}"
+                    )
         for prerequisite_id in unit.get("prerequisite_unit_ids", []):
             if prerequisite_id not in argument_unit_set:
                 errors.append(f"argument unit {unit['unit_id']} references unknown prerequisite_unit_id {prerequisite_id}")
@@ -667,6 +691,7 @@ def _cross_references(
             unit = next((row for row in argument_units if row.get("unit_id") == unit_id), None)
             if unit is None:
                 errors.append(f"draft anchor {anchor.get('anchor_id')} references unknown unit_id {unit_id}")
+                continue
             elif unit.get("section_id") not in section_set:
                 errors.append(f"draft anchor {anchor.get('anchor_id')} unit has unknown section_id")
             unit_questions = {
@@ -674,7 +699,17 @@ def _cross_references(
                 for claim_id in unit.get("claim_ids", [])
                 if claim_id in claim_by_id
             }
-            if anchor.get("question_id") not in unit_questions:
+            anchor_scope = unit.get("scope")
+            # A global/cross-question unit can intentionally omit a single anchor question.
+            if isinstance(anchor_scope, Mapping):
+                if anchor_scope.get("type") == "global":
+                    unit_questions = set(question_set)
+                elif anchor_scope.get("type") in {"question", "cross_question"}:
+                    scoped_question_ids = anchor_scope.get("question_ids")
+                    if isinstance(scoped_question_ids, list):
+                        unit_questions.update(item for item in scoped_question_ids if isinstance(item, str))
+            anchor_question_id = anchor.get("question_id")
+            if anchor_question_id is not None and anchor_question_id not in unit_questions:
                 errors.append(
                     f"draft anchor {anchor.get('anchor_id')} question_id does not match its argument unit"
                 )

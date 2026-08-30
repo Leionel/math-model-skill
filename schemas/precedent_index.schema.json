@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/precedent-index.schema.json",
+  "title": "Precedent Paper Index",
+  "description": "Index of locally quarantined award papers. Index rows are committed metadata; the paper files stay in references/precedents/local-sources/ (git-ignored) and never enter evidence_registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "competition", "papers"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.1"},
+    "competition": {"type": "string", "enum": ["CUMCM", "MCM-ICM"]},
+    "last_reviewed": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "ISO date when a human last re-verified these rows (rights, hashes, extraction status); null means never reviewed"
+    },
+    "papers": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/paper"}
+    }
+  },
+  "$defs": {
+    "paper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paper_id", "competition", "problem", "rights_status", "extraction_status", "local_path", "sha256", "source_url"],
+      "properties": {
+        "paper_id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "competition": {"type": "string", "enum": ["CUMCM", "MCM-ICM"]},
+        "year": {"type": ["integer", "null"], "minimum": 1900, "maximum": 2200},
+        "problem": {"type": "string", "minLength": 1, "description": "normalized problem letter or code, e.g. A, B, C, 2024A"},
+        "award": {"type": ["string", "null"], "minLength": 1},
+        "problem_family": {"type": ["string", "null"], "enum": [null, "optimization", "prediction", "evaluation", "simulation", "mechanism", "statistics", "policy"]},
+        "source_url": {"type": "string", "minLength": 1, "description": "authorized public page the file was downloaded from"},
+        "rights_status": {"type": "string", "enum": ["authorized_public_download", "local_study_only", "unknown"]},
+        "official_or_authorized": {"type": "boolean"},
+        "local_path": {"type": "string", "minLength": 1, "description": "path relative to the repository root; must live under references/precedents/local-sources/"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "extraction_status": {"type": "string", "enum": ["not_started", "extracted", "verified"]},
+        "extraction_note": {"type": "string"},
+        "tags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

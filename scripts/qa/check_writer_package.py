@@ -21,6 +21,7 @@ CJK_CHAR_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 CAUSAL_MARKERS = ("导致", "造成", "使得", "证明", "表明", "because", "therefore", "causes", "demonstrates")
 STRONG_CAUSAL_MARKERS = ("导致", "造成", "使得", "causes", "because")
 STRENGTH_MARKERS = ("最优", "显著", "稳健", "提升", "optimal", "significant", "robust", "improve")
+INTERNAL_MARKER_RE = re.compile(r"\b(?:ANCHOR|LOC)-[A-Za-z0-9][A-Za-z0-9_.-]*\b")
 
 
 INPUT_RE = re.compile(r"\\(?:input|include)\{([^}]+)\}")
@@ -29,6 +30,12 @@ INPUT_RE = re.compile(r"\\(?:input|include)\{([^}]+)\}")
 def _strip_latex_comments(text: str) -> str:
     """Remove TeX comments while retaining escaped percent signs."""
     return re.sub(r"(?<!\\)%[^\r\n]*", "", text)
+
+
+def _strip_invisible_comments(text: str) -> str:
+    """Remove TeX and Markdown/HTML comments that cannot reach rendered prose."""
+
+    return re.sub(r"<!--.*?-->", "", _strip_latex_comments(text), flags=re.DOTALL)
 
 
 def _load_tex_tree(path: Path, seen: set[Path] | None = None) -> str:
@@ -75,17 +82,27 @@ def main() -> int:
     parser.add_argument(
         "--require-first-draft-coverage",
         action="store_true",
-        help="Require the draft to contain every planned argument anchor and its minimum content span.",
+        help="Require every planned argument anchor; declared minimum word spans stay advisory by default.",
     )
     parser.add_argument("--project-root", default=".")
+    parser.add_argument(
+        "--enforce-minimum-words",
+        action="store_true",
+        help="Make declared minimum_words spans blocking for an explicitly requested legacy check.",
+    )
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
+    if args.enforce_minimum_words and not args.require_first_draft_coverage:
+        print("ERROR: --enforce-minimum-words requires --require-first-draft-coverage", file=sys.stderr)
+        return 2
+
 
     root = Path(args.project_root).resolve()
     package_path = resolve_path(args.writer_package, root).resolve()
     draft_path = resolve_path(args.draft, root).resolve()
     errors: list[str] = []
     warnings: list[str] = []
+    advisories: list[str] = []
     try:
         package = load_structured(package_path)
         draft = draft_path.read_text(encoding="utf-8")
@@ -96,6 +113,12 @@ def main() -> int:
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "errors": [str(exc)], "warnings": []}, ensure_ascii=False, indent=2))
         return 1
+    exposed_markers = sorted(set(INTERNAL_MARKER_RE.findall(_strip_invisible_comments(coverage_draft))))
+    if exposed_markers:
+        errors.append(
+            "draft exposes internal authoring marker(s) in reader-facing text: "
+            + ", ".join(exposed_markers)
+        )
     allowed_numbers = {
         str(result.get("display_value"))
         for claim in package.get("claims", [])
@@ -176,10 +199,14 @@ def main() -> int:
                     word_count = len(WORD_RE.findall(content)) + len(CJK_CHAR_RE.findall(content))
                     minimum_words = anchor.get("minimum_words", 0)
                     if word_count < minimum_words:
-                        errors.append(
+                        message = (
                             f"draft span for anchor {anchor.get('anchor_id')} has {word_count} words, "
                             f"below minimum_words={minimum_words}"
                         )
+                        if args.enforce_minimum_words:
+                            errors.append(message)
+                        else:
+                            advisories.append(message)
     ok = not errors and (not args.strict or not warnings)
     print(json.dumps({
         "ok": ok,
@@ -188,6 +215,8 @@ def main() -> int:
         "first_draft_coverage_required": args.require_first_draft_coverage,
         "first_draft_coverage_verified": args.require_first_draft_coverage and ok,
         "errors": errors,
+        "minimum_words_enforced": args.enforce_minimum_words,
+        "advisories": advisories,
         "warnings": warnings,
     }, ensure_ascii=False, indent=2))
     return 0 if ok else 1

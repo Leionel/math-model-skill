@@ -172,7 +172,7 @@ def evaluate_readiness(
             f"extra={sorted(set(coverage_by_question) - question_ids)}"
         )
 
-    unit_words_by_question: dict[str, int] = {qid: 0 for qid in question_ids}
+    units_by_question: dict[str, list[str]] = {}
     used_units: set[str] = set()
     for qid, coverage in coverage_by_question.items():
         if qid not in question_ids:
@@ -195,6 +195,15 @@ def evaluate_readiness(
                     for claim_id in unit.get("claim_ids", [])
                     if claim_id in claims
                 }
+                unit_scope = unit.get("scope")
+                # A declared global/cross-question scope expands the normal claim scope below.
+                if isinstance(unit_scope, dict):
+                    if unit_scope.get("type") == "global":
+                        unit_questions = set(question_ids)
+                    elif unit_scope.get("type") in {"question", "cross_question"}:
+                        scoped_question_ids = unit_scope.get("question_ids")
+                        if isinstance(scoped_question_ids, list):
+                            unit_questions.update(item for item in scoped_question_ids if isinstance(item, str))
                 if qid not in unit_questions:
                     errors.append(f"unit {unit_id} does not support question {qid}")
                 for evidence_id in unit.get("evidence_ids", []):
@@ -217,36 +226,24 @@ def evaluate_readiness(
             }
             if qid not in display_questions:
                 errors.append(f"display {display_id} does not support question {qid}")
-        unit_words_by_question[qid] = sum(
-            int(units[unit_id].get("target_words", 0))
-            for unit_id in question_units
-            if unit_id in units
-        )
+        units_by_question[qid] = sorted(question_units)
 
-    depth_by_question = {
-        row.get("question_id"): row
-        for row in plan.get("depth_budget", [])
-        if isinstance(row, dict) and isinstance(row.get("question_id"), str)
+    shared_scope_units = {
+        unit_id
+        for unit_id, unit in units.items()
+        if isinstance(unit.get("scope"), dict)
+        and unit["scope"].get("type") in {"cross_question", "global"}
     }
-    for qid in sorted(question_ids):
-        depth = depth_by_question.get(qid)
-        if depth is None:
-            errors.append(f"question {qid} has no depth budget")
-            continue
-        if unit_words_by_question.get(qid, 0) < int(depth.get("target_words", 0)):
-            errors.append(
-                f"question {qid} argument units plan {unit_words_by_question.get(qid, 0)} words, "
-                f"below its depth budget {depth.get('target_words')}"
-            )
 
-    unused = sorted(set(units) - used_units)
+    unused = sorted(set(units) - used_units - shared_scope_units)
     if unused:
         warnings.append(f"argument units not assigned to question readiness coverage: {unused}")
 
     details = {
         "stage": stage,
         "questions": sorted(question_ids),
-        "planned_words_by_question": unit_words_by_question,
+        "units_by_question": units_by_question,
+        "shared_scope_units": sorted(shared_scope_units),
         "used_units": sorted(used_units),
         "presentation_completeness": presentation_completeness(plan),
     }

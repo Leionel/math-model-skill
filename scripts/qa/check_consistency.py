@@ -59,6 +59,28 @@ INFERENCE_METHOD_TOKENS = {
     "grouped_bootstrap": ("grouped bootstrap", "cluster bootstrap", "分组bootstrap", "分层自助法"),
 }
 
+CAPTION_NUMBER_RE = re.compile(
+    r"(?<![A-Za-z0-9_.])[-+]?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d*)?|\.\d+)"
+    r"(?:[eE][-+]?\d+)?%?(?![A-Za-z0-9_.])"
+)
+
+
+def _numeric_tokens(text: str) -> set[str]:
+    tokens: set[str] = set()
+    for match in CAPTION_NUMBER_RE.finditer(text.replace(r"\%", "%")):
+        raw = match.group(0).replace(",", "")
+        suffix = "%" if raw.endswith("%") else ""
+        core = raw[:-1] if suffix else raw
+        try:
+            decimal = Decimal(core)
+        except InvalidOperation:
+            continue
+        normalized = format(decimal.normalize(), "f")
+        if normalized == "-0":
+            normalized = "0"
+        tokens.add(normalized + suffix)
+    return tokens
+
 
 def canonical_display(value: Any, precision: int) -> str | None:
     try:
@@ -484,6 +506,28 @@ def main() -> int:
             if derived_id in text and display and display not in text:
                 errors.append(f"{label} mentions derived result {derived_id} without canonical display_value {display}")
 
+    registered_caption_numbers: set[str] = set()
+    for result in result_by_id.values():
+        for key in ("display_value", "value"):
+            if result.get(key) is not None:
+                registered_caption_numbers.update(_numeric_tokens(str(result[key])))
+    for row in derived_by_id.values():
+        for key in ("display_value", "value"):
+            if row.get(key) is not None:
+                registered_caption_numbers.update(_numeric_tokens(str(row[key])))
+    for figure in plan.get("figures", []):
+        if not isinstance(figure, dict):
+            continue
+        caption = str(figure.get("caption_claim", ""))
+        if not caption or any(token in caption for token in ("示意", "illustrative", "schematic", "非精确", "不承载")):
+            continue
+        for number in sorted(_numeric_tokens(caption)):
+            if number not in registered_caption_numbers:
+                warnings.append(
+                    f"figure {figure.get('figure_id', 'figure')} caption claims {number}, which is absent from "
+                    "frozen/derived results; body-text repetition alone is not evidence and this becomes blocking under --strict"
+                )
+
     if "abstract" in text_sources:
         abstract = text_sources["abstract"]
         for row in abstract_results:
@@ -716,12 +760,17 @@ def main() -> int:
 
         tex_path = resolve_path(args.paper, root).resolve()
         if tex_path.is_file():
-            collected: set[str] = set()
+            collected: set[tuple[str, Path]] = set()
             visited: set[Path] = set()
             stack: list[Path] = [tex_path]
             while stack and len(visited) < 50:
                 current = stack.pop()
                 if current in visited or not current.is_file():
+                    continue
+                try:
+                    current.relative_to(root)
+                except ValueError:
+                    errors.append(f"tex include escapes project root: {current}")
                     continue
                 visited.add(current)
                 try:
@@ -730,12 +779,18 @@ def main() -> int:
                     warnings.append(f"cannot read tex file for figure binding: {current} ({exc})")
                     continue
                 for match in _re.finditer(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", content):
-                    collected.add(match.group(1).strip())
+                    collected.add((match.group(1).strip(), current.parent))
                 for match in _re.finditer(r"\\input\{([^}]+)\}", content):
                     target = match.group(1).strip()
                     if not target.endswith(".tex"):
                         target += ".tex"
-                    stack.append((current.parent / target).resolve())
+                    include_target = (current.parent / target).resolve()
+                    try:
+                        include_target.relative_to(root)
+                    except ValueError:
+                        errors.append(f"tex input escapes project root: {target}")
+                        continue
+                    stack.append(include_target)
             registered: set[str] = set()
             planned_render_roots: dict[str, set[str]] = {}
             for figure in plan.get("figures", []):
@@ -752,25 +807,99 @@ def main() -> int:
                 planned_render_roots[fig_id] = candidates
                 registered.update(candidates)
 
+            def _path_variants(raw: str) -> set[str]:
+                normalized = raw.replace("\\", "/").casefold()
+                while normalized.startswith("./"):
+                    normalized = normalized[2:]
+                variants = {normalized}
+                if Path(normalized).suffix in {".png", ".pdf", ".jpg", ".jpeg", ".eps", ".svg"}:
+                    variants.add(normalized.rsplit(".", 1)[0])
+                return variants
+
+            def _suffix_matches(left: str, right: str) -> bool:
+                for left_variant in _path_variants(left):
+                    for right_variant in _path_variants(right):
+                        if (
+                            left_variant == right_variant
+                            or left_variant.endswith("/" + right_variant)
+                            or right_variant.endswith("/" + left_variant)
+                        ):
+                            return True
+                return False
+
             def _matches_any_registered(image_path: str) -> bool:
                 if image_path in registered:
                     return True
-                for cand in registered:
-                    if cand and (image_path.endswith(cand) or cand.endswith(image_path)):
-                        return True
-                return False
+                return any(_suffix_matches(image_path, cand) for cand in registered)
 
-            for image_path in sorted(collected):
+            digest_by_path: dict[str, str] = {}
+            for node in dag_nodes.values():
+                node_path = node.get("path")
+                node_digest = node.get("sha256")
+                if isinstance(node_path, str) and isinstance(node_digest, str):
+                    digest_by_path[node_path] = node_digest
+                outputs = node.get("outputs")
+                if isinstance(outputs, list):
+                    for ref in outputs:
+                        if isinstance(ref, dict) and isinstance(ref.get("path"), str) and isinstance(ref.get("sha256"), str):
+                            digest_by_path[ref["path"]] = ref["sha256"]
+
+            for image_path, source_dir in sorted(collected, key=lambda item: (item[0], item[1].as_posix())):
                 if not _matches_any_registered(image_path):
                     warnings.append(
                         f"paper includes an image not registered by any planned figure: {image_path} "
                         "(register it in paper_plan.figures[].diagram.rendered_paths or data_artifacts); "
                         "this becomes blocking under --strict"
                     )
+                    continue
+                if not args.artifact_dag:
+                    continue
+                matching_digests = [
+                    (cand_path, cand_digest)
+                    for cand_path, cand_digest in digest_by_path.items()
+                    if _suffix_matches(image_path, cand_path)
+                ]
+                if not matching_digests:
+                    warnings.append(
+                        f"included image {image_path} matches a registered artifact with no digest; "
+                        "register its sha256 in artifact_dag so bitmap substitution is detectable"
+                    )
+                    continue
+                probe_names = [image_path] + [image_path + ext for ext in (".png", ".pdf", ".jpg", ".jpeg", ".eps", ".svg")]
+                resolved = None
+                for name in probe_names:
+                    probe = (source_dir / name).resolve()
+                    try:
+                        probe.relative_to(root)
+                    except ValueError:
+                        errors.append(f"included image path escapes project root: {image_path}")
+                        break
+                    if probe.is_file():
+                        resolved = probe
+                        break
+                if resolved is None:
+                    warnings.append(f"included image {image_path} could not be resolved on disk for digest verification")
+                    continue
+                actual_digest = sha256_file(resolved)
+                expected_digests = {cand_digest for _, cand_digest in matching_digests}
+                if len(expected_digests) > 1:
+                    errors.append(
+                        f"included image {image_path} ambiguously matches DAG artifacts with different digests; "
+                        "use distinct project-relative rendered paths"
+                    )
+                elif actual_digest not in expected_digests:
+                    candidates = ", ".join(cand_path for cand_path, _ in matching_digests)
+                    errors.append(
+                        f"included image {image_path} does not match the registered digest of DAG artifact {candidates}; "
+                        "the rendered bytes changed after registration or a different bitmap was substituted"
+                    )
             for fig_id, candidates in planned_render_roots.items():
                 if not candidates:
                     continue
-                if not any(_matches_any_registered(image) for image in collected):
+                if not any(
+                    image_path in candidates or any(_suffix_matches(image_path, cand) for cand in candidates)
+                    for image_path, _ in collected
+                ):
                     warnings.append(
                         f"figure {fig_id} declares rendered artifacts but none appear in the paper's includegraphics set"
                     )

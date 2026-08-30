@@ -326,11 +326,17 @@ def main() -> int:
         formula_replay_args.append("--require-formula-replay")
     else:
         formula_replay_args.append("--skip-if-absent")
+    units_args = [
+        "--project-root", str(root),
+        "--model-contract", args.model_contract,
+        "--strict",
+    ]
     checks = [
         run_check("contracts", [sys.executable, str(SCRIPT_DIR / "validate_contracts.py"), *contract_args]),
         run_check("scope_consistency", [sys.executable, str(SCRIPT_DIR / "check_scope_consistency.py"), *scope_args]),
         run_check("formula_replay", [sys.executable, str(SCRIPT_DIR / "check_formula_replay.py"), *formula_replay_args]),
         run_check("math_semantics", [sys.executable, str(SCRIPT_DIR / "check_math_semantics.py"), *math_semantics_args]),
+        run_check("units", [sys.executable, str(SCRIPT_DIR / "check_units.py"), *units_args]),
         run_check(
             "contest_safety",
             [
@@ -522,6 +528,17 @@ def main() -> int:
                 *writer_check_args,
             ],
         ))
+        if args.require_first_draft_coverage and args.paper_plan:
+            checks.append(run_check(
+                "reverse_outline",
+                [
+                    sys.executable, str(SCRIPT_DIR / "check_reverse_outline.py"),
+                    "--project-root", str(root),
+                    "--paper-plan", args.paper_plan,
+                    "--writer-package", args.writer_package,
+                    "--draft", args.paper,
+                ],
+            ))
     if args.require_math_writing_coverage:
         math_writing_args = [
             "--project-root", str(root),

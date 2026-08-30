@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -22,9 +21,11 @@ from v2_gate_runtime import _v2_gate  # noqa: E402
 try:  # Support both direct CLI execution and package-level test imports.
     from validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # type: ignore  # noqa: E402
     from validation.obligations import file_ref, verify_validation_report  # type: ignore  # noqa: E402
+    from smoke_coverage import smoke_coverage_errors  # type: ignore  # noqa: E402
 except ModuleNotFoundError:  # pragma: no cover - exercised by package imports.
     from qa.validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # noqa: E402
     from scripts.validation.obligations import file_ref, verify_validation_report  # noqa: E402
+    from qa.smoke_coverage import smoke_coverage_errors  # noqa: E402
 
 
 GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
@@ -657,6 +658,11 @@ def main() -> int:
                             modeling_plan_command,
                         )
         if manifest.get("enhanced_integrity_profile") is True:
+            # M1 verifies an encodable *plan*, not the outcome of coding.
+            # implementation_map.status=verified attests that equations were
+            # already bound to code, tests, and hashes; that fact cannot exist
+            # before the solve stage, so it is checked at P2 instead (the map
+            # is compiled from 03_SOLUTION_REPORT.md after real runs).
             problem_snapshot = require_structured_artifact(
                 "problem_snapshot",
                 schema_name="problem_snapshot.schema.json",
@@ -669,12 +675,6 @@ def main() -> int:
                 status_field="status",
                 accepted_statuses={"validated"},
             )
-            implementation_map = require_structured_artifact(
-                "implementation_map",
-                schema_name="implementation_map.schema.json",
-                status_field="status",
-                accepted_statuses={"verified"},
-            )
             artifact_dag = require_structured_artifact(
                 "artifact_dag",
                 schema_name="artifact_dag.schema.json",
@@ -684,8 +684,6 @@ def main() -> int:
             for index, (value, _) in enumerate(data_contracts):
                 if value.get("run_id") != manifest.get("run_id"):
                     errors.append(f"data_contract[{index}].run_id does not match run_manifest.run_id")
-            if isinstance(implementation_map, dict) and implementation_map.get("run_id") != manifest.get("run_id"):
-                errors.append("implementation_map.run_id does not match run_manifest.run_id")
             if isinstance(artifact_dag, dict) and artifact_dag.get("run_id") != manifest.get("run_id"):
                 errors.append("artifact_dag.run_id does not match run_manifest.run_id")
             if model_contract_path is not None:
@@ -706,20 +704,6 @@ def main() -> int:
                         f"M1 data_contract[{index}] check",
                         data_check_args,
                     )
-                implementation_rows = artifacts_for_role(manifest, "implementation_map")
-                if implementation_rows:
-                    implementation_path = resolve_path(str(implementation_rows[0].get("path", "")), root).resolve()
-                    if implementation_path.is_file():
-                        run_json_checker(
-                            "M1 implementation_map check",
-                            [
-                                str(SCRIPT_DIR / "check_implementation_map.py"),
-                                "--project-root", str(root),
-                                "--implementation-map", str(implementation_path),
-                                "--model-contract", str(model_contract_path),
-                                *( ["--require-objective-binding"] if strict_math else [] ),
-                            ],
-                        )
             dag_rows = artifacts_for_role(manifest, "artifact_dag")
             if dag_rows:
                 dag_path = resolve_path(str(dag_rows[0].get("path", "")), root).resolve()
@@ -732,6 +716,15 @@ def main() -> int:
                             "--dag", str(dag_path),
                         ],
                     )
+            if model_contract_path is not None and model_contract_path.is_file():
+                run_json_checker(
+                    "M1 unit/dimension check",
+                    [
+                        str(SCRIPT_DIR / "check_units.py"),
+                        "--project-root", str(root),
+                        "--model-contract", str(model_contract_path),
+                    ],
+                )
         if model_contract_path is None:
             errors.append("M1 pass requires a valid model_contract file")
         else:
@@ -768,6 +761,32 @@ def main() -> int:
         smoke_passes = successful_commands(commands, "smoke")
         if len(smoke_passes) != 1:
             errors.append(f"P1 pass requires exactly one successful smoke command, found {len(smoke_passes)}")
+        if enhanced_profile and smoke_passes:
+            # P1 must prove the smoke receipt exercised the contracted math,
+            # not merely that some command exited 0.  The coverage claim is a
+            # declared input (like manual_checks); this check binds it to the
+            # real receipt id and the model contract.
+            smoke_receipt_ids = {
+                str(row.get("projected_from", "")).removeprefix("command_receipt:")
+                for row in smoke_passes
+            }
+            p1_gate = gates.get("p1", {}) if isinstance(gates.get("p1"), dict) else {}
+            coverage = p1_gate.get("smoke_coverage")
+            if coverage is None and isinstance(manifest.get("control"), dict):
+                coverage = manifest["control"].get("smoke_coverage")
+            contract_doc = None
+            if model_contract_path is not None:
+                try:
+                    contract_doc = load_structured(model_contract_path)
+                except (OSError, ValueError, TypeError) as exc:
+                    errors.append(f"cannot inspect model_contract for P1 coverage: {exc}")
+            errors.extend(
+                smoke_coverage_errors(
+                    coverage,
+                    contract_doc,
+                    allowed_receipt_ids=smoke_receipt_ids,
+                )
+            )
     if statuses["p2"] == "pass":
         require_human_checkpoint("p2")
         if statuses["p1"] != "pass":
@@ -776,6 +795,42 @@ def main() -> int:
             errors.append("P2 pass requires a successful full command")
         if not successful_commands(commands, "freeze"):
             errors.append("P2 pass requires a successful freeze command")
+        if enhanced_profile:
+            # The implementation map is compiled from 03_SOLUTION_REPORT.md
+            # after real runs; only a post-coding stage can honestly require
+            # status=verified (equation->code refs, passing tests, hashes).
+            implementation_map = require_structured_artifact(
+                "implementation_map",
+                schema_name="implementation_map.schema.json",
+                status_field="status",
+                accepted_statuses={"verified"},
+            )
+            if isinstance(implementation_map, dict) and implementation_map.get("run_id") != manifest.get("run_id"):
+                errors.append("implementation_map.run_id does not match run_manifest.run_id")
+            if model_contract_path is not None:
+                implementation_rows = artifacts_for_role(manifest, "implementation_map")
+                if len(implementation_rows) == 1:
+                    implementation_path = resolve_path(str(implementation_rows[0].get("path", "")), root).resolve()
+                    if implementation_path.is_file():
+                        run_json_checker(
+                            "P2 implementation_map check",
+                            [
+                                str(SCRIPT_DIR / "check_implementation_map.py"),
+                                "--project-root", str(root),
+                                "--implementation-map", str(implementation_path),
+                                "--model-contract", str(model_contract_path),
+                                *(["--require-objective-binding"] if strict_math else []),
+                            ],
+                        )
+            if model_contract_path is not None and model_contract_path.is_file():
+                run_json_checker(
+                    "P2 unit/dimension check",
+                    [
+                        str(SCRIPT_DIR / "check_units.py"),
+                        "--project-root", str(root),
+                        "--model-contract", str(model_contract_path),
+                    ],
+                )
         _, frozen_path = single_artifact("frozen_results")
         # run_index consumption: if a run ledger is registered, the frozen run
         # must be a run the ledger actually selected under its declared policy

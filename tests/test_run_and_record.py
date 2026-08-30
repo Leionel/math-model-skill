@@ -78,6 +78,53 @@ class RunAndRecordTest(unittest.TestCase):
             self.assertEqual(result.returncode, 3)
             self.assertIn("was not produced", result.stdout)
 
+    def test_mutable_outputs_and_control_files_cannot_escape_project_root(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-run-record-boundary-") as temp:
+            base = Path(temp)
+            project = base / "project"
+            project.mkdir()
+            outside = base / "outside.json"
+            cases = (
+                ("--receipt", str(outside)),
+                ("--index", str(outside)),
+                ("--output-artifact", str(outside)),
+            )
+            for option, target in cases:
+                with self.subTest(option=option):
+                    marker = project / f"ran-{option[2:]}.txt"
+                    args = [
+                        "--run-id", "run-boundary", "--stage", "full", "--v2",
+                        "--receipt", f"reports/{option[2:]}.json",
+                    ]
+                    args.extend([option, target])
+                    args.extend([
+                        "--", sys.executable, "-c",
+                        f"from pathlib import Path; Path(r'{marker}').write_text('ran', encoding='utf-8')",
+                    ])
+                    result = self._run(*args, cwd=project)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("inside the project root", result.stdout)
+                    self.assertFalse(marker.exists(), result.stdout + result.stderr)
+            self.assertFalse(outside.exists())
+
+    def test_existing_v1_receipt_is_rejected_before_child_runs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-run-record-immutable-") as temp:
+            project = Path(temp)
+            receipt = project / "reports" / "receipt.json"
+            receipt.parent.mkdir()
+            receipt.write_text("{}\n", encoding="utf-8")
+            marker = project / "ran.txt"
+            result = self._run(
+                "--run-id", "run-immutable", "--stage", "full",
+                "--receipt", "reports/receipt.json",
+                "--", sys.executable, "-c",
+                "from pathlib import Path; Path('ran.txt').write_text('ran', encoding='utf-8')",
+                cwd=project,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to overwrite immutable receipt", result.stdout)
+            self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

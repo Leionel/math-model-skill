@@ -9,7 +9,6 @@ not implement Gate policy or create a second orchestration engine.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import re
 import subprocess
@@ -26,11 +25,28 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from _common import child_env, exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
 from figures.pptx_router import stage_pptx_reference  # noqa: E402
-from human_surface import authoring_context, compile_model_contract, ensure_figure_brief, ensure_human_surface, ensure_section  # noqa: E402
+from figures.illustration_execution import build_image_generation_request, collect_illustration_output  # noqa: E402
+from human_surface import (  # noqa: E402
+    authoring_context,
+    compile_figure_diagram_spec,
+    compile_model_contract,
+    compile_paper_plan,
+    compile_research_basis,
+    compile_solution_implementation_map,
+    ensure_figure_brief,
+    ensure_human_surface,
+    ensure_section,
+)
 from profiles.normalization import canonicalize_competition_profile, resolve_profile  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from project_layout import StateLayoutError, active_state_layout, existing_control_paths, resolve_manifest_path  # noqa: E402
 from state_layout_migration import migrate_flat_control_state_to_hidden  # noqa: E402
+from views.implementation_tasks import compile_implementation_tasks  # noqa: E402
+from views.writing_spine import compile_section_brief, compile_writing_spine  # noqa: E402
+from views.setup_card import build_setup_card  # noqa: E402
+from precedents.select_reference_cards import select_cards  # noqa: E402
+from qa.plan_selective_rerun import plan_selective_rerun  # noqa: E402
+from doctor_core import STAGES as DOCTOR_STAGES, evaluate_capabilities  # noqa: E402
 
 
 GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
@@ -389,6 +405,12 @@ def _run(args: argparse.Namespace) -> int:
         command.extend(["--input", path])
     for path in args.output_artifact:
         command.extend(["--output-artifact", path])
+    for value in getattr(args, "covers_model", []):
+        command.extend(["--covers-model", value])
+    for value in getattr(args, "covers_question", []):
+        command.extend(["--covers-question", value])
+    for value in getattr(args, "covers_contract_item", []):
+        command.extend(["--covers-contract-item", value])
     command.append("--")
     command.extend(args.command)
     return _dispatch(command, root)
@@ -549,6 +571,15 @@ def _prepare(args: argparse.Namespace) -> int:
 
 def _research(args: argparse.Namespace) -> int:
     root = _project(args)
+    if args.compile:
+        result = compile_research_basis(
+            root,
+            source=args.source,
+            output=args.output,
+            model_schema_path=REPO_ROOT / "schemas" / "model_contract.schema.json",
+        )
+        _emit(result, machine=args.json, human=f"research basis IR compiled: {result['output']}")
+        return 0
     surface = ensure_human_surface(root)
     result = {
         "ok": True,
@@ -559,12 +590,39 @@ def _research(args: argparse.Namespace) -> int:
             "message": "Research notes are ready to author. Review problem interpretation, candidate coverage, rejected methods, and unresolved questions before model selection.",
             "gate": "none",
         },
+        "compile_hint": "When a machine consumer needs a structured research basis, add the explicit YAML source block and run `harness research --compile`.",
     }
     _emit(result, machine=args.json, human="research authoring surface ready\nread: 00_PROJECT_BRIEF.md\nwrite: 01_RESEARCH_NOTES.md")
     return 0
 
 
+def _precedents(args: argparse.Namespace) -> int:
+    result = select_cards(
+        competition=args.competition,
+        problem_family=args.problem_family,
+        evidence_role=args.evidence_role,
+        data_shape=args.data_shape,
+        semantic_type=args.semantic_type,
+        card_kind=args.card_kind,
+        limit=args.limit,
+    )
+    lines = [
+        f"selected {len(result['selected'])}/{result['available']} {result['card_kind']} card(s)",
+    ]
+    lines.extend(
+        f"- {row.get('card_id')}: {row.get('title')} ({row.get('path')})"
+        for row in result["selected"]
+    )
+    if result.get("competition_index_last_reviewed"):
+        lines.append(f"competition index last reviewed: {result['competition_index_last_reviewed']}")
+    lines.append(result["note"])
+    _emit(result, machine=args.json, human="\n".join(lines))
+    return 0
+
+
 def _model(args: argparse.Namespace) -> int:
+    if args.research_source and not args.compile:
+        raise ValueError("--research-source requires --compile")
     root = _project(args)
     if args.compile:
         result = compile_model_contract(
@@ -573,6 +631,7 @@ def _model(args: argparse.Namespace) -> int:
             output=args.output,
             schema_path=REPO_ROOT / "schemas" / "model_contract.schema.json",
             manifest_path=_manifest_path(root),
+            research_source=args.research_source,
         )
     else:
         result = {
@@ -594,6 +653,44 @@ def _model(args: argparse.Namespace) -> int:
 def _solve(args: argparse.Namespace) -> int:
     root = _project(args)
     ensure_human_surface(root)
+    if args.rerun_plan:
+        if args.compile or args.command or args.tasks:
+            raise ValueError("--rerun-plan cannot be combined with --tasks, --compile, or a receipt-captured command")
+        if args.output:
+            raise ValueError("--rerun-plan writes to .harness/views/RERUN_PLAN.md and cannot take --output")
+        result = plan_selective_rerun(root, dag=args.dag, changed=args.changed)
+        affected = len(result.get("affected_artifact_ids", []))
+        pending = ", ".join(result.get("pending_gates", {})) or "none"
+        human = (
+            f"rerun plan projected: {affected} affected artifact(s), gates to re-evaluate: {pending}\n"
+            f"view: {result.get('markdown')}\n"
+            "projection only — no command was executed"
+        )
+        _emit(result, machine=args.json, human=human)
+        return 0 if result.get("ok") else 1
+    if args.tasks:
+        if args.compile or args.command:
+            raise ValueError("--tasks cannot be combined with --compile or a receipt-captured command")
+        if args.output:
+            raise ValueError("--tasks writes to .harness/views/IMPLEMENTATION_TASKS.md and cannot take --output")
+        result = compile_implementation_tasks(
+            root,
+            model_contract=args.model_contract,
+        )
+        _emit(result, machine=args.json, human=f"implementation task view compiled: {result['tasks']} tasks\nview: {result['markdown']}")
+        return 0
+    if args.compile:
+        if args.command:
+            raise ValueError("--compile cannot be combined with a receipt-captured command")
+        result = compile_solution_implementation_map(
+            root,
+            source=args.source,
+            output=args.output,
+            schema_path=REPO_ROOT / "schemas" / "implementation_map.schema.json",
+            manifest_path=_manifest_path(root, args.manifest),
+        )
+        _emit(result, machine=args.json, human=f"implementation-map IR compiled: {result['output']}")
+        return 0
     if not args.command:
         result = {
             "ok": True,
@@ -608,6 +705,8 @@ def _solve(args: argparse.Namespace) -> int:
         project=str(root), manifest=args.manifest, run_id=args.run_id, stage=args.execution_stage,
         receipt=args.receipt, index=args.index, preset=args.preset, selected=args.selected,
         freeze=False, seed=args.seed, input=args.input, output_artifact=args.output_artifact,
+        covers_model=args.covers_model, covers_question=args.covers_question,
+        covers_contract_item=args.covers_contract_item,
         command=args.command,
     )
     return _run(run_args)
@@ -616,33 +715,122 @@ def _solve(args: argparse.Namespace) -> int:
 def _paper(args: argparse.Namespace) -> int:
     root = _project(args)
     if args.paper_action == "plan":
-        result = {"ok": True, "human_surface": ensure_human_surface(root), "authoring_target": "paper/00_PAPER_PLAN.md"}
-        human = "paper plan surface ready\nwrite: paper/00_PAPER_PLAN.md"
+        if args.compile:
+            result = compile_paper_plan(
+                root,
+                source=args.source,
+                output=args.output,
+                schema_path=REPO_ROOT / "schemas" / "paper_plan.schema.json",
+                manifest_path=_manifest_path(root),
+            )
+            human = f"paper-plan IR compiled: {result['output']}"
+        else:
+            result = {
+                "ok": True,
+                "human_surface": ensure_human_surface(root),
+                "authoring_target": "paper/00_PAPER_PLAN.md",
+                "compile_hint": "When a machine consumer needs the plan, add the explicit YAML source block and run `harness paper plan --compile`.",
+            }
+            human = "Paper Director Plan surface ready\nwrite: paper/00_PAPER_PLAN.md"
     else:
-        section = ensure_section(root, args.section)
-        action = "draft" if args.paper_action == "write" else "semantic review"
+        section_action = getattr(args, "paper_section_action", args.paper_action)
+        section = ensure_section(root, args.section, role=getattr(args, "role", None))
+        action = "semantic review" if section_action == "review" else "draft"
+        writer_view = _section_writer_view(root, section["section"])
         result = {
             "ok": True,
             "section": section,
             "action": action,
+            "writer_view": writer_view,
             "context": authoring_context(root, f"paper:{section['section']}"),
             "boundary": "Only this section was scaffolded; no other section, result, or Gate state was changed.",
         }
-        human = f"paper {args.paper_action} surface ready\nsection: {section['section']}\npath: {section['path']}"
+        human = f"paper {section_action} surface ready\nsection: {section['section']}\npath: {section['path']}"
+        if writer_view.get("brief"):
+            human += f"\nwriter brief: {writer_view['brief']}"
+        if writer_view.get("why_skipped"):
+            human += f"\nwriter brief skipped: {writer_view['why_skipped']}"
     _emit(result, machine=args.json, human=human)
     return 0
 
 
+def _section_writer_view(root: Path, section_id: str) -> dict[str, Any]:
+    """Compile the section-scoped Writer Brief view when a compiled plan exists.
+
+    The view is a regenerable projection under `.harness/views/`; it never
+    touches author Markdown under `paper/` and never becomes a truth source.
+    """
+
+    plan_path = root / ".harness" / "contracts" / "paper_plan.json"
+    package_path = root / ".harness" / "reports" / "writer_package.json"
+    if not plan_path.is_file():
+        return {"brief": None, "why_skipped": "no compiled paper_plan.json; run `harness paper plan --compile` first"}
+    try:
+        result = compile_section_brief(
+            root,
+            paper_plan=str(plan_path),
+            section_id=section_id,
+            writer_package=str(package_path) if package_path.is_file() else None,
+        )
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        return {"brief": None, "why_skipped": f"section brief compilation failed: {exc}"}
+    spine = None
+    try:
+        spine = compile_writing_spine(
+            root,
+            paper_plan=str(plan_path),
+            writer_package=str(package_path) if package_path.is_file() else None,
+        )
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        spine = None  # the section brief is the load-bearing view; spine is additive
+    return {
+        "brief": result["markdown"],
+        "json": result["json"],
+        "units": result["units"],
+        "writer_package_used": package_path.is_file(),
+        "spine": spine["markdown"] if spine else None,
+    }
+
+
 def _figure(args: argparse.Namespace) -> int:
     root = _project(args)
+    if args.compile:
+        if args.prepare_pptx:
+            raise ValueError("--compile cannot be combined with --prepare-pptx")
+        result = {
+            "ok": True,
+            "diagram_spec": compile_figure_diagram_spec(
+                root,
+                args.figure_id,
+                source=args.source,
+                output=args.output,
+                schema_path=REPO_ROOT / "schemas" / "diagram_spec.schema.json",
+            ),
+        }
+        _emit(result, machine=args.json, human=f"diagram-spec IR compiled: {result['diagram_spec']['output']}")
+        return 0
     brief = ensure_figure_brief(root, args.figure_id)
+    topology = {
+        key: getattr(args, key)
+        for key in ("node_count", "dag_depth", "branch_count", "feedback_edges", "parallel_lanes", "density", "target_aspect_ratio", "reading_order")
+        if getattr(args, key) is not None
+    }
+    if args.native_topology_qa:
+        topology["native_topology_qa"] = True
     route = route_figure(
         args.kind,
         args.semantic_type,
         args.fallback_reason,
         diagram_backend=args.diagram_backend,
         pptx_reference=args.pptx_reference,
+        topology=topology or None,
     )
+    if args.request_illustration or args.collect_illustration:
+        if args.prepare_pptx:
+            raise ValueError("illustration execution cannot be combined with --prepare-pptx")
+        result = _run_illustration_protocol(args, root, brief, route)
+        _emit(result, machine=args.json, human=_illustration_human(result))
+        return 0 if result.get("ok") else 1
     staged = None
     if args.prepare_pptx:
         if route["default_tool"] != "pptx_template":
@@ -663,6 +851,63 @@ def _figure(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_illustration_protocol(args: argparse.Namespace, root: Path, brief: dict[str, Any], route: dict[str, Any]) -> dict[str, Any]:
+    """Request or collect a native image generation for an illustration figure."""
+
+    figure_id = args.figure_id
+    brief_path = Path(brief["path"]) / "brief.md"
+    request_path = root / ".harness" / "views" / "figures" / f"{figure_id}_image_generation_request.json"
+    if args.request_illustration and args.collect_illustration:
+        raise ValueError("choose either --request-illustration or --collect-illustration, not both")
+    if args.request_illustration:
+        request = build_image_generation_request(
+            figure_id=figure_id,
+            brief_path=brief_path,
+            root=root,
+            route=route,
+            capability=args.capability,
+            ai_policy=args.ai_policy,
+        )
+        if request.get("ok"):
+            request_path.parent.mkdir(parents=True, exist_ok=True)
+            write_json_atomic(request_path, request)
+            request["request_path"] = rel_path(request_path, root)
+        return request
+    collected = collect_illustration_output(
+        figure_id=figure_id,
+        generated_path=resolve_path(args.collect_illustration, root).resolve(),
+        root=root,
+        request_path=request_path,
+    )
+    if collected.get("ok"):
+        record_path = root / "figures" / figure_id / "illustration.json"
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(record_path, collected)
+        collected["record_path"] = rel_path(record_path, root)
+        collected["next_actions"] = [
+            "run scientific, visual, and final-size review before treating the figure as formal",
+            "register the generator in run_manifest.ai_usage (harness ai record) and run `harness ai verify` before strict promotion",
+        ]
+    return collected
+
+
+def _illustration_human(result: dict[str, Any]) -> str:
+    status = result.get("status")
+    lines = [f"illustration protocol: {status}"]
+    if result.get("request_path"):
+        lines.append(f"request: {result['request_path']}")
+        lines.append("call the native image-generation tool with the recorded prompt, then collect the output with --collect-illustration")
+    if result.get("record_path"):
+        lines.append(f"record: {result['record_path']}")
+        lines.append("review pending; do not promote to W2 before review_status=reviewed")
+    if result.get("message"):
+        lines.append(str(result["message"]))
+    if result.get("prompt") and status == "requested":
+        lines.append("--- prompt ---")
+        lines.append(str(result["prompt"]))
+    return "\n".join(lines)
+
+
 def _context(args: argparse.Namespace) -> int:
     root = _project(args)
     ensure_human_surface(root)
@@ -680,6 +925,19 @@ def _submit_check(args: argparse.Namespace) -> int:
         strict=args.strict,
     )
     return _check(check_args, gate="s1")
+
+
+def _submit_receipt(args: argparse.Namespace) -> int:
+    root = _project(args)
+    command = [
+        sys.executable,
+        str(SCRIPT_DIR / "qa" / "check_submission_receipt.py"),
+        "--receipt",
+        args.receipt,
+        "--project-root",
+        str(root),
+    ]
+    return _dispatch(command, root)
 
 
 def _profile(args: argparse.Namespace) -> int:
@@ -702,32 +960,9 @@ def _profile(args: argparse.Namespace) -> int:
 
 def _doctor(args: argparse.Namespace) -> int:
     root = _project(args)
-    errors: list[str] = []
-    warnings: list[str] = []
-    dependencies: dict[str, dict[str, Any]] = {}
-    for name in ("yaml", "jsonschema", "numpy", "pandas", "scipy", "matplotlib"):
-        try:
-            module = importlib.import_module(name)
-            dependencies[name] = {"available": True, "version": getattr(module, "__version__", None)}
-        except Exception as exc:  # optional dependencies must not hide core readiness
-            dependencies[name] = {"available": False, "error": str(exc)}
-            if name in {"yaml", "jsonschema"}:
-                errors.append(f"required Python dependency missing: {name}")
-            else:
-                warnings.append(f"optional Python dependency missing: {name}")
-    schemas: list[str] = []
-    schema_dir = REPO_ROOT / "schemas"
-    for path in sorted(schema_dir.glob("*.schema.json")):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(value, Mapping):
-                raise ValueError("schema root is not an object")
-            schemas.append(path.name)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            errors.append(f"schema parse failed: {path.name}: {exc}")
-    critical = ["scripts/harness.py", "scripts/harness_status.py", "scripts/run_and_record.py", "scripts/qa/check_gates.py", "scripts/qa/run_deterministic_qa.py"]
-    missing = [item for item in critical if not (REPO_ROOT / item).is_file()]
-    errors.extend(f"critical file missing: {item}" for item in missing)
+    report = evaluate_capabilities(root, stage=args.stage, repo_root=REPO_ROOT)
+    errors = list(report["errors"])
+    warnings = list(report["warnings"])
     layout: str | None
     try:
         layout = active_state_layout(root)
@@ -743,10 +978,24 @@ def _doctor(args: argparse.Namespace) -> int:
                 errors.append("project run_manifest is not an object")
         except (OSError, ValueError, TypeError) as exc:
             errors.append(f"project run_manifest cannot be read: {exc}")
-    report = {"ok": not errors, "project_root": str(root), "python": {"path": sys.executable, "version": sys.version.split()[0]}, "dependencies": dependencies, "schema_count": len(schemas), "schemas": schemas, "critical_files": {"checked": critical, "missing": missing}, "warnings": warnings, "errors": errors}
     report["state_layout"] = layout
-    _emit(report, machine=args.json, human=f"doctor: {'OK' if report['ok'] else 'BLOCKED'}\npython: {sys.version.split()[0]}\nschemas: {len(schemas)}\noptional warnings: {len(warnings)}")
+    report["errors"] = errors
+    report["warnings"] = warnings
+    report["ok"] = not errors
+    _emit(report, machine=args.json, human=f"doctor: {'OK' if report['ok'] else 'BLOCKED'}\npython: {sys.version.split()[0]}\nschemas: {report['schema_count']}\nstage: {args.stage or 'all'}\noptional warnings: {len(warnings)}")
     return 0 if report["ok"] else 1
+
+
+def _setup(args: argparse.Namespace) -> int:
+    root = _project(args)
+    card = build_setup_card(root, manifest=args.manifest, stage=args.stage)
+    result = {"ok": True, **card}
+    _emit(
+        result,
+        machine=args.json,
+        human=f"setup card (draft only): {card['output']}\nconfirmation required: {card['requires_user_confirmation']}",
+    )
+    return 0
 
 
 def _add_common(parser: argparse.ArgumentParser, *, machine: bool = True) -> None:
@@ -824,6 +1073,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--seed", type=int)
     run.add_argument("--input", action="append", default=[])
     run.add_argument("--output-artifact", action="append", default=[])
+    run.add_argument("--covers-model", action="append", default=[], help="model id exercised by a smoke command")
+    run.add_argument("--covers-question", action="append", default=[], help="question id exercised by a smoke command")
+    run.add_argument("--covers-contract-item", action="append", default=[], help="equation, constraint, or validation-obligation id exercised by a smoke command")
     run.add_argument("command", nargs=argparse.REMAINDER, help="command after --")
     run.set_defaults(handler=_run)
 
@@ -861,16 +1113,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     research = sub.add_parser("research", help="prepare the human-authored research surface; it does not run a Gate")
     _add_common(research)
+    research.add_argument("--compile", action="store_true", help="compile the explicit research-basis YAML block to JSON IR")
+    research.add_argument("--source", help="research Markdown source; defaults to 01_RESEARCH_NOTES.md")
+    research.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/research_basis.json")
     research.set_defaults(handler=_research)
 
     model = sub.add_parser("model", help="prepare model-decision authoring or compile its explicit YAML contract source")
     _add_common(model)
     model.add_argument("--compile", action="store_true", help="compile the explicit machine-contract YAML block to JSON IR")
     model.add_argument("--source", help="model decision Markdown source; defaults to 02_MODEL_DECISION.md")
+    model.add_argument("--research-source", help="optional research-notes Markdown source to compile into model_contract.research_basis")
     model.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/model_contract.json")
     model.set_defaults(handler=_model)
 
     solve = sub.add_parser("solve", help="prepare solve authoring or dispatch one real receipt-captured command")
+    solve.add_argument("--tasks", action="store_true", help="compile the per-model implementation task view from the model contract")
+    solve.add_argument("--rerun-plan", action="store_true", help="project the minimal rerun set and pending gates after a change; never executes anything")
+    solve.add_argument("--dag", help="artifact DAG path for --rerun-plan; defaults to the active control layout")
+    solve.add_argument("--changed", action="append", default=[], help="artifact_id or path treated as changed for --rerun-plan; repeatable")
+    solve.add_argument("--model-contract", default=".harness/contracts/model_contract.json", help="model contract source for --tasks")
+    solve.add_argument("--compile", action="store_true", help="compile the explicit implementation-map YAML block to JSON IR")
+    solve.add_argument("--source", help="solution-report Markdown source; defaults to 03_SOLUTION_REPORT.md")
+    solve.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/implementation_map.json")
     _add_common(solve)
     solve.add_argument("--manifest", default=None)
     solve.add_argument("--stage", dest="execution_stage", choices=("smoke", "full"), default="smoke")
@@ -882,6 +1146,9 @@ def build_parser() -> argparse.ArgumentParser:
     solve.add_argument("--seed", type=int)
     solve.add_argument("--input", action="append", default=[])
     solve.add_argument("--output-artifact", action="append", default=[])
+    solve.add_argument("--covers-model", action="append", default=[], help="model id exercised by a smoke command")
+    solve.add_argument("--covers-question", action="append", default=[], help="question id exercised by a smoke command")
+    solve.add_argument("--covers-contract-item", action="append", default=[], help="equation, constraint, or validation-obligation id exercised by a smoke command")
     solve.add_argument("command", nargs=argparse.REMAINDER, help="real command after --")
     solve.set_defaults(handler=_solve)
 
@@ -889,28 +1156,72 @@ def build_parser() -> argparse.ArgumentParser:
     paper_sub = paper.add_subparsers(dest="paper_action", required=True)
     paper_plan = paper_sub.add_parser("plan", help="create paper/00_PAPER_PLAN.md when absent")
     _add_common(paper_plan)
+    paper_plan.add_argument("--compile", action="store_true", help="compile the explicit Paper Director Plan YAML block to JSON IR")
+    paper_plan.add_argument("--source", help="paper-plan Markdown source; defaults to paper/00_PAPER_PLAN.md")
+    paper_plan.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/paper_plan.json")
     paper_plan.set_defaults(handler=_paper)
+
+    paper_section = paper_sub.add_parser("section", help="create a flexible section-local authoring surface")
+    paper_section_sub = paper_section.add_subparsers(dest="paper_section_action", required=True)
+    paper_section_create = paper_section_sub.add_parser("create", help="scaffold one freely named section")
+    _add_common(paper_section_create)
+    paper_section_create.add_argument("section")
+    paper_section_create.add_argument("--role", help="soft section role for the author brief; it does not change Gate policy")
+    paper_section_create.set_defaults(handler=_paper)
     for action, help_text in (("write", "scaffold exactly one section for drafting"), ("review", "scaffold exactly one section for semantic review")):
         section = paper_sub.add_parser(action, help=help_text)
         _add_common(section)
         section.add_argument("section")
+        section.add_argument("--role", help="soft section role for the author brief; it does not change Gate policy")
         section.set_defaults(handler=_paper)
 
     figure = sub.add_parser("figure", help="create a figure brief and route it to the appropriate tool family")
     _add_common(figure)
     figure.add_argument("figure_id")
+    figure.add_argument("--compile", action="store_true", help="compile the explicit diagram-spec YAML block when a structured diagram producer needs it")
+    figure.add_argument("--source", help="figure brief Markdown source; defaults to figures/<figure-id>/brief.md")
+    figure.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/figures/<figure-id>_diagram_spec.json")
     figure.add_argument("--kind", choices=("auto", "data", "diagram", "illustration"), default="auto")
     figure.add_argument("--semantic-type")
     figure.add_argument("--diagram-backend", choices=("auto", "pptx", "drawio"), default="auto")
     figure.add_argument("--pptx-reference", help="use one inspected PPTX reference id")
+    figure.add_argument("--node-count", type=int, help="declared diagram node count for backend/reference selection")
+    figure.add_argument("--dag-depth", type=int, help="declared longest acyclic path depth")
+    figure.add_argument("--branch-count", type=int, help="declared decision/branch count")
+    figure.add_argument("--feedback-edges", type=int, help="declared feedback edge count")
+    figure.add_argument("--parallel-lanes", type=int, help="declared parallel lane count")
+    figure.add_argument("--density", choices=("low", "medium", "high"), help="declared visual density")
+    figure.add_argument("--target-aspect-ratio", choices=("wide", "square", "tall", "16:9", "4:3"))
+    figure.add_argument("--reading-order", choices=("left_to_right", "top_to_bottom", "grid"))
+    figure.add_argument("--native-topology-qa", action="store_true", help="require native topology QA and route to Draw.io")
     figure.add_argument("--prepare-pptx", action="store_true", help="copy the selected PPTX reference into the figure directory without overwriting an existing copy")
     figure.add_argument("--fallback-reason", help="record why the explicit Draw.io fallback is needed")
+    figure.add_argument("--request-illustration", action="store_true", help="emit a provider-neutral image-generation request for an illustration-routed figure (the agent then calls its native tool)")
+    figure.add_argument("--collect-illustration", metavar="PATH", help="register the generated raster file back into the figure directory with hash and review obligations")
+    figure.add_argument("--capability", choices=("available", "missing", "unknown"), default="unknown", help="whether the current environment exposes a native image-generation tool")
+    figure.add_argument("--ai-policy", choices=("allowed", "forbidden", "unknown"), default="unknown", help="current competition-profile stance on generated imagery")
     figure.set_defaults(handler=_figure)
 
     context = sub.add_parser("context", help="show the minimal stage-local context plan")
     _add_common(context)
     context.add_argument("--stage", required=True, help="research, model, solve, or paper:<section>")
     context.set_defaults(handler=_context)
+
+    precedents = sub.add_parser("precedents", help="consume quarantined precedent knowledge through cards only")
+    precedents_sub = precedents.add_subparsers(dest="precedents_action", required=True)
+    precedents_select = precedents_sub.add_parser(
+        "select",
+        help="select pattern or figure cards by competition, problem family, or evidence role; full papers stay quarantined",
+    )
+    _add_common(precedents_select)
+    precedents_select.add_argument("--competition", choices=("CUMCM", "MCM-ICM"))
+    precedents_select.add_argument("--problem-family")
+    precedents_select.add_argument("--evidence-role")
+    precedents_select.add_argument("--data-shape")
+    precedents_select.add_argument("--semantic-type")
+    precedents_select.add_argument("--card-kind", choices=("pattern", "figure"), default="pattern")
+    precedents_select.add_argument("--limit", type=int, default=3)
+    precedents_select.set_defaults(handler=_precedents)
 
     submit = sub.add_parser("submit", help="thin submission-facing façade")
     submit_sub = submit.add_subparsers(dest="submit_action", required=True)
@@ -919,6 +1230,14 @@ def build_parser() -> argparse.ArgumentParser:
     submit_check.add_argument("--manifest", default=None)
     submit_check.add_argument("--strict", action="store_true")
     submit_check.set_defaults(handler=_submit_check)
+
+    submit_receipt = submit_sub.add_parser(
+        "receipt",
+        help="verify a human portal receipt against the immutable F1 package",
+    )
+    _add_common(submit_receipt)
+    submit_receipt.add_argument("--receipt", required=True)
+    submit_receipt.set_defaults(handler=_submit_receipt)
 
     ai = sub.add_parser("ai", help="declare or record AI usage in the v2 control manifest")
     ai_sub = ai.add_subparsers(dest="ai_action", required=True)
@@ -975,7 +1294,14 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check Python, optional dependencies, schemas, and critical files")
     _add_common(doctor)
     doctor.add_argument("--offline", action="store_true", help="reserved compatibility flag; does not download anything")
+    doctor.add_argument("--stage", choices=DOCTOR_STAGES, help="report only the capabilities required by one workflow stage")
     doctor.set_defaults(handler=_doctor)
+
+    setup = sub.add_parser("setup", help="render one draft-only DSH setup card")
+    _add_common(setup)
+    setup.add_argument("--manifest", default=None)
+    setup.add_argument("--stage", choices=DOCTOR_STAGES, help="stage to include in the capability readout")
+    setup.set_defaults(handler=_setup)
 
     migrate = sub.add_parser("migrate", help="dispatch the non-destructive v1 to v2 migration")
     _add_common(migrate)

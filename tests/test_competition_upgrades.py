@@ -701,8 +701,16 @@ class CompetitionUpgradeTest(unittest.TestCase):
                 "--writer-package", "writer_package.json", "--draft", "draft.txt",
                 "--require-first-draft-coverage", "--strict",
             )
-            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("minimum_words", result.stdout)
+            self.assertIn('"advisories"', result.stdout)
+            enforced = self.run_script(
+                "qa/check_writer_package.py", "--project-root", str(project),
+                "--writer-package", "writer_package.json", "--draft", "draft.txt",
+                "--require-first-draft-coverage", "--enforce-minimum-words", "--strict",
+            )
+            self.assertNotEqual(enforced.returncode, 0)
+            self.assertIn("minimum_words", enforced.stdout)
             draft.write_text(
                 "[[FORMULATION]] 明确变量、单位、目标函数、约束条件、可行域、算法、实现步骤、独立验证、诊断方法、假设与结论边界。",
                 encoding="utf-8",
@@ -710,10 +718,34 @@ class CompetitionUpgradeTest(unittest.TestCase):
             passed = self.run_script(
                 "qa/check_writer_package.py", "--project-root", str(project),
                 "--writer-package", "writer_package.json", "--draft", "draft.txt",
-                "--require-first-draft-coverage", "--strict",
+                "--require-first-draft-coverage", "--enforce-minimum-words", "--strict",
             )
             self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
             self.assertIn('"first_draft_coverage_verified": true', passed.stdout)
+
+    def test_writer_package_rejects_visible_internal_markers_but_allows_comments_and_labels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="math-writer-markers-") as temp:
+            project = Path(temp)
+            write_json(project / "writer_package.json", {"schema_version": "1.0", "claims": []})
+            draft = project / "draft.tex"
+            draft.write_text(
+                "% LOC-AU-Q3-F is private metadata\n"
+                "<!-- ANCHOR-AU-Q3-F is private metadata -->\n"
+                "\\label{harness:AU-Q3-F} Reader-facing explanation.\n",
+                encoding="utf-8",
+            )
+            allowed = self.run_script(
+                "qa/check_writer_package.py", "--project-root", str(project),
+                "--writer-package", "writer_package.json", "--draft", "draft.tex",
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
+            draft.write_text("ANCHOR-AU-Q3-F LOC-AU-Q3-F Reader-facing explanation.\n", encoding="utf-8")
+            rejected = self.run_script(
+                "qa/check_writer_package.py", "--project-root", str(project),
+                "--writer-package", "writer_package.json", "--draft", "draft.tex",
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("internal authoring marker", rejected.stdout)
 
     def test_failure_evidence_compiler_and_checker_preserve_diagnostic_only_status(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-failure-evidence-") as temp:

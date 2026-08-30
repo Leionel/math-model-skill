@@ -195,3 +195,14 @@ def rel_path(path: Path, root: Path) -> str:
 def resolve_path(raw: str, root: Path) -> Path:
     path = Path(raw)
     return path if path.is_absolute() else root / path
+
+
+def require_within(path: Path, root: Path, *, label: str) -> Path:
+    """Resolve ``path`` and require it to remain inside ``root``."""
+
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"{label} must stay inside the project root: {resolved}") from exc
+    return resolved

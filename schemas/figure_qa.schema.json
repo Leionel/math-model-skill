@@ -22,8 +22,39 @@
         "effective_dpi": {"type": ["number", "null"], "minimum": 0},
         "page_box_ok": {"type": ["boolean", "null"]},
         "font_scan_status": {"type": "string", "enum": ["pass", "fail", "not_applicable", "not_available"]},
+        "rendered": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checked"],
+          "properties": {
+            "checked": {"type": "boolean"},
+            "content_bbox": {
+              "type": "array",
+              "prefixItems": [{"type": "integer"}, {"type": "integer"}, {"type": "integer"}, {"type": "integer"}],
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "coverage": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        },
         "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "errors": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "final_size_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "manual_font_check_required"],
+      "properties": {
+        "checked": {"type": "boolean"},
+        "target_width_inch": {"type": ["number", "null"]},
+        "target_height_inch": {"type": ["number", "null"]},
+        "expected_scale": {"type": ["number", "null"]},
+        "min_effective_font_pt": {"type": ["number", "null"]},
+        "raster_dpi_declared": {"type": ["number", "null"]},
+        "manual_font_check_required": {"type": "boolean"},
+        "effective_dpi_from_contract": {"type": "number", "minimum": 0},
+        "status": {"type": ["string", "null"]}
       }
     },
     "manual_review_required": {"type": "boolean", "const": true},
