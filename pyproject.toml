@@ -14,5 +14,8 @@ harness = "scripts.harness:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["scripts*"]
+include = ["scripts*", "schemas*", "references*", "competition_profiles*", "assets*"]
 namespaces = true
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.md", "*.yaml", "*.png", "*.pdf", "*.drawio", "*.svg", "*.pptx", "*.tex", "*.mplstyle", "*.gitkeep"]
