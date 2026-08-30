@@ -5,6 +5,11 @@
 > 范围：`paper_plan` 合同、`check_paper_readiness`、`check_writer_package`、`validate_contracts`、新增篇幅审计工具。  
 > 目标：把"先卡死每段字数再写"改为"先把论证写充分再按总篇幅优化分配"，保持"篇幅向关键困难倾斜"的核心意图但修正其实现时机和度量方式。
 
+> **Historical design note — not current operational policy.** The implemented vNext
+> route keeps only `argument_units[].depth_priority` (`core`, `supporting`,
+> `compact`) and its rationale; it does not adopt this note's `depth_allocation`,
+> `expected_depth`, relative weights, rank checks, or pre-draft word-count Gate.
+
 ---
 
 ## 1. 现状诊断

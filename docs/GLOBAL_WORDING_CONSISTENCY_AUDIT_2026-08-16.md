@@ -1,3 +1,7 @@
+# HISTORICAL DESIGN / EXECUTION RECORD
+> Do not use this file as current operational instruction.
+> Current truth starts from `SKILL.md` and `references/router.md`.
+
 # 全局表述、术语与声明一致性审计（2026-08-16）
 
 - 审计对象：`math-modeling-skill-sion`（Math Modeling Evidence Harness），工作区当前状态（含未提交修改，分支 `agent/math-modeling-harness`）。

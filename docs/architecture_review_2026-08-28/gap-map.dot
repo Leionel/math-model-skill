@@ -1,0 +1,56 @@
+// Math Modeling Evidence Harness — Full-workflow coverage & gap map (pre-remediation snapshot, 2026-08-28)
+// Later implementation status: HANDOFF_2026-08-28.md
+// Skills: risk-quality-reviewer + graphviz. Color = coverage verdict.
+// green=strong/covered  amber=partial  red=gap/weak  (all evidence-backed in review md)
+digraph gap_map {
+  rankdir=TB;
+  graph [fontname="Helvetica", labelloc="t",
+         label="Full Math-Modeling Workflow — Coverage & Gap Map\n(pre-remediation snapshot; green=strong, amber=partial, red=gap/weak)"];
+  node  [fontname="Helvetica", fontsize=9, shape=box, style="rounded,filled"];
+  edge  [fontname="Helvetica", fontsize=8, color="#616161"];
+
+  // ===== Workflow stages =====
+  s1 [label="1. Problem understanding / decomposition / ambiguity", fillcolor="#FFCDD2"];
+  s2 [label="2. Literature / precedent research", fillcolor="#FFE0B2"];
+  s3 [label="3. Data / EDA / data contract", fillcolor="#C8E6C9"];
+  s4 [label="4. Model selection & design", fillcolor="#C8E6C9"];
+  s5 [label="5. Model implementation / coding / solving", fillcolor="#FFCDD2"];
+  s6 [label="6. Validation / sensitivity / robustness", fillcolor="#FFE0B2"];
+  s7 [label="7. Results analysis / interpretation", fillcolor="#FFE0B2"];
+  s8 [label="8. Writing / paper composition", fillcolor="#FFE0B2"];
+  s9 [label="9. Figures / visualization", fillcolor="#FFE0B2"];
+  s10 [label="10. Review / QA", fillcolor="#C8E6C9"];
+  s11 [label="11. Compliance / packaging / submission", fillcolor="#C8E6C9"];
+  s12 [label="12. Iteration / revision / orchestration", fillcolor="#FFE0B2"];
+
+  s1->s2->s3->s4->s5->s6->s7->s8->s9->s10->s11->s12;
+
+  // ===== Gap annotations =====
+  subgraph cluster_gaps {
+    label="Key per-stage shortfalls"; style=dashed; color="#9E9E9E";
+    node [shape=note, fontsize=8, style=filled, fillcolor="#FFFDE7"];
+    g1 [label="ideation/problem_decomposer exists but\naudits: 赛题拆解/算法发现偏弱(静态校验);\nno active ambiguity exploration like MathModelAgent"];
+    g2 [label="indexes ARE populated (6 CUMCM + 4 MCM-ICM,\nhash-verified, extraction_status=extracted)\n+ tested select_reference_cards; BUT not a harness\nCLI/gate step → manual-only; freshness unreviewed"];
+    g5 [label="no model_contract→coding-task projection\n(METAMATH §3 'stage inversion');\nno leakage/encoding/solver-robustness\nprotocols (MathModelAgent coder, mms-skill)"];
+    g6 [label="GAP-08: selective rerun / sensitivity\norchestration missing; GAP-07/M0–M4:\nno algebra/unit/index/dimension executors"];
+    g8 [label="'合同丰富，交接贫弱' — paper_plan not\nprojected to section tasks; no evidence-\nallocation discipline (nature-shared)"];
+    g9 [label="no Figure Reference Card visual library;\nno rendered collision/alignment QA\n(nature-figure); GAP-05/13 bindings"];
+  }
+
+  g1->s1 [style=dashed]; g2->s2 [style=dashed]; g5->s5 [style=dashed];
+  g6->s6 [style=dashed]; g8->s8 [style=dashed]; g9->s9 [style=dashed];
+
+  // ===== Cross-cutting / meta gaps =====
+  subgraph cluster_meta {
+    label="Cross-cutting META gaps (headline findings)"; style=filled; color="#EA4335"; fillcolor="#FCE8E6";
+    node [shape=box, fontsize=8, style="rounded,filled", fillcolor="#FFCDD2"];
+    m1 [label="A. Capability benchmark NEVER RUN —\nreal-contest generalization unproven;\nall evidence = regression/schema, not capability"];
+    m2 [label="B. Cognitive load / 30 schemas / 15+ manual JSON —\n'为了填契约而填契约'; rich contracts, weak handoffs"];
+    m3 [label="C. Broken welds — tools built without consumers\n(run_index, receipts); free text w/o receipt constraint"];
+    m4 [label="D. Math executors absent (algebra/unit/index/symbolic)"];
+    m5 [label="E. State multi-write (profile dual-source, command 3-write,\n72 profile combos) + code debt (god-functions, v1/v2 dup)"];
+    m6 [label="F. No distributable packaging (editable checkout only)"];
+  }
+  m1->s11 [style=dashed, color="#EA4335"];
+  m4->s6  [style=dashed, color="#EA4335"];
+}

@@ -1,3 +1,8 @@
+# HISTORICAL DESIGN / EXECUTION RECORD
+
+> Do not use this file as current operational instruction.
+> Current truth starts from `SKILL.md` and `references/router.md`.
+
 # Math Modeling Harness — OSS-Grounded Review Execution Prompt v4
 
 你现在继续处理：

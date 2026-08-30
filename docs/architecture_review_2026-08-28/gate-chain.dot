@@ -1,0 +1,32 @@
+// Math Modeling Evidence Harness — Gate chain with per-gate evidence (pre-remediation snapshot, 2026-08-28)
+// Later implementation status: HANDOFF_2026-08-28.md
+// Skills: system-modeler + graphviz. Linear stage path => TB chain readable in Canvas.
+digraph gate_chain {
+  rankdir=TB;
+  graph [fontname="Helvetica", labelloc="t",
+         label="Gate Chain S0→M1→P1→P2→W1→W2→S1→F1 with minimum evidence\n(pre-remediation snapshot; ordering by fact-dependency, not stored status)"];
+  node  [fontname="Helvetica", fontsize=9, shape=box, style="rounded,filled", fillcolor="#E8F0FE"];
+  edge  [fontname="Helvetica", fontsize=8];
+
+  S0 [label="S0 — scope & safety\ncompetition_profile seed; rule snapshot,\nAI policy, page scope, human checks\n(enforced by doctor + check_contest_safety)"];
+  M1 [label="M1 — model & validation contract\nmodel_contract + evidence_registry; ≥2 candidates;\nassumptions; typed provenance; falsifiable duties;\ncheck_modeling_plan(--formal) + DAG + human ckpt"];
+  P1 [label="P1 — smoke execution\n≥1 successful PROCESS-CAPTURED smoke receipt\n(exit=0 AND outcome≠failed); smoke_coverage bound\nto model/question/contract-item ids"];
+  P2 [label="P2 — full run + independent validation + freeze\nexactly 1 selected full receipt; I/O re-hash;\n1 freeze receipt + frozen_results\n(status=frozen, verdict=PASS, claimable)"];
+  W1 [label="W1 — evidence & paper plan\nclaimable frozen_results; paper_plan mapping\nclaims→verified evidence; paper-readiness checker;\nhuman ckpt"];
+  W2 [label="W2 — deterministic QA + review plane\nDAG freshness; re-hash frozen bytes;\ndeterministic QA + math/consistency/template/PDF;\nreview reports (sprint/research/submission set);\nopen blocker/high/medium block; human ckpt"];
+  S1 [label="S1 — current submission checks\nprofile status=verified; preset=submission;\nPDF digest recomputed; check_submission page scope;\nAI disclosure; submission manifest; human ckpt"];
+  F1 [label="F1 — immutable delivery\nfreeze_submission re-runs S1 gate first;\npackage_sha256 over rehashed paper/support/AI;\nany changed immutable input → new version + rerun"];
+
+  S0 -> M1 -> P1 -> P2 -> W1 -> W2 -> S1 -> F1 [color="#1A73E8", penwidth=1.5];
+
+  // Cross-cutting enforcement
+  safety [label="check_contest_safety\nruns inside M1/W2/S1 (+v1 unconditionally)", shape=note, style=filled, fillcolor="#FCE8E6", fontsize=8];
+  rederive [label="Non-bypassability = RE-DERIVATION:\nv2 stores no gate status; every report\nregenerated from receipts/hashes/DAG at check time;\nloop breaks on first factual failure", shape=note, style=filled, fillcolor="#FFFDE7", fontsize=8];
+  ai [label="AI usage tri-state:\nunknown → none|used;\npending auto-records need human ai verify\nbefore strict promotion", shape=note, style=filled, fillcolor="#E0F2F1", fontsize=8];
+
+  safety -> M1 [style=dashed, color="#EA4335"];
+  safety -> W2 [style=dashed, color="#EA4335"];
+  safety -> S1 [style=dashed, color="#EA4335"];
+  rederive -> W2 [style=invis];
+  ai -> S1 [style=dashed, color="#00897B"];
+}

@@ -1,6 +1,6 @@
 ---
 name: math-modeling-skill-sion
-description: 面向 CUMCM、MCM/ICM、APMCM 等数学建模竞赛的证据与合规 Harness。用于新建或迁移比赛项目、题意与模型选型、数据/验证合同、真实运行、结果冻结、证据追溯、技术写作、确定性 QA、提交检查与不可变交付；普通数学题且不涉及竞赛交付链时不要使用。
+description: 面向 CUMCM、MCM/ICM、APMCM 等数学建模竞赛的证据与合规 Harness。用于新建或迁移比赛项目、题意与模型选型、数据/验证合同、真实运行、结果冻结、证据追溯、技术写作、确定性 QA、提交检查与不可变交付；也覆盖论文科研示意图/机制图/场景图/概念图的原生 image generation 执行与回收。普通数学题且不涉及竞赛交付链时不要使用。
 ---
 
 # Math Modeling Evidence Harness
@@ -42,7 +42,11 @@ Python experiment with no evidence or competition-delivery obligations.
     artifacts. `00_PROJECT_BRIEF.md`, `01_RESEARCH_NOTES.md`,
     `02_MODEL_DECISION.md`, `03_SOLUTION_REPORT.md`, and `paper/` are the
     human authoring surface and must never be overwritten by `prepare`.
-11. AI usage starts as `unknown`. Before S1, record each use or obtain an
+11. Treat author Markdown as the source for COMPILE artifacts. Use the explicit
+    `research/model/solve/paper plan/figure --compile` commands only when a
+    machine consumer needs IR; never hand-edit those generated JSON files. A
+    compile creates IR, not research evidence or a Gate result.
+12. AI usage starts as `unknown`. Before S1, record each use or obtain an
     explicit human `none` declaration; an empty registry is not proof of no
     use. Harness-observable AI backends must log automatically as `pending`;
     a human must run `harness ai verify` before strict promotion.
@@ -71,7 +75,7 @@ Minimum I/O: project root, `competition_profile.json`, `run_manifest.json`,
 
 Record the problem mechanism, data boundary, at least two candidate models (or
 a documented reason for an exception), assumptions, typed parameter
-provenance, formulas, implementation map, and falsifiable validation duties.
+provenance, formulas, an implementation plan, and falsifiable validation duties.
 Use `assumption_forks` for ambiguous question semantics and declare objective
 and risk semantics before coding.
 Run `harness prepare M1` before the M1 human checkpoint; review its modeling
@@ -86,8 +90,14 @@ literature linkage and scope checks are required.
 Run the smallest real process through `run_and_record.py`. The receipt must be
 process-captured, tied to this run, and successful; copied command text or an
 exit code in a projection is not a receipt.
+Receipt, index, stdout/stderr sidecars, and declared outputs must remain inside
+the contest project root. Existing receipt files are immutable: choose a new
+receipt ID/path before rerunning, never overwrite the old execution record.
 
 Minimum I/O: one successful smoke receipt and the v2 run-index projection.
+In `research`/`submission`, that receipt also carries the exercised model,
+question, and contract-item IDs; mutable manifest claims are not execution
+evidence.
 
 ### P2 — full run, independent validation, and result freeze
 
@@ -95,10 +105,20 @@ Run the selected full computation and an independent evaluator. Recompute each
 declared obligation, including sensitivity/OOS/failure evidence when triggered.
 Freeze the result only after semantic validation. Only `status: frozen`,
 `validation_verdict: PASS`, and `claimable: true` results may enter evidence.
+The unit checker parses declared unit expressions into scale and dimensional
+signatures. It recognizes common SI base/derived units and composite or custom
+units, so `J` and `kg*m^2/s^2` are dimensionally equivalent. It does not infer
+units from equation text or convert numeric values: reusing one symbol as
+`m/s` and `km/h` remains a blocking scale contradiction, while an equation
+balance with different scales requires an explicit conversion warning. A
+sensitivity sweep point is valid only when its real output contains the
+declared metric as a finite number; a successful process exit alone is
+insufficient.
 
 Minimum I/O: exactly one selected full receipt, one successful freeze receipt,
 one frozen-results artifact, required input/output bindings, and P2 human
-checkpoint.
+checkpoint. `research`/`submission` additionally require a verified
+implementation map bound to the current model contract and code/tests.
 
 ### W1 — evidence and paper plan
 
@@ -131,12 +151,23 @@ working directory, receipt, and report, but is not an OS sandbox: submission
 still needs a genuinely separate context/model. Load the review references
 via the router before acting as a reviewer.
 
+Keep evidence scope separate from reviewer independence. A report may narrow
+its `available_evidence_scope`, but bound artifact roles determine the upper
+limit. If a gate-severity finding needs a stronger scope, set
+`requires_external_check: true`; it cannot become established merely through
+reviewer confidence or a free-text receipt/command locator. The current bundle
+supports at most `result_artifacts`; `rerunnable` is reserved until code, data,
+environment, and model-run evidence receive structured bindings.
+
 Minimum I/O: paper source/draft, abstract, conclusion, deterministic QA report,
 current review reports, current evidence chain, and W2 human checkpoint.
 `research` requires the full evidence chain; `submission` additionally
 requires strict math/editorial and current template/bibliography evidence.
 Run `harness prepare W2` to refresh the project brief and targeted revision
 view; it does not run or replace deterministic QA/review.
+Internal authoring tokens such as `ANCHOR-*`, `LOC-*`, argument-unit IDs, and
+review routing labels must never appear in reader-facing prose or the PDF.
+Use invisible `\label{harness:...}` locators or TeX comments for traceability.
 
 ### S1 — current submission checks
 
@@ -159,6 +190,11 @@ new digest binding, downstream invalidation, and rerun of affected Gates.
 Minimum I/O: immutable submission manifest and receipt. F1 is not a mutable
 `run_manifest.gates` flag.
 
+After a human portal submission, validate the separately recorded portal
+receipt with `harness submit receipt --receipt <path>`. It must bind an
+immutable F1 file, current hashes, an official profile endpoint, portal
+evidence, and `portal_status=accepted`; this command never uploads anything.
+
 ## Presets
 
 | Preset | Use | Integrity posture |
@@ -174,11 +210,14 @@ result freeze, or submission immutability with an override.
 
 ```powershell
 python scripts/harness.py init --project C:\work\q1 --competition cumcm --preset research
+python scripts/harness.py setup --project C:\work\q1 --stage M1 --json
 python scripts/harness.py status --project C:\work\q1
 python scripts/harness.py prepare M1 --project C:\work\q1 --json
 python scripts/harness.py ai status --project C:\work\q1 --json
 python scripts/harness.py check M1 --project C:\work\q1 --profile research --json
-python scripts/harness.py run --project C:\work\q1 --stage smoke -- python model.py
+python scripts/harness.py run --project C:\work\q1 --stage smoke `
+  --covers-model M-Q1 --covers-question q1 --covers-contract-item EQ-Q1-OBJ `
+  -- python model.py
 python scripts/harness.py review --project C:\work\q1 --json
 python scripts/harness.py review --project C:\work\q1 --recheck --json
 python scripts/harness.py ai verify --project C:\work\q1 --usage-id AI-REVIEW-... --checked-by-role team-lead --verification-method "checked report against evidence" --human-changes "record accepted edits or state that none were adopted"
@@ -186,23 +225,62 @@ python scripts/harness.py validate --project C:\work\q1 --strict
 python scripts/harness.py prepare S1 --project C:\work\q1 --json
 python scripts/harness.py freeze --project C:\work\q1 --kind results --source results.json --output frozen_results.json --run-id run-1 --model-contract model_contract.json --code model.py --validation validation.json
 python scripts/harness.py profile --project C:\work\q1 --json
-python scripts/harness.py doctor --project C:\work\q1 --json
+python scripts/harness.py doctor --project C:\work\q1 --stage M1 --json
 python scripts/harness.py migrate --project C:\work\legacy --json
 ```
 
-For conceptual process/framework figures, default to the inspected PPTX route:
-`harness figure FIG-01 --semantic-type workflow --prepare-pptx`. Read only
-the selected entry in `assets/pptx_workflow/README.md`, then edit the copied
-deck in PowerPoint (or the presentation template-following workflow), not with
-manually positioned Python boxes. Preserve the source deck, use only the selected
-source slide as a composition start, keep connectors behind nodes, and render a
-paper-scale export for human review. The route creates an editable visual source;
-it does not create a visual claim, receipt, or Gate outcome.
+Classify every Figure Brief as `data`, `diagram`, or `illustration` before choosing
+a tool. An undeclared or unrecognized semantic type is `unresolved`: stop and fix
+the brief rather than silently choosing a backend. Data/result figures remain
+deterministic; illustrations use the Figure Contract illustration route.
 
-Use `--diagram-backend drawio` only when a native XML/topology contract is
-actually needed. The Draw.io archetypes may change geometry and primitives only;
-they must preserve nodes, edges, source refs, semantic roles, and palette policy.
-Data plots and result figures remain deterministic.
+For a simple `diagram` process/framework, default to the inspected PPTX route:
+`harness figure FIG-01 --semantic-type workflow --prepare-pptx`. The selector
+uses declared semantic type plus topology metadata (nodes, depth, branches,
+feedback, lanes, density, aspect ratio, native-QA need) to present 2–3 candidates.
+Read only the selected catalog entry, copy the source deck once, and edit it in
+PowerPoint (or the presentation template-following workflow), not with manually
+positioned Python boxes. Preserve the source deck and manually adjusted arrows;
+render a paper-scale export for human review. This creates an editable visual
+source, never a visual claim, receipt, or Gate outcome.
+
+Use `--diagram-backend drawio` only for a complex DAG/feedback figure or when a
+native XML/topology contract is actually needed. Draw.io archetypes may change
+geometry and primitives only; they must preserve nodes, edges, source refs,
+semantic roles, and palette policy.
+
+### Illustration execution (native image generation)
+
+When a completed Figure Contract routes a figure as `illustration` (physical
+mechanism, system concept, scenario, energy-flow concept) AND the current
+environment exposes a native image-generation tool AND the competition
+profile allows generated imagery, call it proactively — do not wait for the
+user to remind you. The trigger is the approved Figure Contract, not a verbal
+request.
+
+Execution protocol (provider-neutral; the harness never calls an image API):
+
+```powershell
+python scripts/harness.py figure FIG-02 --kind illustration --semantic-type "physical mechanism" `
+  --request-illustration --capability available --ai-policy allowed
+# -> emits .harness/views/figures/FIG-02_image_generation_request.json
+#    with the full prompt composed from the approved brief
+# (agent generates the image with its native tool)
+python scripts/harness.py figure FIG-02 --collect-illustration figures/FIG-02/generated.png
+# -> registers path + SHA-256 + review obligations in figures/FIG-02/illustration.json
+```
+
+Never generate: data/result figures (deterministic plotting only),
+formula-dense or numeric-bearing structure diagrams (editable backend), or
+decorative optional figures without a complete contract. When the native tool
+is missing, pass `--capability missing` and report the factual status; when
+the profile forbids it, pass `--ai-policy forbidden`; never pretend an image
+was generated. A collected illustration has `review_status: pending` until
+scientific, visual, and final-size review pass; it must also be registered in
+`run_manifest.ai_usage` (then `harness ai verify`) before strict promotion.
+The CLI defaults capability and policy to `unknown`; generation remains
+blocked until both are explicitly resolved. Collection requires the matching
+`status=requested` request record for that figure.
 
 Use `--json` for agent consumption. Underlying checkers retain their stdout,
 stderr, and exit code. Use their script-level flags only for debugging; the

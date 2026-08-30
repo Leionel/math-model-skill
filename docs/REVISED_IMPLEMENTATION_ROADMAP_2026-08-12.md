@@ -1,3 +1,7 @@
+# HISTORICAL DESIGN / EXECUTION RECORD
+> Do not use this file as current operational instruction.
+> Current truth starts from `SKILL.md` and `references/router.md`.
+
 # 数学建模 Skill / Harness 修订实施路线图
 
 > 日期：2026-08-12；2026-08-13 基于 2020—2025 MCM/ICM、2020—2024 CUMCM 本地论文库继续修订  

@@ -1,3 +1,8 @@
+# HISTORICAL DESIGN / EXECUTION RECORD
+
+> This audit describes the 2026-08-16 working tree and is not current operational instruction.
+> Current truth starts from `SKILL.md` and `references/router.md`.
+
 # 能力缺口审计（第二轮，2026-08-16）：链条闭环缺口
 
 - 审计对象：当前工作区（含 2026-08-15/16 两批未提交改动）。

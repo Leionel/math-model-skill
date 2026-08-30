@@ -1,3 +1,7 @@
+# HISTORICAL DESIGN / EXECUTION RECORD
+> Do not use this file as current operational instruction.
+> Current truth starts from `SKILL.md` and `references/router.md`.
+
 # Math Modeling Harness 下一阶段改造计划
 ## 从 Evidence Harness 走向 Authoring + Submission Workflow
 

@@ -1,0 +1,49 @@
+// Math Modeling Evidence Harness — System Context (pre-remediation snapshot, 2026-08-28)
+// Later implementation status: HANDOFF_2026-08-28.md
+// Skills: system-modeler + graphviz. rankdir=TB for Canvas preview.
+digraph system_context {
+  rankdir=TB;
+  graph [fontname="Helvetica", labelloc="t",
+         label="System Context — Math Modeling Evidence Harness\n(pre-remediation snapshot, 2026-08-28)"];
+  node  [fontname="Helvetica", fontsize=11];
+  edge  [fontname="Helvetica", fontsize=9];
+
+  // ---- Actors (people) ----
+  author   [label="Human author\n(math-modeling team member)", shape=ellipse, style=filled, fillcolor="#E8F0FE"];
+  orch     [label="Orchestrating agent\n(Codex / Claude, guided by SKILL.md prompt)", shape=ellipse, style=filled, fillcolor="#E8F0FE"];
+  reviewer [label="Fresh reviewer\n(independent context/model)", shape=ellipse, style=filled, fillcolor="#E8F0FE"];
+
+  // ---- The system under review ----
+  subgraph cluster_harness {
+    label="System boundary: Harness repository\n(scripts/ + schemas/ + references/ + assets/)";
+    style=rounded; color="#1A73E8";
+    cli   [label="harness CLI\n(scripts/harness.py)\n19 subcommands", shape=box, style=filled, fillcolor="#DDEBF7"];
+    gates [label="Gate runtime\n(v2_gate_runtime.py, qa/check_gates.py)\nS0→M1→P1→P2→W1→W2→S1→F1", shape=box, style=filled, fillcolor="#DDEBF7"];
+    kb    [label="Knowledge base\n(references/ router + method/problem/failure cards\n+ contracts + precedents)", shape=box, style=filled, fillcolor="#DDEBF7"];
+    cli -> gates [label="dispatches"];
+    cli -> kb    [label="routes on demand"];
+    gates -> kb  [label="loads gate-specific refs"];
+  }
+
+  // ---- Primary data store (separate root by design) ----
+  project [label="Competition project root\n(SEPARATE directory)\nauthor 00_*.md + .harness/ + receipts/\n+ frozen results + paper/ + figures/", shape=folder, style=filled, fillcolor="#FFF7E0"];
+
+  // ---- External systems / backends ----
+  revback [label="Review backend\n(independent reviewer command)", shape=box, style=dashed];
+  imggen  [label="Native image-gen tool\n(host capability)", shape=box, style=dashed];
+  latex   [label="LaTeX / PDF toolchain", shape=box, style=dashed];
+  portal  [label="Competition portal\n(manual upload only)", shape=box, style=dashed];
+  preclib [label="Precedent paper library\n(references/precedents/local-sources/)", shape=cylinder, style=filled, fillcolor="#F1F3F4"];
+
+  // ---- Relationships ----
+  author   -> project [label="authors research / model / paper Markdown"];
+  orch     -> cli     [label="invokes (one project root + stage/preset)"];
+  gates    -> project [label="reads facts / writes receipts, projections, freezes"];
+  cli      -> project [label="compile-to-IR + projections (.harness/views)"];
+  gates    -> revback [label="dispatches --fresh review"];
+  reviewer -> revback [label="runs in separate context"];
+  cli      -> imggen  [label="emits request / collects (never calls API)"];
+  gates    -> latex   [label="template/build/PDF checks"];
+  author   -> portal  [label="uploads submission (harness never uploads)"];
+  kb       -> preclib [label="pattern-cards calibration (read-only)"];
+}

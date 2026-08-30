@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "description": "High-frequency design-document claims reconciled against code by scripts/qa/check_doc_claims.py. A failing claim means the named document has drifted from the code.",
+  "claims": [
+    {
+      "claim_id": "DOC-CLAIM-001",
+      "doc": "docs/architecture_review_2026-08-28/architecture-review.md",
+      "doc_pattern": "cumcm/index\\.json.{0,3}has 6 papers",
+      "statement": "CUMCM precedent index is non-empty (older design docs claimed it was empty)",
+      "check": {"type": "json_array_min", "path": "references/precedents/cumcm/index.json", "pointer": ["papers"], "min": 1}
+    },
+    {
+      "claim_id": "DOC-CLAIM-002",
+      "doc": "docs/architecture_review_2026-08-28/architecture-review.md",
+      "doc_pattern": "mcm-icm/index\\.json.{0,3}4",
+      "statement": "MCM-ICM precedent index is non-empty (older design docs claimed it was empty)",
+      "check": {"type": "json_array_min", "path": "references/precedents/mcm-icm/index.json", "pointer": ["papers"], "min": 1}
+    },
+    {
+      "claim_id": "DOC-CLAIM-003",
+      "doc": "docs/architecture_review_2026-08-28/architecture-review.md",
+      "doc_pattern": "harness solve --tasks",
+      "statement": "model contract is projected into implementation tasks via harness solve --tasks",
+      "check": {"type": "cli_help_contains", "argv": ["scripts/harness.py", "solve", "--help"], "contains": "--tasks"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-004",
+      "doc": "docs/architecture_review_2026-08-28/architecture-review.md",
+      "doc_pattern": "writing spine \\+ section briefs exist",
+      "statement": "paper plan is projected into a per-section writing spine",
+      "check": {"type": "file_contains", "path": "scripts/views/writing_spine.py", "pattern": "def build_writing_spine"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-005",
+      "doc": "docs/architecture_review_2026-08-28/architecture-review.md",
+      "doc_pattern": "harness paper write",
+      "statement": "paper authoring exposes a section-write facade",
+      "check": {"type": "cli_help_contains", "argv": ["scripts/harness.py", "paper", "--help"], "contains": "write"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-006",
+      "doc": "docs/architecture_review_2026-08-28/HANDOFF_2026-08-28.md",
+      "doc_pattern": "声明单位量纲执行器",
+      "statement": "R5.1 declared-unit dimension checker is wired into deterministic QA",
+      "check": {"type": "file_contains", "path": "scripts/qa/run_deterministic_qa.py", "pattern": "check_units\\.py"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-007",
+      "doc": "docs/architecture_review_2026-08-28/REGRESSION_BASELINE_2026-08-28.md",
+      "doc_pattern": "_V2_GATE_BRANCHES",
+      "statement": "R6 split: v2 gate runtime dispatches through a per-gate branch table",
+      "check": {"type": "file_contains", "path": "scripts/v2_gate_runtime.py", "pattern": "_V2_GATE_BRANCHES"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-008",
+      "doc": "docs/architecture_review_2026-08-28/HANDOFF_2026-08-28.md",
+      "doc_pattern": "rendered_png_checks",
+      "statement": "R7.1 blank/crop rendered PNG probe exists in check_figure.py",
+      "check": {"type": "file_contains", "path": "scripts/figures/check_figure.py", "pattern": "def rendered_png_checks"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-009",
+      "doc": "docs/architecture_review_2026-08-28/HANDOFF_2026-08-28.md",
+      "doc_pattern": "textual_schema_filename_reference",
+      "statement": "R8 contract consumption audit exists and reports orphan/test-only schemas",
+      "check": {"type": "file_contains", "path": "scripts/qa/audit_contract_consumption.py", "pattern": "def audit_contract_consumption"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-010",
+      "doc": "docs/architecture_review_2026-08-28/HANDOFF_2026-08-28.md",
+      "doc_pattern": "check_package_resources\\.py",
+      "statement": "R10 package resource integrity checker verifies wheels carry all resource files",
+      "check": {"type": "file_contains", "path": "scripts/qa/check_package_resources.py", "pattern": "def check_package_resources"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-011",
+      "doc": "docs/architecture_review_2026-08-28/HANDOFF_2026-08-28.md",
+      "doc_pattern": "DRAWIO_NODE_COLLISION",
+      "statement": "R7 native Draw.io geometry QA blocks declared-node collisions",
+      "check": {"type": "file_contains", "path": "scripts/figures/check_diagram_spec.py", "pattern": "def _drawio_geometry_qa"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-012",
+      "doc": "docs/architecture_review_2026-08-28/HANDOFF_2026-08-28.md",
+      "doc_pattern": "harness submit receipt",
+      "statement": "R8 submission receipt schema has a user-facing checker",
+      "check": {"type": "cli_help_contains", "argv": ["scripts/harness.py", "submit", "--help"], "contains": "receipt"}
+    }
+  ]
+}
