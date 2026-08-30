@@ -169,6 +169,7 @@
 - `models[].inputs` 中的每个输入都必须在 `plan_details.parameter_plan[]` 出现，并使用 typed provenance；不能只在数据源列表里声明一次就算完成参数解释。
 - `plan_details.scaffold_entry`（可选）把选型结论绑定到 `scripts/scaffold/` 的具体入口（如 `scripts/scaffold/opt_milp.py`），让编码从已审计的脚手架开始，而不是空白文件；候选比较时应把它作为"实现成本"的一个信号。
 - 为变量填写含义、单位、定义域和角色；无量纲量显式写 `dimensionless`。
+- 声明单位可写成 `J`、`kg*m^2/s^2`、`kg m² s⁻²`、`item/day` 等表达式；`check_units.py` 会比较量纲与精确缩放。公式正文不会被反向猜单位，`m/s` 与 `km/h` 也不会自动换算，数值转换必须在实现和验证中显式完成。
 - 把约束写成可定位的 `constraint_id + expression + meaning`。
 - 为 smoke/full 指定可判断成败的 acceptance；“结果合理”不是验收标准。
 - 按题型声明会改变结论可信度的 `validation_obligations`；每个 `acceptance` 必须是有限的结构化比较，P2 由 measurement snapshot 独立重算，不接受空 `ok=true` 或人工 verdict 报告。

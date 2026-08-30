@@ -1,5 +1,92 @@
 {
-  "schema_version": "1.0",
-  "competition": "MCM/ICM",
-  "papers": []
+  "competition": "MCM-ICM",
+  "last_reviewed": "2026-08-28",
+  "papers": [
+    {
+      "award": "excellent-paper",
+      "competition": "MCM-ICM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/2400996.pdf",
+      "official_or_authorized": false,
+      "paper_id": "2400996",
+      "problem": "2024A",
+      "problem_family": "mechanism",
+      "rights_status": "local_study_only",
+      "sha256": "310382aa894d6207a77b2931929eaf39b562dcf5f121410d2db61580382e5bd5",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "七鳃鳗性别比例",
+        "种群迭代模型",
+        "Lotka-Volterra",
+        "BDS生态系统评估",
+        "对照模拟"
+      ],
+      "year": 2024
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "MCM-ICM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/2405424.pdf",
+      "official_or_authorized": false,
+      "paper_id": "2405424",
+      "problem": "2024A",
+      "problem_family": "mechanism",
+      "rights_status": "local_study_only",
+      "sha256": "3976866832e31712b42c11a241c413db2f056e48c24a3768ff0c41c1460b44c6",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "七鳃鳗性别比例",
+        "Lotka-Volterra",
+        "Nicholson-Bailey",
+        "理想参考模型对照",
+        "熵权法"
+      ],
+      "year": 2024
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "MCM-ICM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/2407093.pdf",
+      "official_or_authorized": false,
+      "paper_id": "2407093",
+      "problem": "2024A",
+      "problem_family": "mechanism",
+      "rights_status": "local_study_only",
+      "sha256": "4f93669d170f0e588e5255e33d4adc2fa1703f271fa0850562fff4fd91658d46",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "七鳃鳗性别比例",
+        "BFM模型",
+        "Logistic增长",
+        "性别分化比",
+        "反馈机制",
+        "相轨迹"
+      ],
+      "year": 2024
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "MCM-ICM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/2424371.pdf",
+      "official_or_authorized": false,
+      "paper_id": "2424371",
+      "problem": "2024A",
+      "problem_family": "mechanism",
+      "rights_status": "local_study_only",
+      "sha256": "908408b56dd26aebbe4e0b0255e0b4aa73197246b445565df4f25f6ac48b51b4",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "七鳃鳗性别比例",
+        "性别比诱导种群增长",
+        "有限体积法",
+        "3-R指数",
+        "食物网扩展"
+      ],
+      "year": 2024
+    }
+  ],
+  "schema_version": "1.1"
 }

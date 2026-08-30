@@ -2,6 +2,12 @@
 
 本后端借鉴 draw.io 官方 XML/style reference，并按升级文档第 16 节吸收 `ai-jiaqian/drawio-figure-replicator` 的 research framework / model pipeline / central container / meaningful loop 构图机制，以及 `QIANJINYDX/research-drawio-skill` 的单一阅读顺序、学术层级、紧凑标签、语义分组、正交连线和 paper-scale QA。它不把上游项目当作论文事实来源，不复制外部 XML，不保留软件平台语义，也不形成运行时依赖或第二套 palette。
 
+## 路由定位
+
+Draw.io 是 `diagram` 图的 native-XML 备选后端，不是默认起点。先由 Figure Brief 判断图型：数据图走确定性绘图、插图走 illustration contract、未知语义类型保持 unresolved 并停止。对已确认的 `diagram`，当复杂 DAG、反馈回路、交叉连线、严格边端点校验或原生 topology QA 是实际要求时，才明确选择 Draw.io；简单流程、方法总览和有限分组的框架图优先从已检查 PPTX 页面复制后在 PowerPoint 编辑。
+
+选择 Draw.io 不会授权改写作者在其他编辑器中手工调整过的连接线。需要从 `.drawio` 重生时，必须重新获得作者确认或生成新的可编辑源，而不是以“规范化”为名覆盖人工布局。
+
 ## 后端边界
 
 ```text
@@ -50,7 +56,7 @@ SVG / PDF / PNG preview
 - 每个 XML 都保留 `id=0` 根容器和 `id=1` 默认层，节点和边使用稳定顺序 ID；
 - 节点/边保留 `harness-node`、`harness-edge`、`relation:*` 和 `source-refs` tags，便于回溯但不把内部 ID 展示给读者；未知边端点会 fail-fast，不能静默丢边。
 
-Composition QA 额外给出 warning（不替代人工判断）：`CARD_WALL_RISK`、`PPT_TITLE_BANNER_RISK`、`OVERVIEW_OVERLOADED`、`WEAK_HIERARCHY`。`check_diagram_spec.py` 的 warning 不能自动升级为 Gate PASS；最终仍要在论文实际缩放尺寸检查阅读顺序、层级、箭头和文字密度。
+Composition QA 额外给出 warning（不替代人工判断）：`CARD_WALL_RISK`、`PPT_TITLE_BANNER_RISK`、`OVERVIEW_OVERLOADED`、`WEAK_HIERARCHY`。Native geometry QA 会以阻断错误检查 spec-node 唯一映射、节点碰撞、越界、节点字号下限和已声明主阅读方向；这只覆盖 Draw.io XML 中可确定的框几何，不覆盖 PPTX 或最终 PDF 中的语义层级、文字拥挤和视觉美感。`check_diagram_spec.py` 的 warning 不能自动升级为 Gate PASS；最终仍要在论文实际缩放尺寸检查阅读顺序、层级、箭头和文字密度。
 
 ## 默认配色预设
 

@@ -2,7 +2,7 @@
 
 ## 门户提交回执
 
-F1 只证明本地最终包不可变，不证明门户已接受。用户实际提交后，可按 `schemas/submission_receipt.schema.json` 登记：F1 manifest hash、实际上传文件 hash、控制号、官方端点、时间、门户状态、截图/下载回执 hash 与人工确认。Harness 不自动上传，也不能把 `submission_receipt` 预填为 accepted。
+F1 只证明本地最终包不可变，不证明门户已接受。用户实际提交后，可按 `schemas/submission_receipt.schema.json` 登记：F1 manifest hash、实际上传文件 hash、控制号、官方端点、时间、门户状态、截图/下载回执 hash 与人工确认。随后运行 `harness submit receipt --project <PROJECT_ROOT> --receipt submission_receipt.json`；检查器会重算本地 hash、确认上传文件属于不可变 F1 清单、核对 profile 的官方端点，并且只有 `portal_status=accepted` 才返回成功。Harness 不自动上传，也不能把 `submission_receipt` 预填为 accepted。
 
 W2 只表示内容准备完成；它不等于可提交。
 

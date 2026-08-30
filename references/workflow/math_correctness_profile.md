@@ -42,6 +42,23 @@ same rerun includes their semantic checks. An extremum checker may validate a
 grid plus bounded continuous refinement, but it will not accept a bare
 `global` claim as a proof.
 
+`scripts/qa/check_units.py` is a declared-unit dimension engine. It parses
+products, quotients, integer powers, common SI prefixes/base/derived units, and
+model-local custom units into exact scale and dimension signatures. Therefore
+`J` equals `kg*m^2/s^2` dimensionally, while one symbol declared as both `m/s`
+and `km/h` is blocked until the numeric conversion is made explicit. Equation
+balances compare dimensions and warn when the scales differ; symbol, output,
+and acceptance bindings require the same scale. It still does not parse the
+equation text, infer missing unit declarations, handle affine conversions such
+as Celsius-to-Kelvin, or alter numeric values. Those remain explicit validation
+obligations.
+
+For an executed sweep, use `scripts/run_sensitivity_sweep.py`; every point must
+produce its own JSON artifact containing the declared metric as a finite number.
+Exit code 0 with a missing, boolean, textual, NaN, or infinite metric is an
+ERROR, not a PASS. Sweep artifacts and receipts are immutable and stay inside
+the project root.
+
 ## What strict does not automate
 
 It does not establish that the selected model is substantively appropriate,

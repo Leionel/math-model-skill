@@ -2,6 +2,26 @@
 
 The Authoring Plane makes canonical Harness state readable without creating another truth layer.
 
+## Author sources and compiled IR
+
+`00_PROJECT_BRIEF.md`、研究/模型/求解报告、Paper Director Plan、section briefs 和 figure briefs 都是可编辑的作者源；`init` 与 authoring façade 只在文件缺失时创建它们，`prepare` 不会覆盖人工内容。
+
+```text
+harness research --compile
+harness model --compile
+harness solve --compile
+harness paper plan --compile
+harness figure FIG-01 --compile
+```
+
+这些命令只从 Markdown 中显式 fenced YAML block 编译 schema-valid IR；它们不核验研究、运行、图形、证据或 Gate。Paper section 可用任意安全 slug，并以 `--role` 记录软性的写作角色；`question`、`cross_question` 与 `global` scope 是论证组织，不会强行改写论文目录。
+
+## JSON ownership
+
+- **KEEP**：profile、receipt、frozen result、validation report、evidence registry、failure evidence 与 submission manifest 是事实或 provenance，继续由既有 producer 管理。
+- **COMPILE**：research basis、model contract、implementation map、paper plan 与 diagram spec 从作者 Markdown 的显式 source block 生成；不要直接手写它们的 JSON。
+- **REBUILD**：run index、claim inventory、figure/PDF QA 等机器投影可随权威输入重算，不能被人工编辑成事实。
+
 ## Commands and outputs
 
 | Command | Deterministic outputs | Canonical inputs |
@@ -50,4 +70,6 @@ submission/
 
 ## Deferred boundaries
 
-This round deliberately does not migrate all internal files into `.harness/`, create a selective-rerun scheduler, add a sensitivity orchestrator, or claim a capability benchmark. Those changes require compatibility and real-battle evidence beyond deterministic authoring projections.
+R8 的结构性收口已经具备：作者 Markdown 是唯一可编辑工作面，显式 source block 编译机器 IR，`init` 非覆盖地生成带解释的最小作者模板，`setup/status/prepare` 只展示当前阶段的能力、阻断和投影；31 个 schema 均有脚本消费者，`audit_contract_consumption.py --strict` 不再报告 orphan/test-only schema。该审计仍是静态引用清单，不是运行期调用覆盖率。
+
+仍不宣称“赛时填写负担已显著下降”：这个效果只能由 R1 的真实赛题从 `init` 到 M1/W1 记录字段数和用时来证明。内部文件全量迁入 `.harness/`、自动执行选择性重跑以及 capability benchmark 也不属于 authoring projection 的职责；现有选择性重跑只生成可刷新计划，敏感性 sweep 才执行真实命令。

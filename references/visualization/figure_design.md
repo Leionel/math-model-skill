@@ -31,6 +31,13 @@
 
 3D 图只有在第三维确实承载信息且不会遮挡时才使用。
 
+## Deterministic plot runtime
+
+Use `scripts/figures/plot_templates.py` for data/result figures that need a repeatable source, controlled render settings, and a rendering receipt.
+Choose `--paper-placement single_column|half_width|full_width|full_page` for a known final footprint, or `--target-width-mm` for a measured template column.
+Templates include forecast envelopes, comparison/dumbbell/slope charts, small multiples, violin/box with raw points, beeswarm/strip distributions, residual and calibration diagnostics, intervals, sensitivity, Pareto decisions, heatmaps, and networks.
+Add only evidence-backed baseline, stable-range, failure-boundary, train/test, uncertainty, or selected-Pareto annotations. The receipt records rendering provenance, not a claim or Gate outcome.
+
 ## 设计优先级
 
 1. **准确**：数据、变换、统计定义、单位和边界正确。

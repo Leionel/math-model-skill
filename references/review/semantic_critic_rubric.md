@@ -20,6 +20,11 @@ deterministic PASS/FAIL 来替代确定性 checker。
   reviewer 结论、上一轮 verdict、修订讨论一律不读、不进 bundle。
 - 报告至少绑定 `model_contract`、`frozen_results`、`evidence_registry` 和
   `paper|pdf`；缺一类即为不完整审查，不能通过 W2。
+- `available_evidence_scope` 与 independence 分开声明，只能等于或低于 bundle
+  artifact 所支持的范围。需要更强证据的 blocker/high/medium finding 必须写
+  `required_evidence_scope` 与 `requires_external_check: true`，不能靠 confidence
+  或自由文本 locator 自行升级。当前 bundle 最高支持 `result_artifacts`；reviewer
+  进程收据不等于模型复跑证据，不能据此声明 `rerunnable`。
 
 ## 检查面
 
@@ -43,7 +48,8 @@ deterministic PASS/FAIL 来替代确定性 checker。
 reviewed_artifacts、findings 和 verdict；fresh/backend 路径还必须绑定
 bundle_ref 与 execution_receipt_ref。finding 使用 finding_id / perspective /
 severity / summary / evidence_locator / affected_artifact / affected_claim_id /
-required_fix / confidence / status。只有 `verdict=pass`
+required_fix / confidence / status；需要越出当前 bundle 核验时再写
+required_evidence_scope / requires_external_check。只有 `verdict=pass`
 且没有 open blocker/high/medium 时，W2 review 条件才可能满足；verdict 由报告声明、
 由确定性校验复核。
 
@@ -71,6 +77,22 @@ Look specifically for:
    circular claim that a model works because it is powerful; and
 6. an observation promoted to mechanism, causal statement, optimality claim,
    or recommendation without the necessary comparison and boundary.
+
+Give particular attention to these logic gaps:
+
+7. **Information gain** — if removing a paragraph would leave the paper's
+   facts, mechanism, reasoning, or boundary unchanged, report
+   `LOW_INFORMATION_PARAGRAPH` and name the missing contribution;
+8. **Mechanism bridge** — if a real-world problem jumps directly to equations
+   without the mechanism, variable relationship, or constraint that connects
+   them, report `MISSING_MECHANISM_BRIDGE`; and
+9. **Cross-section repetition** — report duplicated assumptions, definitions,
+   model introductions, abstract/conclusion restatements, or figure-caption
+   narration that adds no new decision-relevant information.
+
+These are semantic reviewer judgments, not lexical regex Gates. Do not infer a
+finding merely from a short paragraph, repeated noun, or equation count; explain
+the affected reasoning and the smallest revision that would restore it.
 
 For every finding, name the exact section/paragraph or figure, why it impairs
 reasoning, and the minimum revision required. Do not emit a synthetic numeric

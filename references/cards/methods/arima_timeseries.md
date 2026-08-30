@@ -42,8 +42,8 @@ $\text{SARIMA}(p, d, q) \times (P, D, Q)_s$：
 - 预测区间置信度计算未随步长 $h$ 扩大而展宽。
 
 ## 10. 论文表达规范
-- 必须展示：原始序列与差分序列时域图、ACF/PACF 诊断图、残差 Q-Q 正态图、测试集预测曲线 vs 真实值 vs Baseline 预测对比图；
-- 汇报指标表：MAE, RMSE, MAPE, 相比 Seasonal Naive 的误差下降百分点。
+- 按 claim 选择证据：平稳性/差分选择可用时域与 ACF/PACF 诊断；残差假设成为结论前提时再给残差诊断；预测性能结论优先给测试期真实值、预测区间与 Baseline 的同口径比较。不要把这些图列成固定配额；
+- 指标只报告与任务损失相符且已登记定义的项目，并给出相同切分下的 Baseline；不默认每题都同时需要 MAE、RMSE 和 MAPE。
 ## 11. 典型优秀论文机制
 - 滚动起点验证（Rolling-Origin / Time-Series Cross-Validation）替代单次切分，报告多窗口平均误差；
 - ARIMAX 引入外生变量（气温/价格/政策哑变量）解释结构变化，减少纯 AR 项背锅。

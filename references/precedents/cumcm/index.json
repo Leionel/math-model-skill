@@ -1,5 +1,136 @@
 {
-  "schema_version": "1.0",
   "competition": "CUMCM",
-  "papers": []
+  "last_reviewed": "2026-08-28",
+  "papers": [
+    {
+      "award": "excellent-paper",
+      "competition": "CUMCM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/A092.pdf",
+      "official_or_authorized": false,
+      "paper_id": "A092",
+      "problem": "A",
+      "problem_family": "optimization",
+      "rights_status": "local_study_only",
+      "sha256": "6f19a1e21443043cc30e3ca70ecf41dd41152205ffa143adbbd2e99fd307bc8e",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "定日镜场优化",
+        "光学效率建模",
+        "蒙特卡洛截断效率",
+        "投影法阴影遮挡",
+        "遗传算法"
+      ],
+      "year": 2023
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "CUMCM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/A127.pdf",
+      "official_or_authorized": false,
+      "paper_id": "A127",
+      "problem": "A",
+      "problem_family": "optimization",
+      "rights_status": "local_study_only",
+      "sha256": "77aae1ffa8d3c2ce29c870ab497b6b284b9ecf4236b2d5a4240c8fa9fc7a1d62",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "定日镜场优化",
+        "坐标转换矩阵",
+        "无效点判断策略",
+        "分区域同心圆规划",
+        "变步长遍历"
+      ],
+      "year": 2023
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "CUMCM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/B226.pdf",
+      "official_or_authorized": false,
+      "paper_id": "B226",
+      "problem": "B",
+      "problem_family": "optimization",
+      "rights_status": "local_study_only",
+      "sha256": "6575167cc2cace9fc4f7a2d9e654128803b4270096fcb2e63b27ef05faf7a33d",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "多波束测线布设",
+        "几何建模",
+        "贪心算法",
+        "模拟退火交叉验证",
+        "灵敏度分析"
+      ],
+      "year": 2023
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "CUMCM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/B311.pdf",
+      "official_or_authorized": false,
+      "paper_id": "B311",
+      "problem": "B",
+      "problem_family": "optimization",
+      "rights_status": "local_study_only",
+      "sha256": "b939b88771b288865fef612c613eb1d6a5890049fade34578ba35a66a4e95095",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "多波束测线布设",
+        "正弦定理推导",
+        "双重叠率定义对比",
+        "主要目标法",
+        "递推法"
+      ],
+      "year": 2023
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "CUMCM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/C228.pdf",
+      "official_or_authorized": false,
+      "paper_id": "C228",
+      "problem": "C",
+      "problem_family": "prediction",
+      "rights_status": "local_study_only",
+      "sha256": "fb3f16b5294a6ea14781d3a824756af39a2700a2333d0df56c31ee3351188b10",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "蔬菜定价补货",
+        "数据清洗",
+        "双对数价格弹性",
+        "LSTM预测",
+        "GBest-PSO",
+        "NSGA-II",
+        "VIKOR评价"
+      ],
+      "year": 2023
+    },
+    {
+      "award": "excellent-paper",
+      "competition": "CUMCM",
+      "extraction_status": "extracted",
+      "local_path": "references/precedents/local-sources/papers/C235.pdf",
+      "official_or_authorized": false,
+      "paper_id": "C235",
+      "problem": "C",
+      "problem_family": "prediction",
+      "rights_status": "local_study_only",
+      "sha256": "84724f950dfe248bddef91071909dead68dd3717f17f580e8b9ea2e5e842a25b",
+      "source_url": "https://github.com/LKQ667/metamath-harness/tree/1eb7a702ee6814cf73856544700fa8b48acd4218",
+      "tags": [
+        "蔬菜定价补货",
+        "K-S检验",
+        "ARIMA",
+        "Prophet预测",
+        "模拟退火",
+        "遗传算法"
+      ],
+      "year": 2023
+    }
+  ],
+  "schema_version": "1.1"
 }

@@ -1,6 +1,8 @@
-# Paper Plan Contract
+# Paper Plan IR Contract
 
-将 `paper_plan.json` 作为写作前唯一的论证计划；不要把它写成论文初稿或第二份结果数据库。Writer 必须先把它编译为只读 package，再开始成文；不能浏览 raw outputs 后自行发明数字、原因、场景或结论强度。
+作者源是 `paper/00_PAPER_PLAN.md` 的 Paper Director Plan；机器消费者需要时，运行 `harness paper plan --compile` 生成 `.harness/contracts/paper_plan.json`。不要直接维护平行 JSON，也不要把作者 Markdown 或 IR 当作 Gate 事实。
+
+`paper_plan.json` 是可验证的论证 IR，不是论文初稿或第二份结果数据库。Writer 必须先把它编译为只读 package，再开始成文；不能浏览 raw outputs 后自行发明数字、原因、场景或结论强度。
 
 ## 建立顺序
 
@@ -15,7 +17,7 @@
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "run_id": "run-001",
   "central_thesis": {
     "text": "在冻结需求和约束下，方案 B 以可验证的可行性取得最低成本。",
@@ -57,7 +59,7 @@
       "math_locators": ["\\label{eq:EQ-Q1-OBJ}", "\\label{con:C1}"],
       "expected_reader_judgment": "模型机制、变量和约束与题意一致。",
       "boundary": "固定需求和可加成本。",
-      "target_words": 80
+      "depth_priority": {"level": "core", "rationale": "核心机制必须先让读者看懂。"}
     },
     {
       "unit_id": "AU-Q1-RESULT",
@@ -70,7 +72,7 @@
       "math_locators": ["\\label{harness:AU-Q1-RESULT}"],
       "expected_reader_judgment": "该数值来自可复核的冻结运行。",
       "boundary": "仅适用于 frozen-base。",
-      "target_words": 120
+      "depth_priority": {"level": "core", "rationale": "核心结果需要与证据和限制一起解释。"}
     },
     {
       "unit_id": "AU-Q1-VALID",
@@ -84,7 +86,7 @@
       "math_locators": ["\\label{val:VAL-FEASIBILITY}"],
       "expected_reader_judgment": "可行性与目标值已经独立重算。",
       "boundary": "仅验证已声明约束。",
-      "target_words": 80
+      "depth_priority": {"level": "supporting", "rationale": "验证支撑结论但不复述求解过程。"}
     },
     {
       "unit_id": "AU-Q1-BOUNDARY",
@@ -96,11 +98,8 @@
       "math_locators": ["\\label{harness:AU-Q1-BOUNDARY}"],
       "expected_reader_judgment": "结论不会外推到未测试需求。",
       "boundary": "仅适用于 frozen-base。",
-      "target_words": 60
+      "depth_priority": {"level": "compact", "rationale": "明确边界即可，避免重复主结果。"}
     }
-  ],
-  "depth_budget": [
-    {"question_id": "q1", "target_words": 260, "rationale": "该问承担核心决策，需展示验证与比较。"}
   ],
   "precision_policy": {
     "audit_source": "frozen_display_value",
@@ -128,10 +127,10 @@
   "draft_coverage": {
     "status": "planned",
     "anchors": [
-      {"anchor_id": "AU-Q1-FORM", "unit_id": "AU-Q1-FORM", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-FORM}"], "minimum_words": 80},
-      {"anchor_id": "AU-Q1-RESULT", "unit_id": "AU-Q1-RESULT", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-RESULT}"], "minimum_words": 80},
-      {"anchor_id": "AU-Q1-VALID", "unit_id": "AU-Q1-VALID", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-VALID}"], "minimum_words": 60},
-      {"anchor_id": "AU-Q1-BOUNDARY", "unit_id": "AU-Q1-BOUNDARY", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-BOUNDARY}"], "minimum_words": 50}
+      {"anchor_id": "AU-Q1-FORM", "unit_id": "AU-Q1-FORM", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-FORM}"]},
+      {"anchor_id": "AU-Q1-RESULT", "unit_id": "AU-Q1-RESULT", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-RESULT}"]},
+      {"anchor_id": "AU-Q1-VALID", "unit_id": "AU-Q1-VALID", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-VALID}"]},
+      {"anchor_id": "AU-Q1-BOUNDARY", "unit_id": "AU-Q1-BOUNDARY", "question_id": "q1", "patterns": ["\\label{harness:AU-Q1-BOUNDARY}"]}
     ]
   },
   "readiness": {
@@ -162,18 +161,35 @@
 - claim 必须标注为 `observation`、`inference` 或 `recommendation`。Observation 必须给出 `result_ids`；Inference/Recommendation 必须给出已经成立的 `precondition_claim_ids`，且不能标为 `direct`。
 - 可选的 `inference_strength` 用 `descriptive`、`associational`、`mechanistic`、`causal` 区分论断强度；Observation 不能声明 mechanistic/causal。`causal` 还必须登记 `causal_design`，不能从普通优化结果直接推出因果。未登记时 Writer 按 observation=descriptive、其他 claim=mechanistic 的保守默认处理。
 - 使用“最优、显著、稳健、提升”等比较性强词时，填写 `comparison` 的 comparator、metric、direction 和 scenario；缺少比较合同时降为 observation 或删除强词。
-- 每个 `argument_unit` 只能有一个 `rhetorical_role`，同时绑定 claim/evidence、前置单元、期望读者判断、边界和目标篇幅。把 model choice、结果观察、解释和边界混在一个万能段落会被拒绝。
+- 每个 `argument_unit` 只能有一个 `rhetorical_role`，同时绑定 claim/evidence、前置单元、期望读者判断、边界和 `depth_priority`。`core`、`supporting`、`compact` 只表达叙事取舍，不是预先分配的字数 Gate；把 model choice、结果观察、解释和边界混在一个万能段落会被拒绝。
 - 每个核心 `argument_unit` 还应绑定数学来源：formulation 绑定 `model_ids` 与 `equation_ids`/`constraint_ids`，validation 绑定 `validation_obligation_ids`，result/comparison 绑定 `result_ids` 或 `derived_result_ids`，并填写 `math_locators`。这使 Writer 不能把公式、验证和结果写成无来源的通用话术。
 - `prerequisite_unit_ids` 必须形成无环、前向的论证图；推荐顺序是 model/formulation → result/comparison → validation → interpretation/boundary/recommendation。`check_math_writing.py` 会检查依赖环、逆序和首稿定位。
-- `depth_budget` 必须覆盖所有承载 claim 的子问题，按难点、风险与决策影响分配篇幅，不能默认四问等长。
-- 正式第一版前必须达到 `readiness.stage=technical_draft`；每个子问题分别绑定 formulation、result、validation、interpretation argument units 和至少一个 display，确无必要时写具体 waiver。各单元计划篇幅之和不得低于该问 depth budget。
-- `draft_coverage` 是把计划落到首稿的可选强校验：为 readiness 使用的每个 argument unit 登记一个稳定锚点（推荐使用不可见的 `\\label{harness:...}` 或明确小节标题）和 `minimum_words`。正式 QA 传 `--require-first-draft-coverage` 后，缺锚点或只有结果流水账的首稿会被阻断；英文按词计数，中文按 CJK 字符计数，不强迫中英文采用同一空格规则。
+- `scope` 可声明 `question`（恰好一个 ID）、`cross_question`（至少两个 ID）或 `global`（不带 ID）；跨题与全局单元可进入相应问题的 readiness coverage，也不会被误报为未使用。
+- `depth_budget` 和各单元 `target_words` 是迁移期可读的 legacy metadata；新的 `schema_version: "1.3"` 作者应省略它们，且任何版本都不再让它们控制当前计划 Gate。
+- 正式第一版前必须达到 `readiness.stage=technical_draft`；每个子问题分别绑定 formulation、result、validation、interpretation argument units 和至少一个 display，确无必要时写具体 waiver。此处检查论证覆盖而非计划字数总和。
+- `draft_coverage` 为 readiness 使用的每个 argument unit 登记稳定锚点（推荐不可见的 `\\label{harness:...}` 或明确小节标题）。正式 QA 传 `--require-first-draft-coverage` 后，缺锚点会阻断；`minimum_words` 仅在显式 `--enforce-minimum-words` 时成为本地阈值，默认只是审阅提示。
 - 数字只能来自 `precision_policy` 指定的 frozen display source；摘要的权威数字不超过 `abstract_max_numeric_claims`。
 - 文献 evidence 必须同时通过 metadata、全文内容和出版状态检查；优秀论文机制卡不属于 evidence。
 - 为“最优、显著、稳健、提升”等表述登记 baseline、指标、统计口径和适用边界。
 - 仅把摘要需要出现的权威结果加入 `abstract_results[]`，并说明 `selection_reason`、关联 claim 与词数预算；不要只登记 ID 后把所有结果塞进摘要。
 - 年份、题号、章节号等非研究数字如会被 claim inventory 扫描，可登记到 `nonresearch_numeric_literals[]` 并写明理由；不能用它放行结果、百分比或参数。
 - 将同一推荐方案的唯一文字版本放入 `canonical_recommendation`；若题型不需要推荐，可省略该字段。
+
+## 首稿后版式审计
+
+先完成全文和 PDF，再按实际版面审查。不可在前期用按题字数总和、排名或相关系数替代版面与叙事判断。
+
+```powershell
+python scripts/qa/audit_paper_length.py `
+  --project-root . `
+  --paper-plan paper_plan.json `
+  --competition-profile competition_profile.json `
+  --draft paper/main.tex `
+  --pdf build/paper.pdf `
+  --output reports/paper_length_audit.json
+```
+
+它读取 PDF 实际页数并输出 core/supporting/compact 的审阅提示；没有 PDF 只会标记 `needs_pdf`，不会伪造通过。页面上限来自 verified profile 才可构成硬错误；seed/profile 未验证时仍由人工审查收口。
 
 ## 摘要事实回查与逐问答案
 

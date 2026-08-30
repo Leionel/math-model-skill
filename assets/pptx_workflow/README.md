@@ -24,27 +24,33 @@ connector must be visually checked and rebound in PowerPoint if needed.
 
 ## Normal route
 
-For a conceptual figure, start with:
+For a `diagram`-class conceptual figure with a simple workflow, bounded framework,
+or other composition-led topology, start with:
 
 ```powershell
 python scripts/harness.py figure FIG-01 --semantic-type workflow --prepare-pptx --project C:\work\math-q1 --json
 ```
+When the brief has known structure, add `--node-count`、`--dag-depth`、`--branch-count`、`--feedback-edges`、`--parallel-lanes`、`--density`、`--target-aspect-ratio`、`--reading-order` or `--native-topology-qa`; these facts control both backend selection and the ranked shortlist.
 
-The command creates a brief, selects a catalogued source slide, and copies the
-source deck once to figures/FIG-01/FIG-01.pptx. It never overwrites an existing
-copy, so later PowerPoint edits remain owned by the author.
+The command creates a brief, ranks catalogued source slides from the declared
+semantic type and topology metadata, and copies the chosen source deck once to
+`figures/FIG-01/FIG-01.pptx`. Treat its 2–3 candidates as a visual shortlist,
+not a content template. It never overwrites an existing copy, so later PowerPoint
+edits—including manually adjusted connectors and arrows—remain owned by the author.
 
 Edit the staged copy in PowerPoint (or through the presentation template-following
 workflow), using the selected source slide as a composition starting point. Retain
 only evidence-backed nodes, edges, labels, and colors. Create connectors behind
 nodes; render an export; then inspect it at the actual paper size.
 
-Use Draw.io only when an editable native-XML/topology contract is specifically
-needed:
+Use Draw.io only when a complex DAG/feedback topology or native-XML/topology
+contract is specifically needed:
 
 ```powershell
 python scripts/harness.py figure FIG-01 --semantic-type workflow --diagram-backend drawio --fallback-reason "native topology QA required" --project C:\work\math-q1 --json
 ```
 
-Data and result figures remain deterministic plotting artifacts. PPTX concept
-figures must not be used to invent quantitative claims or Gate outcomes.
+Data and result figures remain deterministic plotting artifacts; illustrations
+use the Figure Contract illustration route. An undeclared or unrecognized figure
+semantic type is unresolved and must be fixed before staging any deck. PPTX
+concept figures must not be used to invent quantitative claims or Gate outcomes.

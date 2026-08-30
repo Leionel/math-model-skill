@@ -10,6 +10,7 @@ venv/
 battle/
 
 # Keep only precedent indexes/pattern cards in Git. Store paper files locally.
+references/precedents/local-sources/
 references/precedents/**/*.pdf
 references/precedents/**/*.doc
 references/precedents/**/*.docx
