@@ -37,11 +37,11 @@ Copy-Item -Force (Join-Path $src "*") $dst
 
 **复制后必须核对 `agent.cordis.yml` 的 `mcp-math-harness` 行**：
 
-1. `cwd`：指向 math-modeling-skill-sion 仓库根（server 自身目录；业务路径一律显式传参）；
+1. 运行 preset 的 Python 环境已安装本包（`python -m pip install -e <仓库根>`）；
 2. `env.MATH_HARNESS_ALLOWED_ROOTS`：允许承载比赛项目的目录白名单，
    `os.pathsep`（Windows 为 `;`）分隔，如
    `"D:/Contests/CUMCM;D:/Contests/MCM"`。**留空 = 所有调用被拒（fail closed）**；
-3. `command: python`：确认该名称解析到装有 PyYAML/jsonschema 的解释器
+3. `command: python`：确认该名称解析到已安装 Harness、PyYAML 和 jsonschema 的解释器
    （harness 运行所需）。
 
 ## 会话内验证
@@ -68,8 +68,7 @@ Copy-Item -Force (Join-Path $src "*") $dst
         serverName: math_harness
         transport: stdio
         command: python
-        args: ["scripts/mcp_server.py"]
-        cwd: "<仓库根>"
+        args: ["-m", "scripts.mcp_server"]
         env:
           MATH_HARNESS_ALLOWED_ROOTS: "<允许根>"
           PYTHONUTF8: "1"

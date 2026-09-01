@@ -1,5 +1,4 @@
-"""R10 distribution integrity: checkout roots are verified, and a wheel must
-carry every on-disk resource file (.gitkeep placeholders excluded)."""
+"""S1 distribution integrity: runtime resources are allowlisted and portable."""
 
 from __future__ import annotations
 
@@ -10,6 +9,8 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+
+from scripts.qa.check_package_resources import REQUIRED_SENTINELS
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts" / "qa" / "check_package_resources.py"
@@ -33,13 +34,8 @@ class CheckoutModeTest(unittest.TestCase):
 
 class WheelModeTest(unittest.TestCase):
     def _make_repo(self, root: Path) -> list[str]:
-        files = {
-            "schemas/a.schema.json": "{}",
-            "references/router.md": "# router",
-            "competition_profiles/cumcm.yaml": "seed: true",
-            "assets/styles/probe.mplstyle": "axes.grid: True",
-            "references/precedents/.gitkeep": "",
-        }
+        files = {path: "{}" if path.endswith((".json", ".drawio")) else "fixture" for path in REQUIRED_SENTINELS}
+        files["references/precedents/.gitkeep"] = ""
         for rel, text in files.items():
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -67,12 +63,41 @@ class WheelModeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="pkgres-") as temp:
             root = Path(temp)
             entries = self._make_repo(root)
-            entries.remove("assets/styles/probe.mplstyle")
+            entries.remove("assets/styles/mathmodel.mplstyle")
             wheel = self._build_wheel(root, entries)
             result = _run_cli("--repo-root", str(root), "--wheel", str(wheel))
             self.assertEqual(result.returncode, 1)
             payload = json.loads(result.stdout)
-            self.assertTrue(any("assets/ file(s) absent from wheel" in err for err in payload["errors"]), payload["errors"])
+            self.assertTrue(any("required runtime sentinel absent from wheel" in err for err in payload["errors"]), payload["errors"])
+
+    def test_forbidden_local_sources_and_gallery_are_flagged(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pkgres-") as temp:
+            root = Path(temp)
+            entries = self._make_repo(root)
+            for rel in ("references/precedents/local-sources/paper.pdf", "assets/figure-gallery/preview.png"):
+                target = root / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("must not ship", encoding="utf-8")
+                entries.append(rel)
+            wheel = self._build_wheel(root, entries)
+            result = _run_cli("--repo-root", str(root), "--wheel", str(wheel))
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertTrue(any("forbidden resource in wheel" in err for err in payload["errors"]), payload["errors"])
+
+    def test_unallowlisted_resource_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pkgres-") as temp:
+            root = Path(temp)
+            entries = self._make_repo(root)
+            extra = root / "assets" / "font_probe.tex"
+            extra.parent.mkdir(parents=True, exist_ok=True)
+            extra.write_text("\\documentclass{article}", encoding="utf-8")
+            entries.append("assets/font_probe.tex")
+            wheel = self._build_wheel(root, entries)
+            result = _run_cli("--repo-root", str(root), "--wheel", str(wheel))
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertTrue(any("unallowlisted resource in wheel" in err for err in payload["errors"]), payload["errors"])
 
     def test_invalid_wheel_reports_a_clean_error(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pkgres-") as temp:
@@ -84,6 +109,19 @@ class WheelModeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             payload = json.loads(result.stdout)
             self.assertTrue(any("cannot be read" in err for err in payload["errors"]), payload)
+
+    def test_empty_wheel_cannot_bypass_required_sentinels(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="pkgres-") as temp:
+            root = Path(temp)
+            self._make_repo(root)
+            wheel = self._build_wheel(root, [])
+            result = _run_cli("--repo-root", str(root), "--wheel", str(wheel))
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertTrue(
+                any("required runtime sentinel absent from wheel" in err for err in payload["errors"]),
+                payload["errors"],
+            )
 
 
 if __name__ == "__main__":

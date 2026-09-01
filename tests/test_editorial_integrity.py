@@ -12,8 +12,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLED_PYTHON = Path(r"C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe")
-PLOTTING_PYTHON = Path(r"C:\ProgramData\anaconda3\python.exe")
+TEST_PYTHON = Path(sys.executable)
 
 
 def write_json(path: Path, value: object) -> None:
@@ -324,8 +323,6 @@ class EditorialIntegrityTest(unittest.TestCase):
             self.assertIn("escapes source root", result.stdout)
 
     def test_safe_build_and_pdf_visual_qa(self) -> None:
-        if not BUNDLED_PYTHON.is_file():
-            self.skipTest("bundled Python runtime is unavailable")
         with tempfile.TemporaryDirectory(prefix="math-pdf-") as temp:
             project = Path(temp)
             paper = project / "paper"
@@ -356,7 +353,7 @@ class EditorialIntegrityTest(unittest.TestCase):
             check = self.run_script(
                 "pdf/check_pdf.py", "--project-root", str(project), "--pdf", "solution.pdf", "--profile", "visual_profile.json",
                 "--source", "paper/main.tex", "--render-dir", "rendered", "--contact-sheet", "contact.jpg", "--output", "pdf_qa.json",
-                python=BUNDLED_PYTHON,
+                python=TEST_PYTHON,
             )
             self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
             report = read_json(project / "pdf_qa.json")
@@ -365,8 +362,6 @@ class EditorialIntegrityTest(unittest.TestCase):
             self.assertTrue((project / "contact.jpg").is_file())
 
     def test_plot_templates_render_core_chart_families(self) -> None:
-        if not PLOTTING_PYTHON.is_file():
-            self.skipTest("plotting Python runtime is unavailable")
         with tempfile.TemporaryDirectory(prefix="math-plots-") as temp:
             project = Path(temp)
             rows = [
@@ -390,7 +385,7 @@ class EditorialIntegrityTest(unittest.TestCase):
                         "figures/plot_templates.py", "--project-root", str(project), "--template", template,
                         "--input", "rows.json", "--output", f"{template}.pdf", "--receipt", f"{template}.json",
                         "--style", str(ROOT / "assets" / "styles" / "mathmodel.mplstyle"), *extra,
-                        python=PLOTTING_PYTHON,
+                        python=TEST_PYTHON,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertTrue((project / f"{template}.pdf").is_file())
@@ -404,15 +399,13 @@ class EditorialIntegrityTest(unittest.TestCase):
                 "--input", "rows.json", "--output", "line.pdf", "--receipt", "line.json",
                 "--style", str(ROOT / "assets" / "styles" / "mathmodel.mplstyle"),
                 "--x", "time", "--y", "value", "--low", "low", "--high", "high", "--group", "group",
-                python=PLOTTING_PYTHON,
+                python=TEST_PYTHON,
             )
             self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
             self.assertEqual(first_line_hash, sha256(project / "line.pdf"))
 
 
     def test_plot_templates_render_distribution_and_facet_recipes(self) -> None:
-        if not PLOTTING_PYTHON.is_file():
-            self.skipTest("plotting Python runtime is unavailable")
         with tempfile.TemporaryDirectory(prefix="math-plots-distribution-") as temp:
             project = Path(temp)
             rows = []
@@ -474,7 +467,7 @@ class EditorialIntegrityTest(unittest.TestCase):
                         "--input", "distribution_rows.json", "--output", f"{template}.pdf",
                         "--receipt", f"{template}.json",
                         "--style", str(ROOT / "assets" / "styles" / "mathmodel.mplstyle"), *extra,
-                        python=PLOTTING_PYTHON,
+                        python=TEST_PYTHON,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertTrue((project / f"{template}.pdf").is_file())
@@ -484,8 +477,6 @@ class EditorialIntegrityTest(unittest.TestCase):
                     self.assertEqual(receipt["arguments"]["show_points"], shows_points)
 
     def test_plot_templates_render_wp7_recipes_at_declared_paper_sizes(self) -> None:
-        if not PLOTTING_PYTHON.is_file():
-            self.skipTest("plotting Python runtime is unavailable")
         with tempfile.TemporaryDirectory(prefix="math-plots-wp7-") as temp:
             project = Path(temp)
             rows = [
@@ -623,7 +614,7 @@ class EditorialIntegrityTest(unittest.TestCase):
                         "--input", "wp7_rows.json", "--output", f"{template}.pdf",
                         "--receipt", f"{template}.json",
                         "--style", str(ROOT / "assets" / "styles" / "mathmodel.mplstyle"), *extra,
-                        python=PLOTTING_PYTHON,
+                        python=TEST_PYTHON,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     receipt = read_json(project / f"{template}.json")

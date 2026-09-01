@@ -16,7 +16,6 @@ return {
     const subprocess = ctx.subprocess
     const userQuestions = ctx.get('userQuestions')
     if (userQuestions === undefined) throw new Error('userQuestions service unavailable')
-    const HARNESS_CLI = 'D:/Projects/随便做做/math-modeling-skill-sion/scripts/harness.py'
     const policy = ctx.get('sandboxPolicy')
     const lastRoots = new Map()
 
@@ -29,6 +28,26 @@ return {
       submit: ['确认提交清单', '需修改'],
     }
     const STAGES = Object.keys(STAGE_OPTIONS)
+
+    // Native host deployments use the installed `harness` entry point by
+    // default.  A source checkout may set MATH_HARNESS_CLI to harness.py;
+    // resolving it at call time keeps this shipped host file portable.
+    async function resolveHarnessCommand() {
+      const configured = typeof process.env.MATH_HARNESS_CLI === 'string' ? process.env.MATH_HARNESS_CLI.trim() : ''
+      if (configured) {
+        if (/\.py$/i.test(configured)) {
+          const python = await subprocess.resolveExecutable('python')
+          if (!python) throw new Error('MATH_HARNESS_CLI points to Python source, but no python executable is available')
+          return [python, configured]
+        }
+        const executable = await subprocess.resolveExecutable(configured)
+        if (!executable) throw new Error(`MATH_HARNESS_CLI executable is unavailable: ${configured}`)
+        return [executable]
+      }
+      const executable = await subprocess.resolveExecutable('harness')
+      if (!executable) throw new Error('Harness entry point unavailable; set MATH_HARNESS_CLI to harness or harness.py')
+      return [executable]
+    }
 
     // Machine gate → user-facing stage label (mirrors the client GATES list).
     const GATE_STAGES = {
@@ -202,9 +221,9 @@ return {
       } catch (error) {
         return { ok: false, reason: String(error.message ?? error) }
       }
-      const exe = await subprocess.resolveExecutable('python')
+      const harnessCommand = await resolveHarnessCommand()
       const handle = subprocess.spawn({
-        argv: [exe, HARNESS_CLI, 'status', '--project', root, '--json'],
+        argv: [...harnessCommand, 'status', '--project', root, '--json'],
         cwd: root,
         stdio: { stdin: 'ignore', stdout: { maxBytes: 262144 }, stderr: { maxBytes: 32768 } },
         graceMs: 8000,
@@ -416,8 +435,8 @@ return {
       async execute(args, exec) {
         const root = ensureInside(String(args.project_root ?? ''), sessionRoot(exec), 'project_root')
         lastRoots.set(String(exec.callId), root)
-        const exe = await subprocess.resolveExecutable('python')
-        const argv = [exe, HARNESS_CLI, 'freeze', '--kind', 'results', '--project', root,
+        const harnessCommand = await resolveHarnessCommand()
+        const argv = [...harnessCommand, 'freeze', '--kind', 'results', '--project', root,
           '--source', args.source, '--output', args.output, '--run-id', args.run_id,
           '--model-contract', args.model_contract]
         for (const item of args.code) argv.push('--code', item)

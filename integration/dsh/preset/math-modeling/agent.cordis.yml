@@ -2,9 +2,9 @@
 #
 # Source of truth lives in this repository (`integration/dsh/preset/math-modeling/`);
 # the runtime copy at `%DSH_HOME%\.agent-presets\math-modeling\` is a DEPLOYED
-# COPY and is never committed. Deploy by copying this directory, then adjust the
-# two machine-specific values in the `mcp-math-harness` row (repo cwd and
-# MATH_HARNESS_ALLOWED_ROOTS) — see integration/dsh/README.md.
+# COPY and is never committed. Deploy by copying this directory, then set
+# MATH_HARNESS_ALLOWED_ROOTS in the `mcp-math-harness` row as described in
+# integration/dsh/README.md.
 #
 # This file is an AGENT-PLANE composition modeled on the shipped `standard`
 # preset. Rows that only register tools resolve host-plane registries and sit
@@ -205,8 +205,7 @@
 # MATH_HARNESS_ALLOWED_ROOTS (os.pathsep-separated allowlist) and fails closed
 # when the variable is unset — configure it before first use.
 #
-# MACHINE-SPECIFIC VALUES TO ADJUST WHEN DEPLOYING ON ANOTHER CHECKOUT:
-#   cwd                       → the math-modeling-skill-sion repository root
+# MACHINE-SPECIFIC VALUE TO ADJUST WHEN DEPLOYING:
 #   MATH_HARNESS_ALLOWED_ROOTS → directories that may contain contest projects
 #
 # failOnStartupError keeps a broken deployment loud instead of silently
@@ -218,8 +217,7 @@
     serverName: math_harness          # model-facing names: mcp__math_harness__*
     transport: stdio
     command: python
-    args: ["scripts/mcp_server.py"]
-    cwd: "D:/Projects/随便做做/math-modeling-skill-sion"
+    args: ["-m", "scripts.mcp_server"]
     env:
       MATH_HARNESS_ALLOWED_ROOTS: ""
       PYTHONUTF8: "1"

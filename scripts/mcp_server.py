@@ -30,7 +30,10 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
-from redaction import redact_text
+if __package__:
+    from .redaction import redact_text
+else:
+    from redaction import redact_text
 
 HARNESS_REPO = Path(__file__).resolve().parent.parent
 HARNESS_CLI = HARNESS_REPO / "scripts" / "harness.py"

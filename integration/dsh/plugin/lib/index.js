@@ -19,6 +19,9 @@
 // - tools are executors only: PASS verdicts come from the harness CLI
 //   evaluator, never from here;
 // - failed calls throw (isError) and produce no Deliverables chip.
+import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 export const name = 'mm-phase3'
 // Cordis guard: every service accessed as a ctx property must be declared
 // here, or property access throws "cannot get property X without inject".
@@ -28,7 +31,10 @@ export const name = 'mm-phase3'
 // userQuestions is hard-checked manually right after.
 export const inject = ['subprocess', 'tools']
 
-const HARNESS_CLI = 'D:/Projects/随便做做/math-modeling-skill-sion/scripts/harness.py'
+// Deployment may provide an installed `harness` entry point or a path to
+// harness.py through MATH_HARNESS_CLI.  Source checkouts use the plugin's
+// location to find the sibling script without embedding a machine path.
+const LOCAL_HARNESS_CLI = fileURLToPath(new URL('../../../../scripts/harness.py', import.meta.url))
 
 const STAGE_OPTIONS = {
   research: ['完成调研，进入模型选型', '继续调研'],
@@ -39,6 +45,28 @@ const STAGE_OPTIONS = {
   submit: ['确认提交清单', '需修改'],
 }
 const STAGES = Object.keys(STAGE_OPTIONS)
+
+async function resolveHarnessCommand(subprocess) {
+  const configured = typeof process.env.MATH_HARNESS_CLI === 'string' ? process.env.MATH_HARNESS_CLI.trim() : ''
+  if (configured) {
+    if (/\.py$/i.test(configured)) {
+      const python = await subprocess.resolveExecutable('python')
+      if (!python) throw new Error('MATH_HARNESS_CLI points to Python source, but no python executable is available')
+      return [python, configured]
+    }
+    const executable = await subprocess.resolveExecutable(configured)
+    if (!executable) throw new Error(`MATH_HARNESS_CLI executable is unavailable: ${configured}`)
+    return [executable]
+  }
+  if (fs.existsSync(LOCAL_HARNESS_CLI)) {
+    const python = await subprocess.resolveExecutable('python')
+    if (!python) throw new Error(`source Harness found at ${LOCAL_HARNESS_CLI}, but no python executable is available`)
+    return [python, LOCAL_HARNESS_CLI]
+  }
+  const executable = await subprocess.resolveExecutable('harness')
+  if (!executable) throw new Error('Harness entry point unavailable; set MATH_HARNESS_CLI to harness or harness.py')
+  return [executable]
+}
 
 const normalizeTail = (p) => String(p).replace(/[\\/]+$/, '').toLowerCase()
 
@@ -215,8 +243,8 @@ export function apply(ctx) {
     }),
     async execute(args, exec) {
       const root = ensureInside(String(args.project_root ?? ''), sessionRoot(exec), 'project_root')
-      const exe = await subprocess.resolveExecutable('python')
-      const argv = [exe, HARNESS_CLI, 'freeze', '--kind', 'results', '--project', root,
+      const harnessCommand = await resolveHarnessCommand(subprocess)
+      const argv = [...harnessCommand, 'freeze', '--kind', 'results', '--project', root,
         '--source', args.source, '--output', args.output, '--run-id', args.run_id,
         '--model-contract', args.model_contract]
       for (const item of args.code) argv.push('--code', item)

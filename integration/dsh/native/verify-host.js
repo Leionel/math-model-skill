@@ -16,6 +16,7 @@ if (!root) {
   process.exit(2)
 }
 const seedEvidence = process.argv.includes('--seed-evidence')
+process.env.MATH_HARNESS_CLI = path.join(__dirname, '..', '..', '..', 'scripts', 'harness.py')
 
 const handlers = new Map()
 const tools = []
@@ -27,7 +28,7 @@ global.harness = {
 
 const subprocess = {
   async resolveExecutable(name) {
-    return name === 'python' ? 'python' : null
+    return name === 'python' || name === 'harness' ? name : null
   },
   spawn(opts) {
     const argv = opts.argv

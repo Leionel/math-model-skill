@@ -17,6 +17,8 @@ references/precedents/**/*.docx
 references/precedents/**/*.zip
 references/precedents/**/*.rar
 *.egg-info/
+build/
+dist-test/
 .env
 .DS_Store
 Thumbs.db

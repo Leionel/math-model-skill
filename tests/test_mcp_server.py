@@ -49,6 +49,18 @@ class FacadeMappingTest(unittest.TestCase):
         self.assertEqual({row["name"] for row in mcp_server.FACADE_TOOLS}, EXPECTED_TOOLS)
         self.assertEqual(set(mcp_server.TOOL_BUILDERS), EXPECTED_TOOLS)
 
+    def test_package_module_imports_from_a_clean_working_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            result = subprocess.run(
+                [sys.executable, "-c", "import scripts.mcp_server"],
+                cwd=temp,
+                env={**os.environ, "PYTHONPATH": str(ROOT)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_every_mapping_parses_with_the_real_cli_parser(self) -> None:
         parser = harness_cli.build_parser()
         with tempfile.TemporaryDirectory() as temp:
