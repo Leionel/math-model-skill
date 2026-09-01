@@ -85,6 +85,108 @@ def _anchor_spans(draft: str, anchors: list[dict[str, Any]]) -> list[dict[str, A
     return spans
 
 
+def _prose_paragraphs(draft: str) -> list[dict[str, Any]]:
+    """Return rough paragraph offsets for mapping, not for a style verdict."""
+
+    paragraphs: list[dict[str, Any]] = []
+    for match in re.finditer(r"(?s)(?<!\S)(.+?)(?=\n\s*\n|\Z)", draft):
+        raw = match.group(1).strip()
+        if not raw:
+            continue
+        # Preamble, standalone TeX commands, and locator-only blocks are not
+        # reader paragraphs.  Mapping remains deliberately conservative: a
+        # paragraph that contains prose but no unit anchor is surfaced for a
+        # human to retain, move, or support.
+        visible = re.sub(r"(?s)\\[A-Za-z]+(?:\s*\[[^]]*\])?\s*(?:\{[^{}]*\})?", " ", raw)
+        visible = re.sub(r"<!--.*?-->|(?<!\\)%[^\r\n]*", " ", visible, flags=re.DOTALL)
+        visible = re.sub(r"[{}$\\]", " ", visible)
+        if not re.search(r"[A-Za-z\u3400-\u9fff]", visible):
+            continue
+        if raw.lstrip().startswith(("\\documentclass", "\\usepackage", "\\begin", "\\end")):
+            continue
+        if all(line.strip().startswith("#") for line in raw.splitlines() if line.strip()):
+            continue
+        paragraphs.append({"position": match.start(), "content": raw})
+    return paragraphs
+
+
+def _map_outline_rows(
+    plan: dict[str, Any],
+    spans: list[dict[str, Any]],
+    draft: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Map paragraph claims to existing section and central theses.
+
+    The mapping is a derived review view.  It does not infer new claims: an
+    anchor contributes only the claim IDs and section already declared by its
+    argument unit.  Paragraphs outside all located spans are listed with a
+    human action instead of being silently assigned to a unit.
+    """
+
+    sections = {
+        row.get("section_id"): row
+        for row in plan.get("sections", [])
+        if isinstance(row, dict) and isinstance(row.get("section_id"), str)
+    }
+    units = {
+        row.get("unit_id"): row
+        for row in plan.get("argument_units", [])
+        if isinstance(row, dict) and isinstance(row.get("unit_id"), str)
+    }
+    central = plan.get("central_thesis") if isinstance(plan.get("central_thesis"), dict) else {}
+    central_text = central.get("text")
+    rows: list[dict[str, Any]] = []
+    located = sorted(
+        [row for row in spans if row.get("position") is not None],
+        key=lambda row: row["position"],
+    )
+    for span in spans:
+        unit = units.get(span.get("unit_id"), {})
+        section_id = unit.get("section_id")
+        section = sections.get(section_id, {})
+        claim_ids = [
+            claim_id for claim_id in unit.get("claim_ids", [])
+            if isinstance(claim_id, str)
+        ]
+        mapped = span.get("position") is not None and bool(unit)
+        paragraphs = _prose_paragraphs(span.get("content", "")) or [{"content": span.get("content", "")}]
+        for index, paragraph in enumerate(paragraphs, start=1):
+            content = paragraph["content"]
+            rows.append({
+                "anchor_id": span.get("anchor_id"),
+                "paragraph_index": index,
+                "unit_id": span.get("unit_id"),
+                "paragraph_claims": claim_ids,
+                "section_id": section_id,
+                "section_thesis": section.get("purpose"),
+                "central_thesis": central_text,
+                "topic_sentence": _first_sentence(content),
+                "words": _count_words(content),
+                "mapping_status": "mapped" if mapped else "unmapped",
+                "action": "retain" if mapped else "locate anchor, then retain/move or add evidence",
+            })
+
+    # A paragraph is mapped to the span whose anchor starts its block.  This
+    # prevents an ordinary prose paragraph between two labels from being
+    # misclassified as a new, unplanned argument unit.
+    ranges: list[tuple[int, int]] = []
+    for index, span in enumerate(located):
+        end = located[index + 1]["position"] if index + 1 < len(located) else len(draft)
+        ranges.append((span["position"], end))
+    unmapped: list[dict[str, Any]] = []
+    for paragraph in _prose_paragraphs(draft):
+        position = paragraph["position"]
+        if any(start <= position < end for start, end in ranges):
+            continue
+        unmapped.append({
+            "topic_sentence": _first_sentence(paragraph["content"]),
+            "words": _count_words(paragraph["content"]),
+            "mapping_status": "unmapped",
+            "action": "delete, move to an existing argument unit, or add the evidence needed to keep it",
+        })
+    return rows, unmapped
+
+
 def _repetition_findings(spans: list[dict[str, Any]]) -> list[str]:
     """Report identical long n-grams that appear in two or more anchor spans."""
 
@@ -208,23 +310,26 @@ def main() -> int:
 
     warnings.extend(_repetition_findings(spans))
 
-    outline = [
-        {
-            "anchor_id": span.get("anchor_id"),
-            "unit_id": span.get("unit_id"),
-            "topic_sentence": _first_sentence(span.get("content", "")),
-            "words": _count_words(span.get("content", "")),
-        }
-        for span in spans
-    ]
+    outline, unmapped_paragraphs = _map_outline_rows(plan, spans, draft)
     ok = not errors and (not args.strict or not warnings)
     if args.outline_report:
         report_path = resolve_path(args.outline_report, root).resolve()
         report_path.parent.mkdir(parents=True, exist_ok=True)
         lines = ["# Reverse Outline", ""]
         for row in outline:
-            lines.append(f"- `{row['anchor_id']}` ({row['words']} words): {row['topic_sentence']}")
+            lines.append(
+                f"- `{row['anchor_id']}` ({row['words']} words; {row['mapping_status']}): "
+                f"{row['topic_sentence']} -> {row.get('section_id')} -> {row.get('central_thesis')}"
+            )
         lines.append("")
+        if unmapped_paragraphs:
+            lines.append("## Unmapped paragraphs")
+            lines.append("")
+            lines.extend(
+                f"- ({row['words']} words; action: {row['action']}): {row['topic_sentence']}"
+                for row in unmapped_paragraphs
+            )
+            lines.append("")
         if warnings:
             lines.append("## Repetition findings")
             lines.append("")
@@ -248,6 +353,7 @@ def main() -> int:
         ),
         "claims_total": len([row for row in plan.get("claims", []) if isinstance(row, dict)]),
         "reverse_outline": outline,
+        "unmapped_paragraphs": unmapped_paragraphs,
         "errors": errors,
         "warnings": warnings,
     }, ensure_ascii=False, indent=2))

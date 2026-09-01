@@ -1417,21 +1417,23 @@ def authoring_context(root: Path, stage: str) -> dict[str, Any]:
         skipped = ["paper-writing references", "submission references"]
     elif normalized.startswith("paper:"):
         section = _normalize_section_id(normalized.split(":", 1)[1])
+        guideline = (
+            "references/writing/abstract_guidelines.md"
+            if "abstract" in section.casefold()
+            else "references/writing/manuscript_logic.md"
+        )
         rows = [
-            ("paper/00_PAPER_PLAN.md", "paper-wide narrative and section role", True),
-            (".harness/authoring/paper_plan.yaml", "structured plan source when available", False),
-            (f"paper/sections/{section}/brief.md", "section scope and evidence boundary", True),
+            (".harness/views/WRITING_SPINE.md", "whole-paper argument chain", True),
+            (f".harness/views/sections/{section}_brief.md", "current section Writer Brief", True),
             (f"paper/sections/{section}/draft.md", "only draft allowed to change", True),
-            (".harness/reports/writer_package.json", "controlled claim/fact source for formal drafting; prefer it over raw frozen results", False),
-            (f".harness/views/sections/{section}_brief.md", "compiled section Writer Brief projection when a plan exists", False),
-            (".harness/views/WRITING_SPINE.md", "whole-paper argument-chain projection when a plan exists", False),
-            (".harness/contracts/paper_plan.json", "compiled paper plan when available", False),
-            (".harness/contracts/model_contract.json", "model definitions when available", False),
-            (".harness/results/frozen_results.json", "frozen numbers; only consult when the writer package is absent", False),
-            ("references/writing/editorial_style.md", "section-writing guidance", True),
-            ("references/writing/narrative_patterns.md", "positive narrative patterns for the current argument", True),
+            (guideline, "one task-related micro-guideline", True),
         ]
-        skipped = ["other paper sections", "full Harness repository", "submission references"]
+        skipped = [
+            "other paper sections",
+            "full contracts and frozen results unless an explicit locator is needed",
+            "reviewer reasoning and previous verdicts",
+            "unrelated writing references",
+        ]
     else:
         raise ValueError("context stage must be research, model, solve, or paper:<section>")
     loaded = []

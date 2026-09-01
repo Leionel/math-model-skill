@@ -11,6 +11,10 @@
 7. 复验：任何正文或 artifact 变化后重跑确定性 QA；最终 Release 使用 `--strict`。
 8. 读者界面：`ANCHOR-*`、`LOC-*`、当前项目注册过的 claim/unit/locator 与 `\audit` 命令只能留在注释、不可见 label 或 sidecar；可见源与最终 PDF 不得出现。普通 `R` 数学符号和未注册的 `R-*` 不作宽泛拦截。
 
+`canonical_recommendation` 是内容合同，不是逐字句模板。改写时必须保持同一推荐
+选项、已声明数值、证据引用和适用边界；句式、语序和语言可以自然变化。推荐内容若
+发生变化，应回到 `paper_plan` 与证据链重新编译，而不是在 Writer 视图中改写真源。
+
 结果段按 `Observation → Comparator → Interpretation → Boundary` 组织：只有 package 内有 inference claim 和支持证据时才能写 Interpretation；否则在 Comparator 后直接给 Boundary。不要用“说明/表明”把一个 observation 自动升级为解释或因果。
 
 程序化检查只能发现可编码的不一致。对“该证据是否足以支持该主张”和“边界是否被扩大”的判断交给 Semantic Critic。

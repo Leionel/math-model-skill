@@ -15,6 +15,10 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 from _common import load_structured, rel_path, resolve_path, sha256_file, write_json  # noqa: E402
 from qa.check_paper_readiness import evaluate_readiness  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
+from views.writing_spine import (  # noqa: E402
+    _unit_dependents,
+    _unit_argument_projection,
+)
 
 PATTERN_LIBRARY: tuple[dict[str, Any], ...] = (
     {
@@ -247,6 +251,15 @@ def main() -> int:
                 "evidence": claim_evidence,
                 "results": result_values,
             })
+        unit_dependents = _unit_dependents(plan)
+        argument_units = [
+            _unit_argument_projection(
+                unit,
+                dependents=unit_dependents.get(str(unit.get("unit_id")), []),
+            )
+            for unit in plan.get("argument_units", [])
+            if isinstance(unit, dict)
+        ]
         package = {
             "schema_version": "1.0",
             "run_id": plan["run_id"],
@@ -261,7 +274,7 @@ def main() -> int:
             "depth": plan.get("depth_allocation") or plan.get("depth_budget") or [],
             "precision_policy": plan["precision_policy"],
             "abstract_results": plan["abstract_results"],
-            "argument_units": plan["argument_units"],
+            "argument_units": argument_units,
             "draft_coverage": plan.get("draft_coverage"),
             "writing_patterns": select_writer_patterns(plan),
             "claims": claims,
@@ -280,10 +293,10 @@ def main() -> int:
                 "Preserve every claim inference_strength; do not turn descriptive or associational evidence into a mechanistic or causal statement.",
                 "Use each argument unit's rhetorical_role as its single primary research action.",
                 "Follow the section order in sections[]; draft decisive results and validation first, then mechanism, then synthesis, and compile the abstract last from abstract_results.",
-                "For every question, write the formulation, results, validation, and interpretation units before compressing prose.",
+                "Compose from the ordered argument units and their purpose/premise/evidence/explanation/boundary/next relation; do not impose a uniform per-question paragraph sequence.",
                 "A short first draft is not acceptable when it omits an equation/derivation, validation evidence, or result boundary planned for that question.",
                 "Use only listed writing_patterns as positive structure guidance; they never extend evidence or boundaries.",
-                "Use the canonical_recommendation text verbatim when stating the recommended option; use each terminology canonical form and avoid forbidden variants.",
+                "Use canonical_recommendation as a content constraint: preserve its option, declared values, evidence, and boundary, while natural wording is allowed and verbatim sentence copying is not required; use each terminology canonical form and avoid forbidden variants.",
             ],
         }
         write_json(output_path, package)

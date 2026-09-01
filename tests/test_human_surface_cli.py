@@ -77,11 +77,13 @@ class HumanSurfaceCliTest(unittest.TestCase):
         report = json.loads(context.stdout)
         self.assertEqual(report["stage"], "paper:q2")
         self.assertIn("other paper sections", report["optional_files_skipped"])
-        editorial = next(row for row in report["loaded_files"] if row["path"] == "references/writing/editorial_style.md")
-        self.assertEqual(editorial["location"], "harness")
-        self.assertTrue(editorial["exists"])
-        patterns = next(row for row in report["loaded_files"] if row["path"] == "references/writing/narrative_patterns.md")
-        self.assertEqual(patterns["location"], "harness")
+        self.assertEqual(len(report["loaded_files"]), 4)
+        guideline = next(
+            row for row in report["loaded_files"]
+            if row["path"] == "references/writing/manuscript_logic.md"
+        )
+        self.assertEqual(guideline["location"], "harness")
+        self.assertTrue(guideline["exists"])
 
     def test_pptx_figure_copy_preserves_existing_edits_and_drawio_is_explicit(self) -> None:
         self.init()
