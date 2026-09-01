@@ -84,6 +84,32 @@ class PaperPlanVNextTest(unittest.TestCase):
         self.assertTrue(errors)
         self.assertTrue(any("oneOf" in error for error in errors), errors)
 
+    def test_v13_figure_requires_audience_but_v12_remains_compatible(self) -> None:
+        figure = {
+            "figure_id": "FIG-1", "kind": "data", "claim_ids": ["C1"],
+            "evidence_ids": ["E1"], "purpose": "Compare outcomes", "why_figure": "Shows scale",
+            "message": "A is lower", "comparison": "A versus B", "visual_encoding": "bars",
+            "selection_rule": "All scenarios", "data_artifacts": ["figures/a.png"],
+            "panel_map": {"A": "Comparison"}, "statistical_definition": "Frozen values",
+            "paper_location": "results", "caption_claim": "A is lower", "accessibility": {
+                "grayscale_safe": True, "colorblind_safe": True, "dual_axis": False,
+                "dual_axis_justification": None,
+            }, "qa_status": "pending",
+        }
+        legacy = self.legacy_plan()
+        legacy["figures"] = [deepcopy(figure)]
+        legacy_errors, _ = self.schema_errors(legacy)
+        self.assertEqual(legacy_errors, [])
+
+        current = self.v13_plan()
+        current["figures"] = [deepcopy(figure)]
+        missing_errors, _ = self.schema_errors(current)
+        self.assertTrue(missing_errors)
+
+        current["figures"][0]["audience"] = "scientific_argument"
+        current_errors, _ = self.schema_errors(current)
+        self.assertEqual(current_errors, [])
+
     def test_scope_cardinality_is_rejected_by_fallback_schema_validation(self) -> None:
         plan = self.v13_plan()
         plan["argument_units"][0]["scope"] = {

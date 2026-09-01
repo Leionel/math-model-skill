@@ -357,8 +357,11 @@ def main() -> int:
             "--model-contract", args.model_contract,
             "--source", args.pdf_source or args.paper,
             "--frozen-results", args.frozen_results,
+            "--paper-plan", args.paper_plan,
             "--strict",
         ]
+        if args.writer_package:
+            pdf_math_args.extend(["--writer-package", args.writer_package])
         if args.require_scope_contract:
             pdf_math_args.append("--require-scope-contract")
         if args.require_formula_replay:

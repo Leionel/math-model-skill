@@ -40,7 +40,8 @@
         {
           "properties": {
             "schema_version": {"const": "1.3"},
-            "argument_units": {"items": {"allOf": [{"$ref": "#/$defs/argument_unit"}, {"required": ["depth_priority"]}]}}
+            "argument_units": {"items": {"allOf": [{"$ref": "#/$defs/argument_unit"}, {"required": ["depth_priority"]}]}},
+            "figures": {"items": {"allOf": [{"$ref": "#/$defs/figure"}, {"required": ["audience"]}]}}
           }
         }
       ]
@@ -342,6 +343,7 @@
       "properties": {
         "figure_id": {"type": "string", "minLength": 1},
         "kind": {"type": "string", "enum": ["data", "concept", "illustration"], "description": "data=由冻结数据确定性生成；concept=总览/流程/框架等结构图（默认 diagram_spec→draw.io 可编辑源，AI 位图仅在附 illustration 块并记录 backend_comparison 时可作为正式成品）；illustration=AI 生成的概念/机理/场景示意图（不承载数值结论）。"},
+        "audience": {"type": "string", "enum": ["scientific_argument", "submission_disclosure", "internal_audit"], "description": "Reader-facing classification: scientific argument belongs in the paper body; submission disclosure is for an allowed disclosure deliverable; internal audit is Harness-only and cannot enter the reader-facing body."},
         "semantic_type": {"type": "string", "minLength": 1},
         "diagram": {"$ref": "#/$defs/diagram_artifact"},
         "illustration": {"$ref": "#/$defs/illustration_artifact"},

@@ -14,9 +14,10 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import rel_path, resolve_path  # noqa: E402
+from _common import load_structured, rel_path, resolve_path  # noqa: E402
 from qa.check_formula_replay import evaluate_formula_replay  # noqa: E402
 from qa.check_scope_consistency import evaluate_scope_consistency  # noqa: E402
+from qa.reader_integrity import collect_registered_internal_ids, exposed_identifiers  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
 
 
@@ -110,6 +111,8 @@ def main() -> int:
     parser.add_argument("--require-scope-contract", action="store_true")
     parser.add_argument("--require-formula-replay", action="store_true")
     parser.add_argument("--frozen-results", help="Frozen results whose display values must appear in the PDF text.")
+    parser.add_argument("--paper-plan", help="Paper plan used to resolve registered internal IDs.")
+    parser.add_argument("--writer-package", help="Writer package used to resolve registered internal IDs.")
     parser.add_argument("--require-numeric-presence", action="store_true", help="Promote missing frozen display values from warnings to errors.")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
@@ -128,6 +131,15 @@ def main() -> int:
         errors.extend(f"model_contract schema: {message}" for message in schema_errors)
         if not isinstance(model, dict):
             raise ValueError("model_contract must be an object")
+        integrity_documents: list[dict[str, Any]] = []
+        for label, raw_path in (("paper_plan", args.paper_plan), ("writer_package", args.writer_package)):
+            if not raw_path:
+                continue
+            document = load_structured(resolve_path(raw_path, root).resolve())
+            if not isinstance(document, dict):
+                raise ValueError(f"{label} must be an object")
+            integrity_documents.append(document)
+        registered_internal_ids = collect_registered_internal_ids(*integrity_documents)
         if source_path is not None:
             files = _source_files(source_path)
             if not files:
@@ -157,9 +169,16 @@ def main() -> int:
                 errors.extend(check_errors)
                 warnings.extend(check_warnings)
                 details.update(math_details)
+                pdf_exposed = exposed_identifiers(pdf_text, registered_internal_ids)
+                details["reader_integrity"] = {
+                    "registered_internal_id_count": len(registered_internal_ids),
+                    "exposed_identifiers": pdf_exposed,
+                }
+                if pdf_exposed:
+                    errors.append(
+                        "final PDF exposes internal authoring marker(s): " + ", ".join(pdf_exposed),
+                    )
                 if args.frozen_results:
-                    from _common import load_structured  # noqa: E402
-
                     frozen_path = resolve_path(args.frozen_results, root).resolve()
                     frozen = load_structured(frozen_path)
                     missing, _nwarn, numeric_details = check_numeric_presence(frozen, pdf_text)

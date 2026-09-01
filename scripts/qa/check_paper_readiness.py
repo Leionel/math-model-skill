@@ -14,6 +14,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import rel_path, resolve_path  # noqa: E402
 from qa.validate_contracts import _validate_document  # noqa: E402
+from qa.reader_integrity import visual_opportunity_scan  # noqa: E402
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -246,6 +247,7 @@ def evaluate_readiness(
         "shared_scope_units": sorted(shared_scope_units),
         "used_units": sorted(used_units),
         "presentation_completeness": presentation_completeness(plan),
+        "visual_opportunity_scan": visual_opportunity_scan(plan),
     }
     return errors, warnings, details
 

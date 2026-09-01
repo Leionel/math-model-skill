@@ -27,6 +27,8 @@ AI 位图不再是绝对禁区，但只能走受约束的 `illustration` 通道�
 
 画图前先回答“这张图证明什么”，再选图型。它与 `paper_plan.figures[]` 一一对应，不以图数为输入。
 
+W1 对每个 argument unit 生成非阻断的视觉机会扫描：已有 display 时核对其论证作用；定量比较在表格与确定性数据图之间选择；机制、场景或流程只有在纯文字解释成本过高时才考虑可编辑概念图或 `illustration`。扫描必须留下结论，但不因此创建图数配额。
+
 数据图可选登记 `data_shape`、`argument_intent`、`sample_regime` 和 `uncertainty_semantics`，把图型选择约束在“主张 + 数据形态 + 论证意图 + 样本制度”上。复杂图可先登记 `candidate_displays[]`，选定后填写 `selected_display` 和 `selection_reason`；这些字段不是图数配额，也不要求所有图都提供候选列表。`color_profile` 可取 `contest_default`、`colorblind_safe`、`muted` 或 `high_contrast`；发散色图需要语义中心。
 
 ## 必填问题
@@ -35,6 +37,7 @@ AI 位图不再是绝对禁区，但只能走受约束的 `illustration` 通道�
 - `claim_ids`：对应哪个论文主张？
 - `evidence_ids`：使用哪些冻结结果、原始数据或推导？
 - `kind`：这是 `data` 结果图还是 `concept` 机理/流程图？
+- `audience`：新合同必须标为 `scientific_argument`、`submission_disclosure` 或 `internal_audit`。只有 `scientific_argument` 可进入论文正文；其余两类只能进入各自交付面。
 - `purpose`：阅卷者在 5–10 秒内应该看懂什么？
 - `why_figure`：如果删除这张图，哪条论证会变弱？
 - `message/comparison/visual_encoding/selection_rule`：一句话结论、比较对象、视觉通道和入图筛选规则；防止为了好看挑选样本。

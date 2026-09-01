@@ -13,6 +13,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
 from _common import load_structured, rel_path, resolve_path  # noqa: E402
+from qa.reader_integrity import (  # noqa: E402
+    collect_registered_internal_ids,
+    evaluate_figure_reader_bindings,
+    exposed_identifiers,
+    source_issues,
+)
 
 
 NUMBER_RE = re.compile(r"(?<![A-Za-z0-9_])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?![A-Za-z0-9_])")
@@ -21,9 +27,6 @@ CJK_CHAR_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 CAUSAL_MARKERS = ("导致", "造成", "使得", "证明", "表明", "because", "therefore", "causes", "demonstrates")
 STRONG_CAUSAL_MARKERS = ("导致", "造成", "使得", "causes", "because")
 STRENGTH_MARKERS = ("最优", "显著", "稳健", "提升", "optimal", "significant", "robust", "improve")
-INTERNAL_MARKER_RE = re.compile(r"\b(?:ANCHOR|LOC)-[A-Za-z0-9][A-Za-z0-9_.-]*\b")
-
-
 INPUT_RE = re.compile(r"\\(?:input|include)\{([^}]+)\}")
 
 
@@ -113,12 +116,19 @@ def main() -> int:
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "errors": [str(exc)], "warnings": []}, ensure_ascii=False, indent=2))
         return 1
-    exposed_markers = sorted(set(INTERNAL_MARKER_RE.findall(_strip_invisible_comments(coverage_draft))))
+    registered_internal_ids = collect_registered_internal_ids(package)
+    exposed_markers = exposed_identifiers(coverage_draft, registered_internal_ids)
     if exposed_markers:
         errors.append(
             "draft exposes internal authoring marker(s) in reader-facing text: "
             + ", ".join(exposed_markers)
         )
+    errors.extend(
+        issue for issue in source_issues(coverage_draft, registered_internal_ids)
+        if "forbidden \\audit" in issue
+    )
+    figure_errors, figure_details = evaluate_figure_reader_bindings(package, coverage_draft)
+    errors.extend(figure_errors)
     allowed_numbers = {
         str(result.get("display_value"))
         for claim in package.get("claims", [])
@@ -218,6 +228,10 @@ def main() -> int:
         "minimum_words_enforced": args.enforce_minimum_words,
         "advisories": advisories,
         "warnings": warnings,
+        "reader_integrity": {
+            "registered_internal_id_count": len(registered_internal_ids),
+            "figure_bindings": figure_details,
+        },
     }, ensure_ascii=False, indent=2))
     return 0 if ok else 1
 

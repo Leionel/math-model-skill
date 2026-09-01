@@ -9,6 +9,7 @@
 5. 图表：逐项核对 figure/table ID、caption claim、数据 artifact、正文解释和 paper location。图题中的关键数字必须来自 frozen/derived results；只在正文重复同一数字不能代替证据登记。
 6. 交叉引用：LaTeX 交付时检查 cite key、label/ref 和图片文件；Word 交付时进行实际渲染与人工交叉引用检查。
 7. 复验：任何正文或 artifact 变化后重跑确定性 QA；最终 Release 使用 `--strict`。
+8. 读者界面：`ANCHOR-*`、`LOC-*`、当前项目注册过的 claim/unit/locator 与 `\audit` 命令只能留在注释、不可见 label 或 sidecar；可见源与最终 PDF 不得出现。普通 `R` 数学符号和未注册的 `R-*` 不作宽泛拦截。
 
 结果段按 `Observation → Comparator → Interpretation → Boundary` 组织：只有 package 内有 inference claim 和支持证据时才能写 Interpretation；否则在 Comparator 后直接给 Boundary。不要用“说明/表明”把一个 observation 自动升级为解释或因果。
 
