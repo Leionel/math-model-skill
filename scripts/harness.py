@@ -33,9 +33,11 @@ from human_surface import (  # noqa: E402
     compile_paper_plan,
     compile_research_basis,
     compile_solution_implementation_map,
+    check_authoring_freshness,
     ensure_figure_brief,
     ensure_human_surface,
     ensure_section,
+    migrate_authoring_sources,
 )
 from profiles.normalization import canonicalize_competition_profile, resolve_profile  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
@@ -590,10 +592,46 @@ def _research(args: argparse.Namespace) -> int:
             "message": "Research notes are ready to author. Review problem interpretation, candidate coverage, rejected methods, and unresolved questions before model selection.",
             "gate": "none",
         },
-        "compile_hint": "When a machine consumer needs a structured research basis, add the explicit YAML source block and run `harness research --compile`.",
+        "compile_hint": "When a machine consumer needs a structured research basis, fill `.harness/authoring/research_basis.yaml` and run `harness research --compile`.",
     }
     _emit(result, machine=args.json, human="research authoring surface ready\nread: 00_PROJECT_BRIEF.md\nwrite: 01_RESEARCH_NOTES.md")
     return 0
+
+
+def _authoring(args: argparse.Namespace) -> int:
+    root = _project(args)
+    if args.authoring_action == "check":
+        report = check_authoring_freshness(root)
+        repairs = report.get("repair_commands", [])
+        repair_text = ""
+        if repairs:
+            commands = sorted({str(item["command"]) for item in repairs if isinstance(item, Mapping) and item.get("command")})
+            if commands:
+                repair_text = "\nrepair: " + "; ".join(commands)
+        _emit(
+            report,
+            machine=args.json,
+            human=(
+                f"authoring sources: {report['status']}\n"
+                f"index: {report['index']}\n"
+                f"stale entries: {sum(row['status'] == 'stale' for row in report['entries'])}"
+                f"{repair_text}"
+            ),
+        )
+        return 0 if report["ok"] else 1
+    if args.authoring_action == "migrate":
+        report = migrate_authoring_sources(root, apply=not args.dry_run)
+        _emit(
+            report,
+            machine=args.json,
+            human=(
+                f"authoring migration {report['status']}\n"
+                f"files: {len(report['files'])}\n"
+                f"index: {report['index']}"
+            ),
+        )
+        return 0
+    raise ValueError(f"unknown authoring action: {args.authoring_action}")
 
 
 def _precedents(args: argparse.Namespace) -> int:
@@ -644,7 +682,7 @@ def _model(args: argparse.Namespace) -> int:
                 "actions": ["continue", "revise", "research-more"],
                 "gate": "m1",
             },
-            "compile_hint": "When a machine consumer needs the decision, add the explicit YAML source block and run `harness model --compile`.",
+            "compile_hint": "When a machine consumer needs the decision, fill `.harness/authoring/model_contract.yaml` and run `harness model --compile`.",
         }
     _emit(result, machine=args.json, human="model authoring surface ready\nread: 01_RESEARCH_NOTES.md\nwrite: 02_MODEL_DECISION.md")
     return 0
@@ -729,7 +767,7 @@ def _paper(args: argparse.Namespace) -> int:
                 "ok": True,
                 "human_surface": ensure_human_surface(root),
                 "authoring_target": "paper/00_PAPER_PLAN.md",
-                "compile_hint": "When a machine consumer needs the plan, add the explicit YAML source block and run `harness paper plan --compile`.",
+                "compile_hint": "When a machine consumer needs the plan, fill `.harness/authoring/paper_plan.yaml` and run `harness paper plan --compile`.",
             }
             human = "Paper Director Plan surface ready\nwrite: paper/00_PAPER_PLAN.md"
     else:
@@ -1111,17 +1149,27 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--manifest", default=None)
     prepare.set_defaults(handler=_prepare)
 
+    authoring = sub.add_parser("authoring", help="check or explicitly migrate the authoring source plane")
+    authoring_sub = authoring.add_subparsers(dest="authoring_action", required=True)
+    authoring_check = authoring_sub.add_parser("check", help="inspect authoring source/output freshness without changing files")
+    _add_common(authoring_check)
+    authoring_check.set_defaults(handler=_authoring)
+    authoring_migrate = authoring_sub.add_parser("migrate", help="move legacy Markdown contract blocks into hidden YAML sources")
+    _add_common(authoring_migrate)
+    authoring_migrate.add_argument("--dry-run", action="store_true", help="report the migration without writing files")
+    authoring_migrate.set_defaults(handler=_authoring)
+
     research = sub.add_parser("research", help="prepare the human-authored research surface; it does not run a Gate")
     _add_common(research)
-    research.add_argument("--compile", action="store_true", help="compile the explicit research-basis YAML block to JSON IR")
-    research.add_argument("--source", help="research Markdown source; defaults to 01_RESEARCH_NOTES.md")
+    research.add_argument("--compile", action="store_true", help="compile .harness/authoring/research_basis.yaml to JSON IR")
+    research.add_argument("--source", help="authoring source; defaults to .harness/authoring/research_basis.yaml")
     research.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/research_basis.json")
     research.set_defaults(handler=_research)
 
     model = sub.add_parser("model", help="prepare model-decision authoring or compile its explicit YAML contract source")
     _add_common(model)
-    model.add_argument("--compile", action="store_true", help="compile the explicit machine-contract YAML block to JSON IR")
-    model.add_argument("--source", help="model decision Markdown source; defaults to 02_MODEL_DECISION.md")
+    model.add_argument("--compile", action="store_true", help="compile .harness/authoring/model_contract.yaml to JSON IR")
+    model.add_argument("--source", help="authoring source; defaults to .harness/authoring/model_contract.yaml")
     model.add_argument("--research-source", help="optional research-notes Markdown source to compile into model_contract.research_basis")
     model.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/model_contract.json")
     model.set_defaults(handler=_model)
@@ -1132,8 +1180,8 @@ def build_parser() -> argparse.ArgumentParser:
     solve.add_argument("--dag", help="artifact DAG path for --rerun-plan; defaults to the active control layout")
     solve.add_argument("--changed", action="append", default=[], help="artifact_id or path treated as changed for --rerun-plan; repeatable")
     solve.add_argument("--model-contract", default=".harness/contracts/model_contract.json", help="model contract source for --tasks")
-    solve.add_argument("--compile", action="store_true", help="compile the explicit implementation-map YAML block to JSON IR")
-    solve.add_argument("--source", help="solution-report Markdown source; defaults to 03_SOLUTION_REPORT.md")
+    solve.add_argument("--compile", action="store_true", help="compile .harness/authoring/implementation_map.yaml to JSON IR")
+    solve.add_argument("--source", help="authoring source; defaults to .harness/authoring/implementation_map.yaml")
     solve.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/implementation_map.json")
     _add_common(solve)
     solve.add_argument("--manifest", default=None)
@@ -1156,8 +1204,8 @@ def build_parser() -> argparse.ArgumentParser:
     paper_sub = paper.add_subparsers(dest="paper_action", required=True)
     paper_plan = paper_sub.add_parser("plan", help="create paper/00_PAPER_PLAN.md when absent")
     _add_common(paper_plan)
-    paper_plan.add_argument("--compile", action="store_true", help="compile the explicit Paper Director Plan YAML block to JSON IR")
-    paper_plan.add_argument("--source", help="paper-plan Markdown source; defaults to paper/00_PAPER_PLAN.md")
+    paper_plan.add_argument("--compile", action="store_true", help="compile .harness/authoring/paper_plan.yaml to JSON IR")
+    paper_plan.add_argument("--source", help="authoring source; defaults to .harness/authoring/paper_plan.yaml")
     paper_plan.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/paper_plan.json")
     paper_plan.set_defaults(handler=_paper)
 
@@ -1178,8 +1226,8 @@ def build_parser() -> argparse.ArgumentParser:
     figure = sub.add_parser("figure", help="create a figure brief and route it to the appropriate tool family")
     _add_common(figure)
     figure.add_argument("figure_id")
-    figure.add_argument("--compile", action="store_true", help="compile the explicit diagram-spec YAML block when a structured diagram producer needs it")
-    figure.add_argument("--source", help="figure brief Markdown source; defaults to figures/<figure-id>/brief.md")
+    figure.add_argument("--compile", action="store_true", help="compile the hidden diagram-spec YAML source when a structured producer needs it")
+    figure.add_argument("--source", help="authoring source; defaults to .harness/authoring/figures/<figure-id>_diagram_spec.yaml")
     figure.add_argument("--output", help="compiled JSON path; defaults to .harness/contracts/figures/<figure-id>_diagram_spec.json")
     figure.add_argument("--kind", choices=("auto", "data", "diagram", "illustration"), default="auto")
     figure.add_argument("--semantic-type")
