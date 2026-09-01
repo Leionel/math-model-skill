@@ -15,8 +15,8 @@ Star 数只说明关注度，不能替代 commit、许可证、内容与任务�
 
 1. **拆题与研究问题**：逐个 `question_id` 写清输出、决策对象、机制、数据和风险。建立 `research_questions[]`，每项同时给出中文和英文关键词。
 2. **知识侦察**：用大模型已有知识列出方法族、需要核验的假设和可能的反例，登记为 `source=llm_knowledge`。这一步只能产生查询方向，不能登记成已核验文献事实。
-3. **外部检索**：至少通过 Web Search、OpenAlex、Crossref、CNKI、出版社或官方仓储之一检索。记录 query、语言、时间、候选数和对应 `research_id`。
-4. **真实文献核验**：先核验题名、作者、年份、venue/DOI，再核验正文是否真正支持所需机制；正式选型至少有一条 `full_text + locator + metadata/content/publication verified` citation evidence。
+3. **外部检索**：按题目范围选择 Web Search、OpenAlex、Crossref、CNKI、出版社或官方仓储等来源，记录 query、语言、时间、候选数和对应 `research_id`。S5 不把查询、数据库或全文数量设为固定配额；来源多样性只有在造成关键 research obligation gap 时才阻断。
+4. **真实文献核验**：先核验题名、作者、年份、venue/DOI，再核验正文是否真正支持所需机制；正式选型至少有一条 `full_text + locator + metadata/content/publication verified` citation evidence。S5 另外将 discovery candidate、full-text core 和 excluded item 分开，分别记录纳入/排除理由，并按机制、假设、参数、基线模型选择、验证和失败模式登记 obligation coverage。
 5. **候选模型比较**：每个子问题至少比较两个候选；分别写 mechanism fit、assumptions、data requirements、strengths、weaknesses、evidence IDs 和 rejection conditions。确实只有一个可行候选时写 `single_candidate_waiver`，不能留空。
 6. **做选择，不做菜单**：`decisions[]` 明确选中候选、比较标准、决定性证据、未解决风险和所有备选。选中候选必须绑定一个实际 `model_id`。
 7. **形成可编码蓝图**：`models[].plan_details` 至少写 mechanism、equation plan、parameter plan、三步以上实现步骤、输出 artifact、validation strategy 和 failure modes。同时声明 `characteristics[]`；随机、场景、相关输入、多阶段、时变、多目标和机器学习特征会分别触发 uncertainty、scenario generalization、correlation validity、nonanticipativity、stability、sensitivity 或 out-of-sample/leakage/baseline 义务。不能把随机规划仅标成普通 optimization 来逃过检验。

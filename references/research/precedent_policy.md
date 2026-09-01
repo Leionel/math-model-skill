@@ -22,3 +22,8 @@ PDF、Word 和压缩包默认被 `.gitignore` 排除，避免版权、体积和�
 5. Writer 默认加载 pattern cards，不长期挂载优秀论文全文。
 
 优秀论文不能进入科学 `evidence_registry` 证明外部事实，也不能证明本队模型正确；它们更适合作为 Harness 的端到端回归样例。
+
+在 `research_basis` 中若登记为 `source_role: precedent_pattern`，只允许说明题目拆解、
+模型组织、验证呈现或图表叙事等可迁移的组织机制。该角色的 evidence ID 不得用于
+`candidate_models`、`decisions` 或 `research_obligations` 的科学支持；不要把往届论文
+的参数、结果或模型有效性外推到当前题目。

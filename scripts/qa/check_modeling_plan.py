@@ -30,6 +30,8 @@ EXTERNAL_RESEARCH_SOURCES = {
     "publisher",
     "official_repository",
 }
+RESEARCH_OBLIGATION_STATUSES = {"covered", "gap", "waived", "not_applicable"}
+RESEARCH_ADVISORY_PREFIX = "research advisory: "
 CHARACTERISTIC_VALIDATION_REQUIREMENTS = {
     "stochastic": {"uncertainty"},
     "scenario_based": {"scenario_generalization"},
@@ -39,6 +41,155 @@ CHARACTERISTIC_VALIDATION_REQUIREMENTS = {
     "multiobjective": {"sensitivity"},
     "machine_learning": {"out_of_sample", "leakage", "baseline"},
 }
+
+
+def _coverage_mode(model_contract: dict[str, Any]) -> bool:
+    """Apply the new coverage contract only to schema v1.4."""
+
+    return model_contract.get("schema_version") == "1.4"
+
+
+def _evidence_ids(row: dict[str, Any]) -> list[str]:
+    values = row.get("evidence_ids", [])
+    return [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
+
+
+def _is_full_text_verified_evidence(evidence: dict[str, Any] | None) -> bool:
+    if not isinstance(evidence, dict):
+        return False
+    citation = evidence.get("citation")
+    return bool(
+        evidence.get("type") == "citation"
+        and evidence.get("verification_status") == "verified"
+        and isinstance(citation, dict)
+        and citation.get("metadata_verified") is True
+        and citation.get("content_verified") is True
+        and citation.get("publication_status_checked") is True
+        and citation.get("access_level") == "full_text"
+        and isinstance(citation.get("locator"), str)
+        and citation.get("locator").strip()
+    )
+
+
+def _evaluate_research_coverage(
+    model_contract: dict[str, Any],
+    research: dict[str, Any],
+    evidence_by_id: dict[str, dict[str, Any]],
+) -> tuple[list[str], list[str], dict[str, Any], set[str]]:
+    """Validate the exact v1.4 research source and obligation vocabulary."""
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    discovery = [row for row in research.get("discovery_candidates", []) if isinstance(row, dict)]
+    core = [row for row in research.get("full_text_core", []) if isinstance(row, dict)]
+    excluded = [row for row in research.get("excluded_items", []) if isinstance(row, dict)]
+    obligations = [row for row in research.get("research_obligations", []) if isinstance(row, dict)]
+
+    if not research.get("research_scope"):
+        errors.append("research_basis requires a non-empty research_scope")
+
+    source_rows = [("discovery_candidate", row) for row in discovery]
+    source_rows += [("full_text_core", row) for row in core]
+    source_rows += [("excluded", row) for row in excluded]
+    source_ids = [row.get("source_id") for _, row in source_rows]
+    if any(not isinstance(source_id, str) or not source_id for source_id in source_ids):
+        errors.append("every research source item requires source_id")
+    elif len(source_ids) != len(set(source_ids)):
+        errors.append("research source_id values must be unique")
+
+    precedent_evidence_ids: set[str] = set()
+    non_core_evidence_ids: set[str] = set()
+    for state, row in source_rows:
+        source_id = row.get("source_id", state)
+        evidence_ids = _evidence_ids(row)
+        if row.get("source_role") == "precedent_pattern":
+            precedent_evidence_ids.update(evidence_ids)
+        if state != "full_text_core":
+            non_core_evidence_ids.update(evidence_ids)
+        if state == "full_text_core":
+            if not row.get("inclusion_reason"):
+                errors.append(f"full_text_core {source_id} requires inclusion_reason")
+            if not evidence_ids:
+                errors.append(f"full_text_core {source_id} requires evidence_ids")
+            for evidence_id in evidence_ids:
+                if not _is_full_text_verified_evidence(evidence_by_id.get(evidence_id)):
+                    errors.append(
+                        f"full_text_core {source_id} evidence {evidence_id} must have metadata/content/publication verification and full_text access"
+                    )
+        elif state == "excluded" and not row.get("exclusion_reason"):
+            errors.append(f"excluded source {source_id} requires exclusion_reason")
+        for evidence_id in evidence_ids:
+            if evidence_id not in evidence_by_id:
+                errors.append(f"{state} {source_id} references missing evidence {evidence_id}")
+
+    core_evidence_ids = {evidence_id for row in core for evidence_id in _evidence_ids(row)}
+    seen_obligations: set[str] = set()
+    obligation_summary: list[dict[str, Any]] = []
+    critical_gap = False
+    for row in obligations:
+        obligation_id = row.get("obligation_id")
+        if not isinstance(obligation_id, str) or not obligation_id:
+            errors.append("research obligation requires obligation_id")
+            continue
+        if obligation_id in seen_obligations:
+            errors.append(f"duplicate research obligation {obligation_id}")
+        seen_obligations.add(obligation_id)
+        status = row.get("status")
+        evidence_ids = _evidence_ids(row)
+        reason = row.get("reason")
+        critical = row.get("critical")
+        if status not in RESEARCH_OBLIGATION_STATUSES:
+            errors.append(f"research obligation {obligation_id} has invalid status {status!r}")
+        if not isinstance(critical, bool):
+            errors.append(f"research obligation {obligation_id} requires critical=true/false")
+        if status == "covered" and not evidence_ids and not reason:
+            errors.append(f"covered research obligation {obligation_id} requires evidence_ids or reason")
+        if status in {"gap", "waived", "not_applicable"} and not reason:
+            errors.append(f"research obligation {obligation_id} with status={status} requires reason")
+        for evidence_id in evidence_ids:
+            if evidence_id not in evidence_by_id:
+                errors.append(f"research obligation {obligation_id} references missing evidence {evidence_id}")
+            elif evidence_id in precedent_evidence_ids:
+                errors.append(f"research obligation {obligation_id} cannot use precedent-pattern evidence {evidence_id}")
+            elif status == "covered" and (
+                evidence_id not in core_evidence_ids
+                or not _is_full_text_verified_evidence(evidence_by_id[evidence_id])
+            ):
+                errors.append(f"covered research obligation {obligation_id} requires verified full_text_core evidence")
+        if status == "gap":
+            if critical is True:
+                critical_gap = True
+                errors.append(f"critical research obligation {obligation_id} remains a gap: {reason}")
+            else:
+                warnings.append(RESEARCH_ADVISORY_PREFIX + f"non-critical research obligation {obligation_id} remains a gap")
+        obligation_summary.append({
+            "obligation_id": obligation_id,
+            "category": row.get("category"),
+            "status": status,
+            "critical": critical,
+            "evidence_ids": evidence_ids,
+        })
+
+    if model_contract.get("status") == "ready" or research.get("status") == "ready":
+        stop = research.get("stop_reason")
+        if not isinstance(stop, dict) or not stop.get("kind") or not stop.get("reason"):
+            errors.append("ready research_basis requires a structured stop_reason")
+        elif stop["kind"] in {"time_box", "waiver"} and not stop.get("residual_risk"):
+            errors.append("time-box/waiver stop_reason requires residual_risk")
+
+    details = {
+        "mode": "coverage_driven",
+        "discovery_candidates": len(discovery),
+        "full_text_core": len(core),
+        "excluded_items": len(excluded),
+        "research_obligations": obligation_summary,
+        "critical_gap": critical_gap,
+        "precedent_evidence_ids": sorted(precedent_evidence_ids),
+        "core_evidence_ids": sorted(core_evidence_ids),
+        "non_core_evidence_ids": sorted(non_core_evidence_ids),
+    }
+    return errors, warnings, details, precedent_evidence_ids
+
 ARTIFACT_REQUIRED_BY_CATEGORY = {
     "sensitivity": "sensitivity_experiment",
     "out_of_sample": "oos_artifact",
@@ -71,8 +222,8 @@ def evaluate_modeling_plan(
     research = model_contract.get("research_basis")
     if not isinstance(research, dict):
         return ["model_contract.research_basis is required before M1 can pass"], [], {}
-    if research.get("status") != "verified":
-        errors.append("research_basis.status must be verified")
+    if research.get("status") not in {"verified", "ready"}:
+        errors.append("research_basis.status must be verified or ready")
 
     research_rows = [row for row in research.get("research_questions", []) if isinstance(row, dict)]
     research_by_id = {
@@ -95,6 +246,18 @@ def evaluate_modeling_plan(
         if isinstance(row, dict) and isinstance(row.get("evidence_id"), str)
     }
 
+    coverage_mode = _coverage_mode(model_contract)
+    research_coverage_details: dict[str, Any] = {}
+    precedent_evidence_ids: set[str] = set()
+    if coverage_mode:
+        coverage_errors, coverage_warnings, research_coverage_details, precedent_evidence_ids = _evaluate_research_coverage(
+            model_contract,
+            research,
+            evidence_by_id,
+        )
+        errors.extend(coverage_errors)
+        warnings.extend(coverage_warnings)
+
     searches_by_research: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for search in research.get("searches", []):
         if not isinstance(search, dict):
@@ -107,34 +270,53 @@ def evaluate_modeling_plan(
     for research_id in research_by_id:
         rows = searches_by_research.get(research_id, [])
         if not any(row.get("source") == "llm_knowledge" for row in rows):
-            errors.append(f"research {research_id} has no recorded LLM-knowledge reconnaissance")
+            message = f"research {research_id} has no recorded LLM-knowledge reconnaissance"
+            if coverage_mode:
+                message = RESEARCH_ADVISORY_PREFIX + message
+            (errors if not coverage_mode else warnings).append(message)
         if not any(row.get("source") in EXTERNAL_RESEARCH_SOURCES for row in rows):
-            errors.append(f"research {research_id} has no recorded external literature/web search")
+            message = f"research {research_id} has no recorded external literature/web search"
+            if coverage_mode:
+                message = RESEARCH_ADVISORY_PREFIX + message
+            (errors if not coverage_mode else warnings).append(message)
         if require_reasonableness:
             for search in rows:
                 if search.get("candidate_count", 0) < 1:
-                    errors.append(
+                    message = (
                         f"formal M1 search {search.get('search_id')} has candidate_count=0; "
                         "a zero-result search cannot support model selection"
                     )
+                    if coverage_mode:
+                        message = RESEARCH_ADVISORY_PREFIX + message
+                    (errors if not coverage_mode else warnings).append(message)
                 if search.get("source") in EXTERNAL_RESEARCH_SOURCES:
                     search_evidence_ids = search.get("evidence_ids", [])
                     if not search_evidence_ids:
-                        errors.append(
+                        message = (
                             f"formal M1 external search {search.get('search_id')} must bind evidence_ids"
                         )
+                        if coverage_mode:
+                            message = RESEARCH_ADVISORY_PREFIX + message
+                        (errors if not coverage_mode else warnings).append(message)
                     for evidence_id in search_evidence_ids:
                         evidence = evidence_by_id.get(evidence_id)
                         if evidence is None:
-                            errors.append(
+                            message = (
                                 f"formal M1 search {search.get('search_id')} references missing evidence {evidence_id}"
                             )
+                            if coverage_mode:
+                                message = RESEARCH_ADVISORY_PREFIX + message
+                            (errors if not coverage_mode else warnings).append(message)
                         elif evidence.get("verification_status") != "verified":
-                            errors.append(
+                            message = (
                                 f"formal M1 search {search.get('search_id')} references unverified evidence {evidence_id}"
                             )
+                            if coverage_mode:
+                                message = RESEARCH_ADVISORY_PREFIX + message
+                            (errors if not coverage_mode else warnings).append(message)
 
     candidates = [row for row in research.get("candidate_models", []) if isinstance(row, dict)]
+    core_evidence_ids = set(research_coverage_details.get("core_evidence_ids", []))
     candidates_by_question: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for candidate in candidates:
         qid = candidate.get("question_id")
@@ -148,6 +330,18 @@ def evaluate_modeling_plan(
                 errors.append(f"candidate {candidate.get('candidate_id')} references missing evidence {evidence_id}")
             elif evidence.get("verification_status") != "verified":
                 errors.append(f"candidate {candidate.get('candidate_id')} references unverified evidence {evidence_id}")
+            elif coverage_mode and not _is_full_text_verified_evidence(evidence):
+                errors.append(
+                    f"candidate {candidate.get('candidate_id')} references evidence {evidence_id} that is not full-text verified"
+                )
+            if coverage_mode and evidence_id in precedent_evidence_ids:
+                errors.append(
+                    f"candidate {candidate.get('candidate_id')} cannot use precedent-pattern evidence {evidence_id} as scientific support"
+                )
+            elif coverage_mode and evidence_id not in core_evidence_ids:
+                errors.append(
+                    f"candidate {candidate.get('candidate_id')} references evidence {evidence_id} outside full_text_core"
+                )
 
     decisions = [row for row in research.get("decisions", []) if isinstance(row, dict)]
     decisions_by_question: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -249,6 +443,14 @@ def evaluate_modeling_plan(
             )
         if not set(decision.get("decisive_evidence_ids", [])).issubset(set(candidate.get("evidence_ids", []))):
             errors.append(f"question {qid} decisive evidence must be attached to the selected candidate")
+        if coverage_mode:
+            forbidden_decisive = sorted(
+                set(decision.get("decisive_evidence_ids", [])) & precedent_evidence_ids
+            )
+            if forbidden_decisive:
+                errors.append(
+                    f"question {qid} decision cannot use precedent-pattern evidence as scientific support: {forbidden_decisive}"
+                )
 
         if require_reasonableness:
             rationale = str(decision.get("rationale", "")).casefold()
@@ -348,6 +550,10 @@ def evaluate_modeling_plan(
         "reasonableness_check": (
             "L1_completeness_evidence_linkage" if require_reasonableness else "L0_standard_contract_check"
         ),
+        "research_coverage": research_coverage_details if coverage_mode else {
+            "mode": "legacy_compatibility",
+            "note": "S5 coverage fields are absent; legacy research checks remain active.",
+        },
         "questions": sorted(question_ids),
         "research_questions": sorted(research_by_id),
         "selected_candidates": selected_map,
@@ -421,7 +627,10 @@ def main() -> int:
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         errors.append(str(exc))
 
-    ok = not errors and (not args.strict or not warnings)
+    # S5 advisories are deliberately visible but do not become a hidden
+    # literature/query quota when the formal checker is run with --strict.
+    blocking_warnings = [warning for warning in warnings if not warning.startswith(RESEARCH_ADVISORY_PREFIX)]
+    ok = not errors and (not args.strict or not blocking_warnings)
     print(json.dumps({
         "ok": ok,
         "model_contract": rel_path(contract_path, root),

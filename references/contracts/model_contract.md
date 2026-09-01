@@ -173,6 +173,24 @@
 - 把约束写成可定位的 `constraint_id + expression + meaning`。
 - 为 smoke/full 指定可判断成败的 acceptance；“结果合理”不是验收标准。
 - 按题型声明会改变结论可信度的 `validation_obligations`；每个 `acceptance` 必须是有限的结构化比较，P2 由 measurement snapshot 独立重算，不接受空 `ok=true` 或人工 verdict 报告。
+
+## S5 research coverage extension
+
+新项目可以使用 model-contract schema `1.4`（旧的 `1.3` 合同继续可读），在同一个
+`research_basis` 中填写 `research_scope`、`discovery_candidates`、`full_text_core`、
+`excluded_items`、`research_obligations` 和 `stop_reason`。这些字段是研究计划与
+M1 检查的结构化输入，不是新的 evidence artifact。
+
+全文核心项必须绑定 `evidence_registry` 的 citation，并同时满足
+`metadata_verified=true`、`content_verified=true`、`publication_status_checked=true`
+和 `access_level=full_text`；metadata-only 或 abstract-only 记录只能留在 discovery
+候选中。每项的 `source_role` 说明它是综述、原始方法、应用研究还是
+`precedent_pattern`。后者只可支持组织方式，不能支撑科学 claim、参数或模型有效性。
+
+研究义务还要显式声明 `critical: true/false`，状态为 `covered`、`gap`、`waived` 或 `not_applicable`。`covered` 项要写
+evidence ID 或理由，`gap`/`waived`/`not_applicable` 项要写理由；关键 gap 会阻断 M1，
+非关键 gap 只产生警告。查询、数据库和全文数量不设固定配额。研究进入 `ready` 前，
+必须以 `kind/reason/residual_risk` 留下覆盖已满足、边际信息很低或带剩余风险的 time-box/waiver 停止依据。
 - `sensitivity` 义务必须声明 `artifact_role=sensitivity_experiment`；`out_of_sample` 义务必须声明 `artifact_role=oos_artifact`。P2 要求对应 artifact 绑定当前 `run_id` 并通过语义检查，不能只把“敏感性分析/OOS”写在 validation 文本里。
 - 数据源必须记录 origin、许可/条款、变换和质量检查；外部数据的来源页面也应固定快照。`dev/research` 不要求处处填写 SHA-256，`submission` 才将最终引用全部哈希化；结果冻结仍可独立保留上游哈希。
 - 写明风险和回退方案；模型变化后创建新 run，不能沿用旧 P1/P2 状态。

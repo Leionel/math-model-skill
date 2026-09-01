@@ -281,6 +281,22 @@ AUTHORING_SOURCE_TEMPLATES: dict[str, str] = {
 # 编译：harness research --compile
 # research_basis:
 #   status: draft
+#   research_scope: "题目相关的机制、参数与模型证据；不外推到其他场景"
+#   discovery_candidates: []
+#   full_text_core: []
+#   excluded_items: []
+#   research_obligations: []
+#   stop_reason:
+#     kind: coverage_satisfied
+#     reason: "关键研究义务已覆盖"
+#     residual_risk: null
+#
+# 文献 source item 要标注 source_role（review/original_method/application_research/
+# precedent_pattern/other）；full_text_core 只能引用 evidence_registry 中三态核验
+# 完整的 citation evidence，并写 inclusion_reason。excluded_items 写 exclusion_reason。
+# research_obligations 还要显式写 critical；status 为 covered/gap/waived/not_applicable；covered 用
+# evidence_ids 或 reason，其他状态写清理由。precedent_pattern 只记录组织方式，不能
+# 作为科学 claim、参数或模型有效性的依据。
 """,
     ".harness/authoring/model_contract.yaml": """# 结构化模型合同 source：由作者维护，禁止直接编辑 compiled JSON。
 # 编译：harness model --compile

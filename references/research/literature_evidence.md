@@ -2,6 +2,26 @@
 
 文献发现、身份核验和内容核验是三个步骤。OpenAlex、Crossref 或搜索引擎只能帮助发现和核对 metadata；DOI 存在不等于原文支持某条 claim。
 
+## 覆盖驱动的研究记录
+
+`model_contract.research_basis` 在需要正式 M1 研究时还应把来源分到三个状态：
+
+- `discovery_candidates`：检索得到、尚未完成全文核验的候选；它们不能支持科学 claim。
+- `full_text_core`：已纳入当前研究范围的全文核心来源；每项写 `inclusion_reason`，并绑定完整三态核验的 citation evidence。
+- `excluded_items`：审过但不纳入本题论证的来源；每项写 `exclusion_reason`。
+
+每项都声明 `source_role`（例如 `review`、`original_method`、
+`application_research` 或 `precedent_pattern`）。综述可以帮助定位方法与研究脉络，
+但不能被默认为原始方法证据；往届优秀论文的 `precedent_pattern` 只说明组织方式，
+不能支持本题的科学 claim、参数或模型有效性。
+
+同时按本题需要登记 `research_obligations`：机制、假设、参数、基线/模型选择、
+验证和失败模式等义务可标为 `covered`、`gap`、`waived` 或 `not_applicable`。
+每项还要显式声明 `critical`；`covered` 应绑定 evidence ID 或给出可核查理由，其余状态必须说明理由。查询数量、
+数据库数量和全文数量不是通用门槛；只有关键义务仍为 `gap` 时才阻断 M1。`ready` 的
+研究记录必须给出 `stop_reason`，说明覆盖已满足、边际新增信息很低，或带剩余风险的
+赛时 time-box/waiver。
+
 ## 登记流程
 
 1. 用关键词和权威索引发现候选文献。
