@@ -24,6 +24,7 @@ from project_layout import resolve_manifest_path  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_gate  # noqa: E402
 from redaction import redact_text  # noqa: E402
+from ruleset import ruleset_fingerprint  # noqa: E402
 
 GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
 CONFIRMED = {"pass", "confirm"}
@@ -282,7 +283,8 @@ def _failures_summary(
     return {"count": len(items), "items": items}
 
 
-def _v2_status(state: Any) -> dict[str, Any]:
+def _v2_status(state: Any, *, ruleset: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    ruleset = ruleset or ruleset_fingerprint(SCRIPT_DIR.parent)
     pending = _pending_checkpoints(state.manifest)
     receipts = _receipt_view(state)
     dag = _dag_view(state)
@@ -314,6 +316,8 @@ def _v2_status(state: Any) -> dict[str, Any]:
         "status": state.manifest.get("status"),
         "stage": state.manifest.get("stage"),
         "preset": state.preset,
+        "ruleset_id": ruleset["ruleset_id"],
+        "ruleset_scope": ruleset["ruleset_scope"],
         "profile": {
             "path": rel_path(state.profile_path, state.root),
             "profile_id": state.profile.get("profile_id"),
@@ -333,7 +337,14 @@ def _v2_status(state: Any) -> dict[str, Any]:
     }
 
 
-def _v1_status(manifest: Mapping[str, Any], root: Path, manifest_path: Path) -> dict[str, Any]:
+def _v1_status(
+    manifest: Mapping[str, Any],
+    root: Path,
+    manifest_path: Path,
+    *,
+    ruleset: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    ruleset = ruleset or ruleset_fingerprint(SCRIPT_DIR.parent)
     gates = manifest.get("gates", {})
     statuses: dict[str, str] = {}
     for name in GATE_ORDER:
@@ -367,6 +378,8 @@ def _v1_status(manifest: Mapping[str, Any], root: Path, manifest_path: Path) -> 
         "run_id": manifest.get("run_id"),
         "status": manifest.get("status"),
         "phase": manifest.get("phase"),
+        "ruleset_id": ruleset["ruleset_id"],
+        "ruleset_scope": ruleset["ruleset_scope"],
         "gates": statuses,
         "first_blocked_gate": first,
         "pending_human_checkpoints": pending,
@@ -380,26 +393,30 @@ def status_report(manifest: dict[str, Any], root: Path, manifest_path: Path | No
     """Return a read-only status report for a loaded manifest."""
 
     path = manifest_path or resolve_manifest_path(root)
+    ruleset = ruleset_fingerprint(SCRIPT_DIR.parent)
     if manifest.get("schema_version") == "2.0":
         try:
-            return _v2_status(load_runtime_state(path, project_root=root, allow_legacy=False))
+            return _v2_status(load_runtime_state(path, project_root=root, allow_legacy=False), ruleset=ruleset)
         except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
             return {
                 "ok": False,
                 "deprecated": False,
                 "schema_version": "2.0",
                 "manifest": rel_path(path, root),
+                "ruleset_id": ruleset["ruleset_id"],
+                "ruleset_scope": ruleset["ruleset_scope"],
                 "errors": [str(exc)],
                 "first_blocked_gate": "m1",
                 "next_action": "repair the v2 control/profile boundary before running a Gate",
             }
-    return _v1_status(manifest, root, path)
+    return _v1_status(manifest, root, path, ruleset=ruleset)
 
 
 def _human(report: Mapping[str, Any]) -> str:
     lines = [
         f"project: {report.get('project_id')}  run: {report.get('run_id')}  status: {report.get('status')}",
         f"schema: {report.get('schema_version')}  preset: {report.get('preset', report.get('phase', 'legacy'))}",
+        f"ruleset: {report.get('ruleset_id')}  files: {((report.get('ruleset_scope') or {}).get('file_count', '?') if isinstance(report.get('ruleset_scope'), Mapping) else '?')}",
         "gates: " + "  ".join(
             f"{name.upper()}:{value.get('status', value) if isinstance(value, Mapping) else value}"
             for name, value in (report.get("gates", {}) or {}).items()
@@ -459,15 +476,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = Path(args.project_root).resolve()
+    ruleset = ruleset_fingerprint(SCRIPT_DIR.parent)
     try:
         manifest_path = resolve_manifest_path(root, args.manifest)
         manifest = load_structured(manifest_path)
     except (OSError, ValueError, TypeError) as exc:
-        report = {"ok": False, "errors": [f"cannot read manifest: {exc}"], "manifest": args.manifest or "active state layout"}
+        report = {
+            "ok": False,
+            "errors": [f"cannot read manifest: {exc}"],
+            "manifest": args.manifest or "active state layout",
+            "ruleset_id": ruleset["ruleset_id"],
+            "ruleset_scope": ruleset["ruleset_scope"],
+        }
         print(json.dumps(report, ensure_ascii=False) if args.json else _human(report))
         return 2
     if not isinstance(manifest, dict):
-        report = {"ok": False, "errors": ["run_manifest must be an object"]}
+        report = {
+            "ok": False,
+            "errors": ["run_manifest must be an object"],
+            "ruleset_id": ruleset["ruleset_id"],
+            "ruleset_scope": ruleset["ruleset_scope"],
+        }
         print(json.dumps(report, ensure_ascii=False) if args.json else _human(report))
         return 2
     report = status_report(manifest, root, manifest_path)

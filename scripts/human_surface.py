@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from _common import load_structured, rel_path, resolve_path, sha256_file, write_json_atomic
 from project_layout import resolve_control_path, resolve_manifest_path
+from ruleset import ruleset_fingerprint
 
 
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
@@ -1397,6 +1398,7 @@ def authoring_context(root: Path, stage: str) -> dict[str, Any]:
     """Return a deliberately small context manifest for a workflow stage."""
 
     normalized = stage.casefold()
+    ruleset = ruleset_fingerprint(HARNESS_ROOT)
     rows: list[tuple[str, str, bool]]
     skipped: list[str]
     competition_profile = rel_path(resolve_control_path(root, "competition_profile.json"), root)
@@ -1457,4 +1459,10 @@ def authoring_context(root: Path, stage: str) -> dict[str, Any]:
         location = "harness" if path.startswith("references/") else "project"
         base = HARNESS_ROOT if location == "harness" else root
         loaded.append({"path": path, "location": location, "why": why, "required": required, "exists": (base / path).is_file()})
-    return {"stage": normalized, "loaded_files": loaded, "optional_files_skipped": skipped}
+    return {
+        "stage": normalized,
+        "ruleset_id": ruleset["ruleset_id"],
+        "ruleset_scope": ruleset["ruleset_scope"],
+        "loaded_files": loaded,
+        "optional_files_skipped": skipped,
+    }

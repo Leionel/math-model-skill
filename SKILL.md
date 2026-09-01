@@ -208,26 +208,31 @@ result freeze, or submission immutability with an override.
 
 ## CLI quick start
 
+The public operation surface uses six action families:
+`init`, `status`, `prepare`, `execute`, `check`, and `submit`. Gate stages still
+determine the real order; do not treat the six names as a one-pass checklist.
+Use `--json` for agent consumers. `status --json` and `context --json` expose the current `ruleset_id`
+and its matched source scope; an unchanged ID only permits reusing the prior
+rule understanding, while Gate and contract freshness checks still run.
+
 ```powershell
 python scripts/harness.py init --project C:\work\q1 --competition cumcm --preset research
-python scripts/harness.py setup --project C:\work\q1 --stage M1 --json
-python scripts/harness.py status --project C:\work\q1
+python scripts/harness.py status --project C:\work\q1 --json
 python scripts/harness.py prepare M1 --project C:\work\q1 --json
-python scripts/harness.py ai status --project C:\work\q1 --json
-python scripts/harness.py check M1 --project C:\work\q1 --profile research --json
-python scripts/harness.py run --project C:\work\q1 --stage smoke `
+python scripts/harness.py check M1 --project C:\work\q1 --json
+python scripts/harness.py prepare P1 --project C:\work\q1 --json
+python scripts/harness.py execute --project C:\work\q1 --stage smoke `
   --covers-model M-Q1 --covers-question q1 --covers-contract-item EQ-Q1-OBJ `
   -- python model.py
-python scripts/harness.py review --project C:\work\q1 --json
-python scripts/harness.py review --project C:\work\q1 --recheck --json
-python scripts/harness.py ai verify --project C:\work\q1 --usage-id AI-REVIEW-... --checked-by-role team-lead --verification-method "checked report against evidence" --human-changes "record accepted edits or state that none were adopted"
-python scripts/harness.py validate --project C:\work\q1 --strict
-python scripts/harness.py prepare S1 --project C:\work\q1 --json
-python scripts/harness.py freeze --project C:\work\q1 --kind results --source results.json --output frozen_results.json --run-id run-1 --model-contract model_contract.json --code model.py --validation validation.json
-python scripts/harness.py profile --project C:\work\q1 --json
-python scripts/harness.py doctor --project C:\work\q1 --stage M1 --json
-python scripts/harness.py migrate --project C:\work\legacy --json
+python scripts/harness.py check P1 --project C:\work\q1 --json
+python scripts/harness.py submit check --project C:\work\q1 --json
 ```
+
+The remaining specialized authoring, review, freeze, migration, and diagnostic
+commands are advanced/compatibility entry points; use them only when the
+current stage requires their explicit behavior.
+
+### Advanced/compatibility details
 
 Classify every Figure Brief as `data`, `diagram`, or `illustration` before choosing
 a tool. An undeclared or unrecognized semantic type is `unresolved`: stop and fix

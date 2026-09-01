@@ -5,7 +5,11 @@ root、一个比赛 seed/competition 和一个 preset；底层脚本仍保留为
 appendix。Harness 不替用户猜题、伪造结果、上传比赛门户或把测试当成奖项
 能力证明。
 
-## 5–10 分钟上手
+## 5–10 分钟上手：公共主流程
+
+公共操作面收敛为 `init`、`status`、`prepare`、`execute`、`check`、`submit`
+六类动作。Gate 仍按比赛阶段推进，而不是把六条命令机械地只跑一遍；每一步都在
+同一个独立 `PROJECT_ROOT` 中工作。机器消费者请加 `--json`，命令返回码仍表示事实状态。
 
 在仓库根目录运行：
 
@@ -15,13 +19,27 @@ python scripts/harness.py init `
   --competition cumcm `
   --preset research
 
-python scripts/harness.py setup --project C:\work\math-q1 --stage M1 --json
-python scripts/harness.py doctor --project C:\work\math-q1 --stage M1 --json
-python scripts/harness.py status --project C:\work\math-q1
+python scripts/harness.py status --project C:\work\math-q1 --json
 python scripts/harness.py prepare M1 --project C:\work\math-q1 --json
-python scripts/harness.py ai status --project C:\work\math-q1 --json
-python scripts/harness.py check M1 --project C:\work\math-q1 --profile research --json
+python scripts/harness.py check M1 --project C:\work\math-q1 --json
+python scripts/harness.py prepare P1 --project C:\work\math-q1 --json
+python scripts/harness.py execute --project C:\work\math-q1 --stage smoke `
+  --covers-model M-Q1 --covers-question q1 --covers-contract-item EQ-Q1-OBJ `
+  -- python model.py
+python scripts/harness.py check P1 --project C:\work\math-q1 --json
+python scripts/harness.py submit check --project C:\work\math-q1 --json
 ```
+
+`execute` 会捕获真实进程的 receipt；`check` 重新计算 Gate，`submit check`
+只做提交前事实核验，不会上传。W1/W2/S1 与 F1 仍按 Gate 顺序推进；具体
+阶段在 `prepare` 和 `check` 中选择。`status --json` 与 `context --json` 会返回
+`ruleset_id` 及命中文件范围；id 相同只表示可复用已有规则理解，Gate 和合同
+freshness 仍照常检查。
+
+## Advanced/compat
+
+以下入口用于分阶段 authoring、调试、审查、冻结和迁移；公共主流程仍只保留上面的
+六类动作。旧入口不会被删除，`run` 是 `execute` 的兼容别名。
 
 如果希望使用短命令，在本地 checkout 做 editable 安装：
 
@@ -73,7 +91,10 @@ review 会自动登记为 `pending`，人审后运行 `harness ai verify --usage
 `prepare S1` 前状态必须从 `unknown` 解析为 `none` 或 `used`；未知状态或未完成人工
 核验的自动记录会阻断正式 Gate。
 
-## Human Working Surface：先写研究，再投影机器状态
+### Human Working Surface：先写研究，再投影机器状态
+
+`validate`、`review`、`freeze`、`doctor`、`setup`、`profile`、`migrate` 以及
+`research/model/solve/paper` 等入口也继续保留。
 
 作者和 Agent 日常只需要阅读根目录的 `00_PROJECT_BRIEF.md`、
 `01_RESEARCH_NOTES.md`、`02_MODEL_DECISION.md`、`03_SOLUTION_REPORT.md`，
