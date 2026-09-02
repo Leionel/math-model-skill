@@ -4,6 +4,13 @@ These are positive composition patterns for a math-modeling paper. They guide ho
 a Writer turns already-approved claims and evidence into a readable argument;
 they do not create facts, relax claim boundaries, or replace a review.
 
+These patterns describe semantic argument moves, not mandatory paragraph
+templates. Do not mechanically reuse the same pattern across adjacent argument
+units. If neighboring units produce nearly identical rhetorical sequences,
+vary or compress them only where their evidence and argumentative roles permit;
+never vary facts merely for stylistic diversity. Repetition is a reviewer soft
+signal, not a deterministic failure count.
+
 Use only the cards selected in the writer package or the card relevant to the
 section being revised. Do not turn every card into a separate mandatory chapter.
 
@@ -105,4 +112,3 @@ A strength must cite what was actually validated. A weakness should identify
 what the current analysis did not cover. An extension should state which
 mechanism, data boundary, or validation duty would change—not use generic
 claims of “strong robustness” or “good generalization”.
-

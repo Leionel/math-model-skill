@@ -21,6 +21,12 @@ python scripts/qa/check_reverse_outline.py `
 3. **重复扫描**：跨锚点块重复出现的长段落（中文 12+ 字 / 英文 8+ 词连续相同）→ warning；同一结论在多处换皮复述是最常见的机器味来源。
 4. **逆向提纲**：每个锚点块输出主题句、词数，以及 `paragraph_claims → section_thesis → central_thesis` 映射到 `reverse_outline.md`/JSON。人工用它检查"删掉这段后读者还能否接受中心论断"；映射不到的段落列为 `delete / move / add evidence`，而不是静默归入最近章节。
 
+逆向提纲还应向 Human-Prose Reviewer 提供非裁决性统计信号：段落/句长分布、集中出现的
+过渡词、相同开头和 section closure 候选。人工再判断是否存在 argument-move repetition、
+outline over-regularity、transition concentration、low-information closure 或 fractal
+summary。脚本不得用正则直接宣判 QUD、自然度或 AI 写作，也不得把这些 signal 升级为
+deterministic PASS/FAIL。
+
 ## 压缩动作（人工裁决）
 
 重复 warning 出现时按优先级处理：

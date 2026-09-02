@@ -15,5 +15,8 @@
   自动生成或执行该 memo。
 - Reviewer 不直接改作者 artifact；作者修改后由 Deterministic QA 和 Critic
   复验。Reviewer 的修改面只有 review report 本身。
+- `human_prose` 是可选 editorial perspective，不计入 W2 required perspectives 或
+  independence。其 finding 只通过同一 bounded revision 投影为局部动作，禁止
+  `blocker`；修改若可能触及事实、数学或 evidence scope，必须升级 semantic recheck。
 - 若修订需要触碰 model contract、frozen result、objective 或关键参数，
   上游 invalidation 生效，退出 W2 回到相应更早的 Gate。
