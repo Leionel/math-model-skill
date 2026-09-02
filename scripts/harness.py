@@ -352,9 +352,11 @@ def _review(args: argparse.Namespace) -> int:
     root = _project(args)
     manifest = _manifest_path(root, args.manifest)
     command = [sys.executable, str(SCRIPT_DIR / "qa" / "run_review.py"), "--manifest", str(manifest), "--project-root", str(root)]
-    for flag in ("semantic", "judge", "fresh", "recheck", "json"):
+    for flag in ("semantic", "judge", "human_prose", "fresh", "recheck", "json"):
         if getattr(args, flag, False):
-            command.append(f"--{flag}")
+            command.append(f"--{flag.replace('_', '-')}")
+    if args.section:
+        command.extend(["--section", args.section])
     if args.backend_cmd:
         command.extend(["--backend-cmd", args.backend_cmd])
         if not args.backend_kind:
@@ -1084,11 +1086,13 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--strict", action="store_true")
     validate.set_defaults(handler=_validate)
 
-    review = sub.add_parser("review", help="execute the review plane: deterministic QA, bundle, semantic critic, judge lens")
+    review = sub.add_parser("review", help="execute the review plane: deterministic QA and selected review perspectives")
     _add_common(review)
     review.add_argument("--manifest", default=None)
     review.add_argument("--semantic", action="store_true", help="run only the semantic critic perspective")
     review.add_argument("--judge", action="store_true", help="run only the judge lens perspective")
+    review.add_argument("--human-prose", action="store_true", help="run only the optional human-prose editorial perspective")
+    review.add_argument("--section", help="required focus section id for --human-prose")
     review.add_argument("--fresh", action="store_true", help="require fresh-context (L1) execution via --backend-cmd")
     review.add_argument("--recheck", action="store_true", help="revalidate existing review reports without executing reviewers")
     review.add_argument("--backend-cmd", help="reviewer backend command executed per perspective with MATH_REVIEW_* env")

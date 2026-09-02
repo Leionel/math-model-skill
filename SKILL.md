@@ -151,6 +151,13 @@ working directory, receipt, and report, but is not an OS sandbox: submission
 still needs a genuinely separate context/model. Load the review references
 via the router before acting as a reviewer.
 
+Human-prose review is an optional editorial perspective inside this existing
+review plane (`harness review --human-prose --section <id>`). It diagnoses
+clustered low-information, repetitive, or mechanically regular prose and
+proposes finding-local bounded revisions. It is not a required W2 perspective,
+does not increase review independence, and has no authority to alter facts,
+mathematics, evidence scope, author files, or Gate status.
+
 Keep evidence scope separate from reviewer independence. A report may narrow
 its `available_evidence_scope`, but bound artifact roles determine the upper
 limit. If a gate-severity finding needs a stronger scope, set

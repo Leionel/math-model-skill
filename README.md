@@ -160,6 +160,10 @@ python scripts/harness.py run --project C:\work\math-q1 --stage smoke `
 python scripts/harness.py review --project C:\work\math-q1 --json
 python scripts/harness.py review --project C:\work\math-q1 --recheck --json
 
+# 可选的局部编辑审阅：只产生现有 finding，不计入 W2 独立性或必需 perspective
+python scripts/harness.py review --project C:\work\math-q1 `
+  --human-prose --section results.q1 --json
+
 # 实际 fresh reviewer：子进程从 bundle 目录启动，执行事实写入 receipt
 python scripts/harness.py review --project C:\work\math-q1 --fresh `
   --backend-cmd "python C:\tools\reviewer.py" `
@@ -380,7 +384,10 @@ frozen results、evidence registry 和失败边界。明确列出 P1/P2 状态�
    定量证据的概念插图才可在规则允许时调用 Agent 原生生图。图数由 evidence coverage 决定。
 4. 删除面向机器的写作痕迹。终稿不得出现 `ANCHOR-*`、`LOC-*`、内部 claim ID、
    TODO、Gate 名称、路由说明或给 Agent 的指令；这些标识只能留在审计 artifact 中。
-5. 运行 consistency sweep、deterministic QA、数学/引用/PDF/视觉检查，再执行
+5. 初稿完成后先做 Reverse Outline；需要减少低信息复述、机械 CEEL 或重复段落节奏时，
+   可按 section 运行 `harness review --human-prose --section <id>`，只处理现有 finding
+   指定的局部范围。它不改变事实、数学、evidence scope 或 W2 independence。随后运行
+   consistency sweep、deterministic QA、数学/引用/PDF/视觉检查，再执行
    `python scripts\harness.py prepare W2 --project "PROJECT_ROOT" --json` 和
    `python scripts\harness.py review --project "PROJECT_ROOT" --json`。作者同上下文
    自审只能记为 L0；论文修改后旧 review 变为 stale，必须重新检查。

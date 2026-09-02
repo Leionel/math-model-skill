@@ -22,7 +22,7 @@
     "report_id": {"type": "string", "pattern": "^REV-[A-Za-z0-9._-]+$"},
     "run_id": {"type": "string", "minLength": 1},
     "project_id": {"type": "string"},
-    "perspective": {"type": "string", "enum": ["semantic_critic", "judge_lens"]},
+    "perspective": {"type": "string", "enum": ["semantic_critic", "judge_lens", "human_prose"]},
     "review_mode": {"type": "string", "enum": ["self_critic", "fresh_context", "independent_model", "human"]},
     "independence_level": {
       "type": "string",
@@ -48,6 +48,16 @@
     {
       "if": {"properties": {"review_mode": {"enum": ["fresh_context", "independent_model"]}}},
       "then": {"required": ["bundle_ref", "execution_receipt_ref"]}
+    },
+    {
+      "if": {"properties": {"perspective": {"const": "human_prose"}}, "required": ["perspective"]},
+      "then": {
+        "required": ["bundle_ref"],
+        "properties": {
+          "review_mode": {"const": "self_critic"},
+          "independence_level": {"const": "L0_same_context"}
+        }
+      }
     }
   ],
   "$defs": {
@@ -98,7 +108,7 @@
       ],
       "properties": {
         "finding_id": {"type": "string", "pattern": "^REV-[A-Za-z0-9._-]+$"},
-        "perspective": {"type": "string", "enum": ["semantic_critic", "judge_lens"]},
+        "perspective": {"type": "string", "enum": ["semantic_critic", "judge_lens", "human_prose"]},
         "severity": {"type": "string", "enum": ["blocker", "high", "medium", "low"]},
         "summary": {"type": "string", "minLength": 1},
         "evidence_locator": {"type": "string", "minLength": 1},
@@ -117,8 +127,64 @@
           "type": "boolean",
           "description": "True when the current review cannot establish the finding at its required scope and an external check is required."
         },
-        "false_positive_risk": {"type": "string", "enum": ["low", "medium", "high"]}
-      }
+        "false_positive_risk": {"type": "string", "enum": ["low", "medium", "high"]},
+        "finding_type": {
+          "type": "string",
+          "enum": [
+            "low_information_gain",
+            "repeated_argument_move",
+            "excessive_recap",
+            "generic_decision_rationale",
+            "over_regular_rhythm",
+            "transition_concentration",
+            "redundant_exposition",
+            "mechanical_ceel"
+          ]
+        },
+        "quoted_passage": {"type": "string", "minLength": 1},
+        "protected_content": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "facts",
+              "numeric_results",
+              "mathematical_semantics",
+              "evidence_semantics",
+              "competition_semantics",
+              "citations"
+            ]
+          }
+        },
+        "required_recheck": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "section_continuity",
+              "consistency_sweep",
+              "math_writing_qa",
+              "claim_evidence",
+              "reverse_outline",
+              "deterministic_qa",
+              "semantic_review"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"perspective": {"const": "human_prose"}}, "required": ["perspective"]},
+          "then": {
+            "required": ["finding_type", "quoted_passage", "protected_content", "required_recheck"],
+            "properties": {"severity": {"enum": ["high", "medium", "low"]}}
+          }
+        }
+      ]
     }
   }
 }

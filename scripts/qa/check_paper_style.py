@@ -19,10 +19,67 @@ from _common import load_structured, rel_path, resolve_path  # noqa: E402
 STRONG_MARKERS = ("证明", "最优", "最佳", "显著", "稳健", "广泛适用", "prove", "optimal", "best", "significant", "robust")
 SELF_PRAISE = ("创新性", "先进性", "完整模型链", "严格物理约束", "具有三方面优点", "novel and effective")
 TEMPLATE_OPENERS = ("针对", "首先", "其次", "最后", "结果表明", "模型说明", "for question", "firstly", "secondly", "finally")
+EDITORIAL_TRANSITIONS = ("首先", "其次", "再次", "此外", "进一步", "因此", "最后", "综上", "therefore", "furthermore", "finally")
+RESULT_FRAMES = ("结果表明", "结果显示", "结果说明")
+RECAP_FRAMES = ("综上所述", "综上", "由此可见", "in conclusion", "in summary")
 
 
 def sentences(text: str) -> list[str]:
     return [piece.strip() for piece in re.split(r"(?<=[。！？.!?])\s+|[\r\n]+", text) if piece.strip()]
+
+
+def _visible_paragraphs(text: str) -> list[str]:
+    paragraphs: list[str] = []
+    for raw in re.split(r"\r?\n\s*\r?\n", text):
+        visible = re.sub(r"(?<!\\)%[^\r\n]*|<!--.*?-->", " ", raw, flags=re.DOTALL)
+        visible = re.sub(r"\\(?:label|ref|cite|begin|end)\{[^{}]*\}", " ", visible)
+        visible = re.sub(r"\s+", " ", visible).strip()
+        if re.search(r"[A-Za-z\u3400-\u9fff]", visible):
+            paragraphs.append(visible)
+    return paragraphs
+
+
+def human_prose_statistics(text: str) -> dict:
+    """Return non-verdict editorial statistics for a human-prose reviewer."""
+
+    paragraphs = _visible_paragraphs(text)
+    sentence_rows = sentences(text)
+    paragraph_lengths = [len(re.findall(r"[A-Za-z]+|[\u3400-\u9fff]", row)) for row in paragraphs]
+    sentence_lengths = [len(re.findall(r"[A-Za-z]+|[\u3400-\u9fff]", row)) for row in sentence_rows]
+    folded = [row.casefold() for row in paragraphs]
+    transition_counts = {
+        marker: sum(row.count(marker.casefold()) for row in folded)
+        for marker in EDITORIAL_TRANSITIONS
+        if sum(row.count(marker.casefold()) for row in folded)
+    }
+    result_frame_count = sum(
+        1 for row in folded if any(row.startswith(marker.casefold()) for marker in RESULT_FRAMES)
+    )
+    recap_count = sum(
+        1 for row in folded if any(marker.casefold() in row for marker in RECAP_FRAMES)
+    )
+    signals: list[str] = []
+    if result_frame_count >= 3:
+        signals.append("repeated_sentence_frame_candidate")
+    if any(count >= 3 for count in transition_counts.values()):
+        signals.append("transition_concentration_candidate")
+    if recap_count >= 3:
+        signals.append("section_closure_concentration_candidate")
+    if len(paragraph_lengths) >= 3 and min(paragraph_lengths) >= 12:
+        shortest = min(paragraph_lengths)
+        longest = max(paragraph_lengths)
+        if longest <= shortest * 1.2:
+            signals.append("over_regular_rhythm_candidate")
+    return {
+        "paragraph_count": len(paragraphs),
+        "paragraph_lengths": paragraph_lengths,
+        "sentence_lengths": sentence_lengths,
+        "transition_counts": transition_counts,
+        "same_result_frame_count": result_frame_count,
+        "recap_frame_count": recap_count,
+        "signals": signals,
+        "boundary": "Statistics only; a human-prose reviewer decides whether a clustered pattern impairs the argument.",
+    }
 
 
 def judge_scan(
@@ -116,6 +173,11 @@ def main() -> int:
     parser.add_argument("--model-contract")
     parser.add_argument("--frozen-results")
     parser.add_argument("--judge-scan", action="store_true", help="Run an issue-only reviewer scan; it never assigns a score.")
+    parser.add_argument(
+        "--human-prose-stats",
+        action="store_true",
+        help="Include non-verdict editorial statistics for an optional human-prose review.",
+    )
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
@@ -194,7 +256,7 @@ def main() -> int:
         warnings.extend(item["message"] for item in judge_report["issues"])
 
     ok = not errors and (not args.strict or not warnings)
-    print(json.dumps({
+    output = {
         "ok": ok,
         "paper_plan": rel_path(plan_path, root),
         "draft": rel_path(draft_path, root),
@@ -203,7 +265,10 @@ def main() -> int:
         "errors": errors,
         "warnings": warnings,
         "judge_scan": judge_report,
-    }, ensure_ascii=False, indent=2))
+    }
+    if args.human_prose_stats:
+        output["human_prose_statistics"] = human_prose_statistics(draft)
+    print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0 if ok else 1
 
 

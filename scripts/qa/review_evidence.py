@@ -33,7 +33,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by package imports.
 from project_layout import resolve_control_path  # type: ignore  # noqa: E402
 REVIEW_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "review_report.schema.json"
 REVIEW_DIR = "reports/review"
-REVIEW_PERSPECTIVES = ("semantic_critic", "judge_lens")
+REVIEW_PERSPECTIVES = ("semantic_critic", "judge_lens", "human_prose")
 REVIEW_MODE_LEVEL: Mapping[str, str] = {
     "self_critic": "L0_same_context",
     "fresh_context": "L1_fresh_context",
@@ -79,6 +79,9 @@ REQUIRED_BINDING_ROLE_GROUPS: Mapping[str, tuple[frozenset[str], ...]] = {
         frozenset({"abstract"}),
         frozenset({"conclusion"}),
     ),
+    "human_prose": (
+        frozenset({"paper", "pdf"}),
+    ),
 }
 
 # What a fresh review bundle may physically contain.  Everything else —
@@ -89,6 +92,7 @@ BUNDLE_ALLOW_ROLES = frozenset({
     "frozen_results", "evidence_registry",
     "paper_plan", "abstract", "paper", "conclusion", "presentation_contract",
     "writer_package", "pdf", "figure", "table", "rules_ref", "judge_scan_structural",
+    "writing_spine", "section_brief", "paper_section", "reverse_outline", "human_prose_statistics",
 })
 # Roles that, if found inside a bundle, prove the information boundary was
 # broken and void any L1+ independence claim.
@@ -96,6 +100,11 @@ BUNDLE_DENY_ROLES = frozenset({
     "review_report", "previous_verdict", "writer_reasoning",
     "revision_discussion", "session_log",
 })
+HUMAN_PROSE_BUNDLE_ROLES = frozenset({
+    "paper_section", "section_brief", "writing_spine", "reverse_outline",
+    "human_prose_statistics", "rules_ref",
+})
+HUMAN_SECTION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*$")
 
 
 def required_perspectives(preset: str) -> tuple[str, ...]:
@@ -286,6 +295,11 @@ def validate_review_report(report: Mapping[str, Any]) -> list[str]:
         errors.append("degraded_independence must be a boolean")
     if level in {"L1_fresh_context", "L2_independent_model"} and not isinstance(report.get("bundle_ref"), dict):
         errors.append(f"independence_level {level!r} requires a bundle_ref to a materialized review bundle")
+    if report.get("perspective") == "human_prose":
+        if mode != "self_critic" or level != "L0_same_context":
+            errors.append("human_prose is editorial only and must use self_critic/L0_same_context")
+        if not isinstance(report.get("bundle_ref"), dict):
+            errors.append("human_prose review requires bundle_ref for local-context freshness")
     try:
         reviewed_at = datetime.fromisoformat(str(report.get("reviewed_at", "")).replace("Z", "+00:00"))
         if reviewed_at.tzinfo is None:
@@ -298,6 +312,19 @@ def validate_review_report(report: Mapping[str, Any]) -> list[str]:
     for row in findings:
         if not isinstance(row, dict):
             continue
+        if row.get("perspective") == "human_prose":
+            missing = [
+                field for field in ("finding_type", "quoted_passage", "protected_content", "required_recheck")
+                if not row.get(field)
+            ]
+            if missing:
+                errors.append(
+                    f"human_prose finding {row.get('finding_id')} requires: {', '.join(missing)}"
+                )
+            if row.get("severity") == "blocker":
+                errors.append(
+                    f"human_prose finding {row.get('finding_id')} cannot use blocker severity"
+                )
         available, required_scope, insufficient = _finding_scope_state(report, row)
         if insufficient:
             if row.get("severity") in GATE_SEVERITIES and row.get("requires_external_check") is not True:
@@ -414,7 +441,86 @@ def review_freshness(report: Mapping[str, Any], root: Path) -> tuple[str, list[s
         if isinstance(node_digest, str) and node_digest.lower() != str(ref.get("sha256", "")).lower():
             errors.append(f"reviewed_artifacts[{index}] does not match the canonical DAG digest")
             current = False
+    if perspective == "human_prose":
+        context_errors = _human_context_freshness(report, root)
+        errors.extend(context_errors)
+        current = current and not context_errors
     return ("current" if current else "stale"), errors
+
+
+def _human_context_freshness(report: Mapping[str, Any], root: Path) -> list[str]:
+    """Bind an editorial report to the local derived context it actually saw."""
+
+    root = root.resolve()
+    bundle_ref = report.get("bundle_ref")
+    if not isinstance(bundle_ref, Mapping):
+        return ["human_prose review has no bundle_ref for local-context freshness"]
+    bundle_path = resolve_path(str(bundle_ref.get("path", "")), root).resolve()
+    try:
+        bundle_path.relative_to(root)
+    except ValueError:
+        return ["human_prose bundle_ref escapes project root"]
+    if not bundle_path.is_file():
+        return ["human_prose bundle manifest no longer exists"]
+    try:
+        manifest = load_structured(bundle_path)
+    except (OSError, ValueError, TypeError) as exc:
+        return [f"cannot inspect human_prose bundle manifest: {exc}"]
+    if not isinstance(manifest, Mapping):
+        return ["human_prose bundle manifest must be an object"]
+    errors: list[str] = []
+    focus_section = manifest.get("focus_section")
+    if not isinstance(focus_section, str) or not HUMAN_SECTION_ID.fullmatch(focus_section):
+        return ["human_prose bundle has no valid focus_section"]
+    local_roles = {"paper_section", "section_brief", "writing_spine", "reverse_outline"}
+    local_rows = [
+        row for row in manifest.get("files", [])
+        if isinstance(row, Mapping) and row.get("role") in local_roles
+    ]
+    expected_sources = {
+        "paper_section": f"paper/sections/{focus_section}/draft.md",
+        "section_brief": f".harness/views/sections/{focus_section}_brief.md",
+        "writing_spine": ".harness/views/WRITING_SPINE.md",
+        "reverse_outline": "reports/reverse_outline.md",
+    }
+    for required_role in ("paper_section", "section_brief", "writing_spine"):
+        if sum(row.get("role") == required_role for row in local_rows) != 1:
+            errors.append(f"human_prose bundle requires exactly one {required_role}")
+    for row in local_rows:
+        role = str(row.get("role"))
+        source_path = row.get("source_path")
+        if not isinstance(source_path, str):
+            errors.append(f"human_prose {role} has no source_path")
+            continue
+        if source_path.replace("\\", "/") != expected_sources[role]:
+            errors.append(f"human_prose {role} source does not match focus_section {focus_section}")
+            continue
+        source = resolve_path(source_path, root).resolve()
+        try:
+            source.relative_to(root)
+        except ValueError:
+            errors.append(f"human_prose context source escapes project root: {source_path}")
+            continue
+        if not source.is_file():
+            errors.append(f"human_prose context source no longer exists: {source_path}")
+        elif not isinstance(row.get("source_sha256"), str):
+            errors.append(f"human_prose {role} has no source_sha256")
+        elif sha256_file(source) != row.get("source_sha256"):
+            errors.append(f"human_prose context source changed since review: {source_path}")
+        member_path = row.get("path")
+        member = (bundle_path.parent / str(member_path)).resolve()
+        if not isinstance(member_path, str) or not member.is_file():
+            continue
+        content = member.read_text(encoding="utf-8")
+        if role == "writing_spine":
+            headings = re.findall(r"^### ([^\r\n]+?) \(", content, flags=re.MULTILINE)
+            if headings != [focus_section]:
+                errors.append("human_prose writing_spine excerpt is not limited to focus_section")
+        if role == "reverse_outline":
+            mapped_sections = re.findall(r"->\s*([^\s]+)\s*->", content)
+            if any(section != focus_section for section in mapped_sections):
+                errors.append("human_prose reverse_outline excerpt contains another section")
+    return errors
 
 
 def validate_bundle_boundary(report: Mapping[str, Any], root: Path) -> list[str]:
@@ -445,6 +551,7 @@ def validate_bundle_boundary(report: Mapping[str, Any], root: Path) -> list[str]
     if not isinstance(manifest, dict):
         return ["review bundle manifest must be an object"]
     errors: list[str] = []
+    is_human_bundle = manifest.get("perspectives") == ["human_prose"]
     files = manifest.get("files", [])
     if not isinstance(files, list) or not files:
         return ["review bundle manifest lists no files"]
@@ -455,6 +562,8 @@ def validate_bundle_boundary(report: Mapping[str, Any], root: Path) -> list[str]
         role = str(ref["role"])
         if role in BUNDLE_DENY_ROLES:
             errors.append(f"bundle contains denied input role {role!r}; independence claim is void")
+        elif is_human_bundle and role not in HUMAN_PROSE_BUNDLE_ROLES:
+            errors.append(f"human_prose bundle contains out-of-scope role {role!r}")
         elif role not in BUNDLE_ALLOW_ROLES:
             errors.append(f"bundle contains unlisted input role {role!r}; not on the review allow list")
         raw_path = ref.get("path")
@@ -470,6 +579,17 @@ def validate_bundle_boundary(report: Mapping[str, Any], root: Path) -> list[str]
             errors.append(f"bundle member missing: {raw_path}")
         elif sha256_file(member) != ref.get("sha256"):
             errors.append(f"bundle member sha256 drift: {raw_path}")
+    if is_human_bundle:
+        policy = manifest.get("context_policy")
+        if not isinstance(policy, Mapping):
+            errors.append("human_prose bundle requires context_policy")
+        bindings = manifest.get("bindings")
+        if not isinstance(bindings, list) or not bindings:
+            errors.append("human_prose bundle requires a canonical paper binding")
+        else:
+            for binding in bindings:
+                if not isinstance(binding, Mapping) or binding.get("role") != "paper":
+                    errors.append("human_prose bundle bindings may contain only canonical paper identity")
     return errors
 
 
@@ -621,6 +741,7 @@ def summarize_review(
     *,
     run_id: str | None = None,
     require_registration: bool = True,
+    human_focus_section: str | None = None,
 ) -> dict[str, Any]:
     """One factual view of review state for a preset; used by status and CLI.
 
@@ -639,6 +760,19 @@ def summarize_review(
     by_perspective: dict[str, list[tuple[dict[str, Any], Path]]] = {name: [] for name in REVIEW_PERSPECTIVES}
     for report, path in reports:
         perspective = str(report.get("perspective"))
+        if perspective == "human_prose" and human_focus_section is not None:
+            bundle_ref = report.get("bundle_ref")
+            bundle_path = (
+                resolve_path(str(bundle_ref.get("path", "")), root).resolve()
+                if isinstance(bundle_ref, Mapping)
+                else None
+            )
+            try:
+                bundle = load_structured(bundle_path) if bundle_path and bundle_path.is_file() else None
+            except (OSError, ValueError, TypeError):
+                bundle = None
+            if not isinstance(bundle, Mapping) or bundle.get("focus_section") != human_focus_section:
+                continue
         if (
             perspective in by_perspective
             and report.get("superseded_by") is None
@@ -662,7 +796,7 @@ def summarize_review(
             freshness, freshness_errors = review_freshness(report, root)
             summary.freshness = freshness
             summary.errors.extend(freshness_errors)
-            if summary.independence_level in {"L1_fresh_context", "L2_independent_model"}:
+            if summary.independence_level in {"L1_fresh_context", "L2_independent_model"} or perspective == "human_prose":
                 summary.errors.extend(validate_bundle_boundary(report, root))
             summary.errors.extend(
                 validate_execution_binding(report, path, root, require_registration=require_registration)
@@ -700,6 +834,7 @@ def summarize_review(
             "scope_limited_ids": list(summary.scope_limited_ids),
             "errors": list(summary.errors),
             "report_path": summary.report_path,
+            "next_finding": summary.next_finding,
         }
     current_reports = [
         perspective_view[name] for name in required

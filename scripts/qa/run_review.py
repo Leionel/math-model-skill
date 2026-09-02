@@ -59,7 +59,10 @@ BUNDLE_ALLOW_ROLES = (
 RUBRICS = {
     "semantic_critic": "references/review/semantic_critic_rubric.md",
     "judge_lens": "references/review/judge_lens.md",
+    "human_prose": "references/writing/human_prose_revision.md",
 }
+HUMAN_PROSE_BUNDLE_ROLES: tuple[str, ...] = ()
+SECTION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*$")
 
 
 def _now() -> str:
@@ -119,7 +122,14 @@ def run_deterministic_phase(state: Any, root: Path, ts: str) -> tuple[bool, dict
 # Phase 2 — materialize the allow-listed review bundle
 # ---------------------------------------------------------------------------
 
-def build_bundle(state: Any, root: Path, ts: str, perspectives: list[str]) -> tuple[Path, dict[str, Any]]:
+def build_bundle(
+    state: Any,
+    root: Path,
+    ts: str,
+    perspectives: list[str],
+    *,
+    focus_section: str | None = None,
+) -> tuple[Path, dict[str, Any]]:
     bundle_dir = root / REVIEW_DIR / "bundle" / f"{_safe_run_component(state.run_id)}-{ts}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
     files: list[dict[str, Any]] = []
@@ -129,7 +139,8 @@ def build_bundle(state: Any, root: Path, ts: str, perspectives: list[str]) -> tu
         if isinstance(node.get("path"), str)
     }
     seen: set[tuple[str, Path]] = set()
-    for role in BUNDLE_ALLOW_ROLES:
+    role_order = HUMAN_PROSE_BUNDLE_ROLES if perspectives == ["human_prose"] else BUNDLE_ALLOW_ROLES
+    for role in role_order:
         for item_index, (candidate, path) in enumerate(_v2_role_entries(state, role), start=1):
             path = path.resolve()
             if not path.is_file() or (role, path) in seen:
@@ -149,13 +160,46 @@ def build_bundle(state: Any, root: Path, ts: str, perspectives: list[str]) -> tu
                 "sha256": sha256_file(destination),
             })
     rules = root / "rules.txt"
-    if rules.is_file():
+    if rules.is_file() and perspectives != ["human_prose"]:
         destination = bundle_dir / "rules_ref.txt"
         shutil.copy2(rules, destination)
         files.append({"role": "rules_ref", "artifact_id": None, "path": destination.name, "sha256": sha256_file(destination)})
-    structural = _judge_scan_structural(state, root, bundle_dir)
-    if structural is not None:
-        files.append(structural)
+    if "human_prose" in perspectives:
+        files.extend(_human_prose_context(root, bundle_dir, focus_section=focus_section))
+        statistics = _human_prose_scan(state, root, bundle_dir, focus_section=focus_section)
+        if statistics is not None:
+            files.append(statistics)
+        for index, relative in enumerate(
+            (RUBRICS["human_prose"], "references/writing/editorial_style.md"),
+            start=1,
+        ):
+            source = REPO_ROOT / relative
+            destination = bundle_dir / f"rules_ref-human-prose-{index}.md"
+            shutil.copy2(source, destination)
+            files.append({
+                "role": "rules_ref",
+                "artifact_id": None,
+                "path": destination.name,
+                "sha256": sha256_file(destination),
+            })
+    else:
+        structural = _judge_scan_structural(state, root, bundle_dir)
+        if structural is not None:
+            files.append(structural)
+    context_policy = None
+    if perspectives == ["human_prose"]:
+        context_policy = {
+            "default_roles": [
+                "paper_section", "section_brief", "writing_spine", "reverse_outline",
+                "human_prose_statistics", "rules_ref",
+            ],
+            "on_demand_roles": [],
+            "excluded_roles": [
+                "model_contract", "validation_report", "frozen_results", "evidence_registry",
+                "abstract", "conclusion", "pdf", "figure", "table", "competition_rules",
+                "previous_review_report",
+            ],
+        }
     manifest = {
         "schema_version": "1.0",
         "run_id": state.run_id,
@@ -170,9 +214,192 @@ def build_bundle(state: Any, root: Path, ts: str, perspectives: list[str]) -> tu
         },
         "files": files,
     }
+    if context_policy is not None:
+        manifest["focus_section"] = focus_section
+        manifest["context_policy"] = context_policy
+        manifest["bindings"] = _review_bindings(state, root, ("paper",))
     manifest_path = bundle_dir / "bundle_manifest.json"
     write_json(manifest_path, manifest, overwrite=True)
     return manifest_path, manifest
+
+
+def _review_bindings(state: Any, root: Path, roles: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Expose canonical identity for report binding without copying source content."""
+
+    rows: list[dict[str, Any]] = []
+    for role in roles:
+        for candidate, path in _v2_role_entries(state, role):
+            if not path.is_file() or not isinstance(candidate.get("artifact_id"), str):
+                continue
+            rows.append({
+                "role": role,
+                "artifact_id": candidate["artifact_id"],
+                "source_path": rel_path(path, root),
+                "sha256": sha256_file(path),
+            })
+    return rows
+
+
+def _human_prose_context(root: Path, bundle_dir: Path, *, focus_section: str | None) -> list[dict[str, Any]]:
+    """Copy only regenerable, section-local editorial context into a review bundle."""
+
+    context: list[dict[str, Any]] = []
+    spine = root / ".harness/views/WRITING_SPINE.md"
+    if spine.is_file():
+        destination = bundle_dir / "writing_spine.md"
+        content = spine.read_text(encoding="utf-8")
+        if focus_section:
+            content = _writing_spine_excerpt(content, focus_section)
+        if content:
+            destination.write_text(content, encoding="utf-8")
+            context.append({
+                "role": "writing_spine",
+                "artifact_id": None,
+                "source_path": rel_path(spine, root),
+                "source_sha256": sha256_file(spine),
+                "path": destination.name,
+                "sha256": sha256_file(destination),
+            })
+    reverse_outline = root / "reports/reverse_outline.md"
+    if reverse_outline.is_file():
+        destination = bundle_dir / "reverse_outline.md"
+        content = reverse_outline.read_text(encoding="utf-8")
+        if focus_section:
+            content = _reverse_outline_excerpt(content, focus_section)
+        if content:
+            destination.write_text(content, encoding="utf-8")
+            context.append({
+                "role": "reverse_outline",
+                "artifact_id": None,
+                "source_path": rel_path(reverse_outline, root),
+                "source_sha256": sha256_file(reverse_outline),
+                "path": destination.name,
+                "sha256": sha256_file(destination),
+            })
+    candidates: list[tuple[str, Path]] = []
+    if focus_section:
+        candidates.extend([
+            ("section_brief", root / f".harness/views/sections/{focus_section}_brief.md"),
+            ("paper_section", root / f"paper/sections/{focus_section}/draft.md"),
+        ])
+    for role, source in candidates:
+        if not source.is_file():
+            continue
+        destination = bundle_dir / f"{role}{source.suffix or '.txt'}"
+        shutil.copy2(source, destination)
+        context.append({
+            "role": role,
+            "artifact_id": None,
+            "source_path": rel_path(source, root),
+            "source_sha256": sha256_file(source),
+            "path": destination.name,
+            "sha256": sha256_file(destination),
+        })
+    return context
+
+
+def _writing_spine_excerpt(content: str, section_id: str) -> str:
+    """Keep the spine header and one exact section block."""
+
+    lines = content.splitlines()
+    section_start = next(
+        (index for index, line in enumerate(lines) if line.startswith(f"### {section_id} (")),
+        None,
+    )
+    if section_start is None:
+        return ""
+    section_end = next(
+        (
+            index for index in range(section_start + 1, len(lines))
+            if lines[index].startswith("### ") or lines[index].startswith("## ")
+        ),
+        len(lines),
+    )
+    header_end = next(
+        (index for index, line in enumerate(lines) if line == "## Section order and argument units"),
+        section_start,
+    )
+    excerpt = [*lines[:header_end], "## Focused section", "", *lines[section_start:section_end]]
+    return "\n".join(excerpt).rstrip() + "\n"
+
+
+def _reverse_outline_excerpt(content: str, section_id: str) -> str:
+    """Keep only outline rows explicitly mapped to the focused section."""
+
+    rows = [line for line in content.splitlines() if f"-> {section_id} ->" in line]
+    if not rows:
+        return ""
+    return "\n".join(["# Reverse Outline — Focused Section", "", *rows, ""])
+
+
+def _paper_plan_sections(state: Any) -> set[str]:
+    _, plan_path = _v2_role_path(state, "paper_plan")
+    if plan_path is None or not plan_path.is_file():
+        return set()
+    plan = load_structured(plan_path)
+    if not isinstance(plan, dict):
+        return set()
+    return {
+        str(row["section_id"])
+        for row in plan.get("sections", [])
+        if isinstance(row, dict) and isinstance(row.get("section_id"), str)
+    }
+
+
+def _human_prose_scan(
+    state: Any,
+    root: Path,
+    bundle_dir: Path,
+    *,
+    focus_section: str | None,
+) -> dict[str, Any] | None:
+    """Materialize non-verdict prose statistics without result/model inputs."""
+
+    _, plan = _v2_role_path(state, "paper_plan")
+    _, paper = _v2_role_path(state, "paper")
+    if plan is None or paper is None or not plan.is_file() or not paper.is_file():
+        return None
+    draft = paper
+    if focus_section:
+        focused_draft = root / f"paper/sections/{focus_section}/draft.md"
+        if not focused_draft.is_file():
+            return None
+        draft = focused_draft
+    command = [
+        sys.executable, str(SCRIPT_DIR / "check_paper_style.py"),
+        "--paper-plan", str(plan), "--draft", str(draft), "--human-prose-stats",
+        "--project-root", str(root),
+    ]
+    result = _run(command, cwd=root)
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    statistics = report.get("human_prose_statistics") if isinstance(report, dict) else None
+    if not isinstance(statistics, dict):
+        return None
+    destination = bundle_dir / "human_prose_statistics.md"
+    lines = [
+        "# Human-Prose Statistics",
+        "",
+        "> Non-verdict signals; the reviewer decides whether a clustered pattern impairs the argument.",
+        "",
+        f"- paragraph count: {statistics.get('paragraph_count')}",
+        f"- paragraph lengths: {statistics.get('paragraph_lengths')}",
+        f"- sentence lengths: {statistics.get('sentence_lengths')}",
+        f"- transition counts: {statistics.get('transition_counts')}",
+        f"- same result-frame count: {statistics.get('same_result_frame_count')}",
+        f"- recap-frame count: {statistics.get('recap_frame_count')}",
+        f"- signal candidates: {statistics.get('signals')}",
+        "",
+    ]
+    destination.write_text("\n".join(lines), encoding="utf-8")
+    return {
+        "role": "human_prose_statistics",
+        "artifact_id": None,
+        "path": destination.name,
+        "sha256": sha256_file(destination),
+    }
 
 
 def _judge_scan_structural(state: Any, root: Path, bundle_dir: Path) -> dict[str, Any] | None:
@@ -218,7 +445,12 @@ PROTECTED_REVIEW_ROLES = (
 )
 
 
-def _protected_snapshot(state: Any, root: Path) -> dict[Path, str | None]:
+def _protected_snapshot(
+    state: Any,
+    root: Path,
+    *,
+    focus_section: str | None = None,
+) -> dict[Path, str | None]:
     """Snapshot author/control artifacts that a reviewer may not mutate."""
 
     paths: set[Path] = {state.manifest_path.resolve(), state.profile_path.resolve()}
@@ -231,6 +463,13 @@ def _protected_snapshot(state: Any, root: Path) -> dict[Path, str | None]:
     for role in PROTECTED_REVIEW_ROLES:
         for _, path in _v2_role_entries(state, role):
             paths.add(path.resolve())
+    if focus_section:
+        paths.update({
+            (root / f"paper/sections/{focus_section}/draft.md").resolve(),
+            (root / f".harness/views/sections/{focus_section}_brief.md").resolve(),
+            (root / ".harness/views/WRITING_SPINE.md").resolve(),
+            (root / "reports/reverse_outline.md").resolve(),
+        })
     return {path: sha256_file(path) if path.is_file() else None for path in paths}
 
 
@@ -262,6 +501,8 @@ def run_backend_reviewer(
     bundle_manifest_path: Path,
     report_path: Path,
     review_mode: str,
+    *,
+    focus_section: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Execute one reviewer through the process-captured receipt seam."""
 
@@ -292,7 +533,7 @@ def run_backend_reviewer(
         "--command-cwd", rel_path(bundle_manifest_path.parent, root),
         "--", *_split_backend_command(backend_cmd),
     ]
-    protected = _protected_snapshot(state, root)
+    protected = _protected_snapshot(state, root, focus_section=focus_section)
     result = _run(command, cwd=root, env=env)
     mutations = _snapshot_mutations(protected)
     execution: dict[str, Any] = {
@@ -379,20 +620,54 @@ def routing_instructions(
     bundle_manifest_path: Path,
     report_path: Path,
 ) -> str:
-    return "\n".join([
+    lines = [
         f"  [{perspective}]",
         f"    rubric:   {RUBRICS[perspective]}",
         f"    bundle:   {rel_path(bundle_manifest_path, root)}",
         f"    output:   {rel_path(report_path, root)}",
         "    schema:   schemas/review_report.schema.json",
         "    contract: review_mode=self_critic, independence_level=L0_same_context",
-        "              reviewed_artifacts use only bundle rows with non-null artifact_id + source_path",
-        "              map source_path -> path and copy artifact_id/role/sha256; omit structural/rules rows",
+        "              reviewed_artifacts use only bundle bindings with non-null artifact_id + source_path",
+        "              map binding source_path -> path and copy artifact_id/role/sha256; omit files rows",
+        "              copy bundle_manifest path/sha256 into bundle_ref",
         "              available_evidence_scope may narrow but never exceed the scope implied by reviewed_artifacts",
         "              each finding may declare required_evidence_scope; insufficient gate-severity evidence requires requires_external_check=true",
         "              rerunnable is not established by a reviewer-process receipt or free-text locator; route it to external checking",
         f"              findings use REV-* ids; verdict=pass requires zero effective open blocker/high/medium; run_id={state.run_id}",
-    ])
+    ]
+    if perspective == "human_prose":
+        lines.extend([
+            "              use the bundle context_policy: read default_roles first and on_demand_roles only when needed",
+            "              each finding requires finding_type, quoted_passage, protected_content, and required_recheck",
+            "              blocker is forbidden; findings are local editorial proposals and do not change Gate status",
+            "              do not alter facts, numbers, mathematics, evidence scope, citations, or competition semantics",
+        ])
+    return "\n".join(lines)
+
+
+def evaluate_selected_review(
+    root: Path,
+    preset: str,
+    run_id: str,
+    perspectives: list[str],
+    *,
+    focus_section: str | None = None,
+) -> tuple[dict[str, Any], list[str], bool | None]:
+    """Evaluate this command without granting optional perspectives Gate authority."""
+
+    if perspectives != ["human_prose"]:
+        summary, errors = evaluate_w2_review(root, preset, run_id=run_id)
+        return summary, errors, not errors
+    summary = summarize_review(root, preset, run_id=run_id, human_focus_section=focus_section)
+    view = summary["perspectives"]["human_prose"]
+    errors: list[str] = []
+    if not view["executed"]:
+        errors.append("human_prose review report was not found")
+    errors.extend(f"human_prose review: {message}" for message in view["errors"])
+    if view["executed"] and view["freshness"] != "current":
+        errors.append(f"human_prose review is {view['freshness']}")
+    summary["next_finding"] = view.get("next_finding")
+    return summary, errors, None
 
 
 def validate_backend_output(
@@ -436,7 +711,10 @@ def validate_backend_output(
     errors.extend(freshness_errors)
     if freshness != "current":
         errors.append("backend report artifact binding is stale")
-    if value.get("independence_level") in {"L1_fresh_context", "L2_independent_model", "L3_human"}:
+    if (
+        value.get("independence_level") in {"L1_fresh_context", "L2_independent_model", "L3_human"}
+        or perspective == "human_prose"
+    ):
         errors.extend(validate_bundle_boundary(value, root))
     errors.extend(validate_execution_binding(value, report_path, root, require_registration=False))
     return value, errors
@@ -574,6 +852,8 @@ def main() -> int:
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--semantic", action="store_true", help="run only the semantic critic perspective")
     parser.add_argument("--judge", action="store_true", help="run only the judge lens perspective")
+    parser.add_argument("--human-prose", action="store_true", help="run only the optional human-prose editorial perspective")
+    parser.add_argument("--section", help="required focus section id for --human-prose")
     parser.add_argument("--fresh", action="store_true", help="require fresh-context (L1) execution via --backend-cmd")
     parser.add_argument("--recheck", action="store_true", help="revalidate existing reports without executing reviewers")
     parser.add_argument("--backend-cmd", help="reviewer backend command; executed per perspective with MATH_REVIEW_* env")
@@ -592,14 +872,58 @@ def main() -> int:
         print(json.dumps({"ok": False, "errors": [f"v2 manifest resolution failed: {exc}"]}, ensure_ascii=False))
         return 2
 
-    if args.semantic and args.judge:
-        print(json.dumps({"ok": False, "errors": ["--semantic and --judge are mutually exclusive"]}, ensure_ascii=False))
+    selected = [args.semantic, args.judge, args.human_prose]
+    if sum(bool(value) for value in selected) > 1:
+        print(json.dumps({"ok": False, "errors": [
+            "--semantic, --judge, and --human-prose are mutually exclusive",
+        ]}, ensure_ascii=False))
         return 2
+    if args.section and not args.human_prose:
+        print(json.dumps({"ok": False, "errors": ["--section is only valid with --human-prose"]}, ensure_ascii=False))
+        return 2
+    if args.human_prose and not args.section:
+        print(json.dumps({"ok": False, "errors": [
+            "--human-prose requires --section so the editorial context remains local",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.human_prose and args.fresh:
+        print(json.dumps({"ok": False, "errors": [
+            "--human-prose is editorial L0 and cannot claim --fresh review independence",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.section and not SECTION_ID.fullmatch(args.section):
+        print(json.dumps({"ok": False, "errors": [
+            "--section must use letters, digits, dots, underscores, or hyphens and cannot contain a path",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.section and args.section not in _paper_plan_sections(state):
+        print(json.dumps({"ok": False, "errors": [
+            f"--section {args.section!r} is not present in the current paper_plan",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.section and not (root / f"paper/sections/{args.section}/draft.md").is_file():
+        print(json.dumps({"ok": False, "errors": [
+            f"--section {args.section!r} has no current draft at paper/sections/{args.section}/draft.md",
+        ]}, ensure_ascii=False))
+        return 2
+    if args.section:
+        required_context = [
+            root / f".harness/views/sections/{args.section}_brief.md",
+            root / ".harness/views/WRITING_SPINE.md",
+        ]
+        missing_context = [rel_path(path, root) for path in required_context if not path.is_file()]
+        if missing_context:
+            print(json.dumps({"ok": False, "errors": [
+                "--human-prose requires prepared local context: " + ", ".join(missing_context),
+            ]}, ensure_ascii=False))
+            return 2
     perspectives = list(required_perspectives(state.preset))
     if args.semantic:
         perspectives = ["semantic_critic"]
     if args.judge:
         perspectives = ["judge_lens"]
+    if args.human_prose:
+        perspectives = ["human_prose"]
     review_mode = "fresh_context" if args.fresh else "self_critic"
     if args.fresh and not args.backend_cmd and not args.recheck:
         print(json.dumps({"ok": False, "errors": [
@@ -648,7 +972,13 @@ def main() -> int:
         # Phase 2 — materialize the allow-listed bundle (integrity boundary;
         # this is not an OS filesystem sandbox).
         progress(f"[2/{total_steps}] Building allow-listed review bundle...")
-        bundle_manifest_path, bundle = build_bundle(state, root, ts, perspectives)
+        bundle_manifest_path, bundle = build_bundle(
+            state,
+            root,
+            ts,
+            perspectives,
+            focus_section=args.section,
+        )
         result["bundle"] = {
             "path": rel_path(bundle_manifest_path, root),
             "files": [row["role"] for row in bundle["files"]],
@@ -661,6 +991,7 @@ def main() -> int:
             if args.backend_cmd:
                 ok, execution = run_backend_reviewer(
                     state, root, args.backend_cmd, perspective, bundle_manifest_path, report_path, review_mode,
+                    focus_section=args.section,
                 )
                 result.setdefault("executions", {})[perspective] = execution
                 if args.backend_kind == "ai":
@@ -713,6 +1044,7 @@ def main() -> int:
     if args.recheck:
         summary_preview = summarize_review(
             root, state.preset, run_id=state.run_id, require_registration=False,
+            human_focus_section=args.section if args.human_prose else None,
         )
         for perspective, view in summary_preview["perspectives"].items():
             if perspective not in perspectives or not view.get("executed"):
@@ -734,11 +1066,14 @@ def main() -> int:
         result["phases"].append(f"registered review evidence in artifact DAG: {', '.join(registered)}")
 
     # Phase 6 — factual summary and W2 preview from real evidence.
-    summary, w2_errors = evaluate_w2_review(root, state.preset, run_id=state.run_id)
+    summary, w2_errors, w2_preview = evaluate_selected_review(
+        root, state.preset, state.run_id, perspectives, focus_section=args.section,
+    )
     result["review"] = summary
     result["errors"].extend(w2_errors)
     # W2 preview covers only the review plane here; full W2 re-checks QA too.
-    result["w2_preview"] = not w2_errors
+    if w2_preview is not None:
+        result["w2_preview"] = w2_preview
     result["ok"] = not result["errors"]
     print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else _human(result))
     return 0 if result["ok"] else 1

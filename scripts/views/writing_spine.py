@@ -73,6 +73,7 @@ _WRITING_REFERENCES = (
     "references/writing/abstract_guidelines.md",
     "references/writing/consistency_guidelines.md",
     "references/writing/cumcm_empirical_style.md",
+    "references/writing/human_prose_revision.md",
 )
 
 
@@ -383,6 +384,7 @@ def build_bounded_revision_package(
     round_number: int = 1,
     previous: dict[str, Any] | list[dict[str, Any]] | None = None,
     review_report_paths: list[str] | None = None,
+    root: Path | None = None,
 ) -> dict[str, Any]:
     """Derive a finite, finding-scoped revision packet from review evidence.
 
@@ -407,8 +409,32 @@ def build_bounded_revision_package(
         required_scope = finding.get("required_evidence_scope")
         if not isinstance(required_scope, str) or not required_scope:
             required_scope = "paper_only"
+        perspective = finding.get("perspective")
+        if perspective == "human_prose":
+            required_fix = str(finding.get("required_fix", ""))
+            if any(marker in required_fix.casefold() for marker in (
+                "whole section", "entire section", "whole paper", "entire paper", "整节", "整篇", "全文重写",
+            )):
+                raise ValueError(f"human_prose finding {finding['finding_id']} exceeds finding-local revision scope")
+            requested_rechecks = [
+                value for value in finding.get("required_recheck", [])
+                if isinstance(value, str)
+            ]
+            protected = set(finding.get("protected_content", []))
+            if protected & {"facts", "numeric_results", "competition_semantics"}:
+                requested_rechecks.append("consistency_sweep")
+            if protected & {"mathematical_semantics"}:
+                requested_rechecks.extend(["math_writing_qa", "semantic_review"])
+            if protected & {"evidence_semantics"}:
+                requested_rechecks.extend(["claim_evidence", "semantic_review"])
+            if protected & {"citations"}:
+                requested_rechecks.extend(["citation_check", "semantic_review"])
+            recheck_checks = list(dict.fromkeys([*requested_rechecks, "deterministic_qa"]))
+        else:
+            recheck_checks = ["deterministic QA", "fresh semantic review"]
         action = {
             "finding_id": finding["finding_id"],
+            "perspective": perspective,
             "severity": finding.get("severity"),
             "section_id": section_id,
             "section_resolution": resolution,
@@ -417,10 +443,25 @@ def build_bounded_revision_package(
             "required_evidence_scope": required_scope,
             "requires_external_check": finding.get("requires_external_check") is True,
             "recheck": {
-                "checks": ["deterministic QA", "fresh semantic review"],
+                "checks": recheck_checks,
                 "finding_id": finding["finding_id"],
             },
         }
+        if perspective == "human_prose":
+            if root is not None and section_id is not None:
+                draft_path = root / f"paper/sections/{section_id}/draft.md"
+                quoted = str(finding.get("quoted_passage", ""))
+                if not draft_path.is_file() or quoted not in draft_path.read_text(encoding="utf-8"):
+                    raise ValueError(
+                        f"human_prose finding {finding['finding_id']} quoted_passage is absent from the current section draft"
+                    )
+            action.update({
+                "finding_type": finding.get("finding_type"),
+                "quoted_passage": finding.get("quoted_passage"),
+                "protected_content": list(finding.get("protected_content", [])),
+                "revision_order": ["delete", "merge", "replace", "reorder", "minimally_insert"],
+                "rewrite_scope": "finding_local_only",
+            })
         if isinstance(finding.get("required_experiment"), str) and finding["required_experiment"].strip():
             action["required_experiment"] = finding["required_experiment"].strip()
         if section_id is not None:
@@ -955,6 +996,7 @@ def compile_revision_package(
         round_number=round_number,
         previous=previous_value,
         review_report_paths=[rel_path(resolve_path(path, root).resolve(), root) for path in review_reports],
+        root=root,
     )
     output_path = resolve_path(output or ".harness/views/revision_package.json", root).resolve()
     write_json(output_path, package)
