@@ -12,6 +12,10 @@ or submit a mathematical-modeling competition project. Start from the project
 root and use the thin `harness` CLI; keep the paper project separate from the
 Harness repository.
 
+Resolve the requested stage from the user's task and current project status.
+Do not run the normal path end to end unless the user explicitly requests the
+whole lifecycle; finish the requested stage and hand off its persisted state.
+
 Do not use it for a one-off textbook solution, an informal plot, or a generic
 Python experiment with no evidence or competition-delivery obligations.
 

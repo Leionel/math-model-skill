@@ -1,4 +1,4 @@
 interface:
   display_name: "Math Modeling Evidence Harness"
   short_description: "数学建模竞赛的研究选型、证据追溯、技术写作、模板构建与提交冻结"
-  default_prompt: "Use $math-modeling-skill-sion to research candidate models before implementation and produce an evidence-bound competition paper."
+  default_prompt: "Use $math-modeling-skill-sion to inspect the current project state and complete only the stage I request."
