@@ -411,11 +411,6 @@ def build_bounded_revision_package(
             required_scope = "paper_only"
         perspective = finding.get("perspective")
         if perspective == "human_prose":
-            required_fix = str(finding.get("required_fix", ""))
-            if any(marker in required_fix.casefold() for marker in (
-                "whole section", "entire section", "whole paper", "entire paper", "整节", "整篇", "全文重写",
-            )):
-                raise ValueError(f"human_prose finding {finding['finding_id']} exceeds finding-local revision scope")
             requested_rechecks = [
                 value for value in finding.get("required_recheck", [])
                 if isinstance(value, str)

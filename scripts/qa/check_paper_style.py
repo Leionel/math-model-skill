@@ -25,7 +25,7 @@ RECAP_FRAMES = ("综上所述", "综上", "由此可见", "in conclusion", "in s
 
 
 def sentences(text: str) -> list[str]:
-    return [piece.strip() for piece in re.split(r"(?<=[。！？.!?])\s+|[\r\n]+", text) if piece.strip()]
+    return [piece.strip() for piece in re.split(r"(?<=[。！？])|(?<=[.!?])\s+|[\r\n]+", text) if piece.strip()]
 
 
 def _visible_paragraphs(text: str) -> list[str]:

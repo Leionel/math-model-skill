@@ -121,6 +121,40 @@ def requires_l1_review(preset: str) -> bool:
     return preset == "submission"
 
 
+def _writing_spine_excerpt(content: str, section_id: str) -> str:
+    """Keep the spine header and one exact section block."""
+
+    lines = content.splitlines()
+    section_start = next(
+        (index for index, line in enumerate(lines) if line.startswith(f"### {section_id} (")),
+        None,
+    )
+    if section_start is None:
+        return ""
+    section_end = next(
+        (
+            index for index in range(section_start + 1, len(lines))
+            if lines[index].startswith("### ") or lines[index].startswith("## ")
+        ),
+        len(lines),
+    )
+    header_end = next(
+        (index for index, line in enumerate(lines) if line == "## Section order and argument units"),
+        0,
+    )
+    excerpt = [*lines[:header_end], "## Focused section", "", *lines[section_start:section_end]]
+    return "\n".join(excerpt).rstrip() + "\n"
+
+
+def _reverse_outline_excerpt(content: str, section_id: str) -> str:
+    """Keep only outline rows explicitly mapped to the focused section."""
+
+    rows = [line for line in content.splitlines() if f"-> {section_id} ->" in line]
+    if not rows:
+        return ""
+    return "\n".join(["# Reverse Outline — Focused Section", "", *rows, ""])
+
+
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
@@ -505,8 +539,17 @@ def _human_context_freshness(report: Mapping[str, Any], root: Path) -> list[str]
             errors.append(f"human_prose context source no longer exists: {source_path}")
         elif not isinstance(row.get("source_sha256"), str):
             errors.append(f"human_prose {role} has no source_sha256")
-        elif sha256_file(source) != row.get("source_sha256"):
-            errors.append(f"human_prose context source changed since review: {source_path}")
+        else:
+            if role == "writing_spine":
+                projected = _writing_spine_excerpt(source.read_text(encoding="utf-8"), focus_section)
+                source_digest = hashlib.sha256(projected.encode("utf-8")).hexdigest()
+            elif role == "reverse_outline":
+                projected = _reverse_outline_excerpt(source.read_text(encoding="utf-8"), focus_section)
+                source_digest = hashlib.sha256(projected.encode("utf-8")).hexdigest()
+            else:
+                source_digest = sha256_file(source)
+            if source_digest != row.get("source_sha256"):
+                errors.append(f"human_prose context source changed since review: {source_path}")
         member_path = row.get("path")
         member = (bundle_path.parent / str(member_path)).resolve()
         if not isinstance(member_path, str) or not member.is_file():

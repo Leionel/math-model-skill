@@ -41,12 +41,14 @@ try:  # Package import in tests versus direct script execution.
         REVIEW_DIR, REVIEW_MODE_LEVEL, evaluate_w2_review, required_perspectives,
         review_freshness, summarize_review, validate_bundle_boundary,
         validate_execution_binding, validate_review_report,
+        _reverse_outline_excerpt, _writing_spine_excerpt,
     )
 except ModuleNotFoundError:  # pragma: no cover - direct CLI path
     from review_evidence import (  # type: ignore  # noqa: E402
         REVIEW_DIR, REVIEW_MODE_LEVEL, evaluate_w2_review, required_perspectives,
         review_freshness, summarize_review, validate_bundle_boundary,
         validate_execution_binding, validate_review_report,
+        _reverse_outline_excerpt, _writing_spine_excerpt,
     )
 
 REPO_ROOT = SCRIPT_DIR.parents[1]
@@ -61,7 +63,6 @@ RUBRICS = {
     "judge_lens": "references/review/judge_lens.md",
     "human_prose": "references/writing/human_prose_revision.md",
 }
-HUMAN_PROSE_BUNDLE_ROLES: tuple[str, ...] = ()
 SECTION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*$")
 
 
@@ -139,7 +140,7 @@ def build_bundle(
         if isinstance(node.get("path"), str)
     }
     seen: set[tuple[str, Path]] = set()
-    role_order = HUMAN_PROSE_BUNDLE_ROLES if perspectives == ["human_prose"] else BUNDLE_ALLOW_ROLES
+    role_order = () if perspectives == ["human_prose"] else BUNDLE_ALLOW_ROLES
     for role in role_order:
         for item_index, (candidate, path) in enumerate(_v2_role_entries(state, role), start=1):
             path = path.resolve()
@@ -227,13 +228,19 @@ def _review_bindings(state: Any, root: Path, roles: tuple[str, ...]) -> list[dic
     """Expose canonical identity for report binding without copying source content."""
 
     rows: list[dict[str, Any]] = []
+    dag_by_path = {
+        resolve_path(str(node["path"]), root).resolve(): node
+        for node in _v2_dag_nodes(state)
+        if isinstance(node.get("path"), str)
+    }
     for role in roles:
         for candidate, path in _v2_role_entries(state, role):
-            if not path.is_file() or not isinstance(candidate.get("artifact_id"), str):
+            canonical = dag_by_path.get(path.resolve(), candidate)
+            if not path.is_file() or not isinstance(canonical.get("artifact_id"), str):
                 continue
             rows.append({
                 "role": role,
-                "artifact_id": candidate["artifact_id"],
+                "artifact_id": canonical["artifact_id"],
                 "source_path": rel_path(path, root),
                 "sha256": sha256_file(path),
             })
@@ -256,7 +263,7 @@ def _human_prose_context(root: Path, bundle_dir: Path, *, focus_section: str | N
                 "role": "writing_spine",
                 "artifact_id": None,
                 "source_path": rel_path(spine, root),
-                "source_sha256": sha256_file(spine),
+                "source_sha256": sha256_file(destination),
                 "path": destination.name,
                 "sha256": sha256_file(destination),
             })
@@ -272,7 +279,7 @@ def _human_prose_context(root: Path, bundle_dir: Path, *, focus_section: str | N
                 "role": "reverse_outline",
                 "artifact_id": None,
                 "source_path": rel_path(reverse_outline, root),
-                "source_sha256": sha256_file(reverse_outline),
+                "source_sha256": sha256_file(destination),
                 "path": destination.name,
                 "sha256": sha256_file(destination),
             })
@@ -296,40 +303,6 @@ def _human_prose_context(root: Path, bundle_dir: Path, *, focus_section: str | N
             "sha256": sha256_file(destination),
         })
     return context
-
-
-def _writing_spine_excerpt(content: str, section_id: str) -> str:
-    """Keep the spine header and one exact section block."""
-
-    lines = content.splitlines()
-    section_start = next(
-        (index for index, line in enumerate(lines) if line.startswith(f"### {section_id} (")),
-        None,
-    )
-    if section_start is None:
-        return ""
-    section_end = next(
-        (
-            index for index in range(section_start + 1, len(lines))
-            if lines[index].startswith("### ") or lines[index].startswith("## ")
-        ),
-        len(lines),
-    )
-    header_end = next(
-        (index for index, line in enumerate(lines) if line == "## Section order and argument units"),
-        section_start,
-    )
-    excerpt = [*lines[:header_end], "## Focused section", "", *lines[section_start:section_end]]
-    return "\n".join(excerpt).rstrip() + "\n"
-
-
-def _reverse_outline_excerpt(content: str, section_id: str) -> str:
-    """Keep only outline rows explicitly mapped to the focused section."""
-
-    rows = [line for line in content.splitlines() if f"-> {section_id} ->" in line]
-    if not rows:
-        return ""
-    return "\n".join(["# Reverse Outline — Focused Section", "", *rows, ""])
 
 
 def _paper_plan_sections(state: Any) -> set[str]:
@@ -864,14 +837,6 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    root = Path(args.project_root).resolve()
-    try:
-        manifest_path = resolve_manifest_path(root, args.manifest)
-        state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
-    except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
-        print(json.dumps({"ok": False, "errors": [f"v2 manifest resolution failed: {exc}"]}, ensure_ascii=False))
-        return 2
-
     selected = [args.semantic, args.judge, args.human_prose]
     if sum(bool(value) for value in selected) > 1:
         print(json.dumps({"ok": False, "errors": [
@@ -896,6 +861,15 @@ def main() -> int:
             "--section must use letters, digits, dots, underscores, or hyphens and cannot contain a path",
         ]}, ensure_ascii=False))
         return 2
+
+    root = Path(args.project_root).resolve()
+    try:
+        manifest_path = resolve_manifest_path(root, args.manifest)
+        state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+    except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
+        print(json.dumps({"ok": False, "errors": [f"v2 manifest resolution failed: {exc}"]}, ensure_ascii=False))
+        return 2
+
     if args.section and args.section not in _paper_plan_sections(state):
         print(json.dumps({"ok": False, "errors": [
             f"--section {args.section!r} is not present in the current paper_plan",

@@ -19,11 +19,11 @@ from scripts.qa.review_evidence import (
     validate_review_report,
 )
 from scripts.qa.run_review import (
-    HUMAN_PROSE_BUNDLE_ROLES,
     RUBRICS,
     SECTION_ID,
     _human_prose_context,
     _protected_snapshot,
+    _review_bindings,
     _snapshot_mutations,
     _writing_spine_excerpt,
     build_bundle,
@@ -129,6 +129,29 @@ class HumanProseReviewTest(unittest.TestCase):
         self.assertNotIn("human_prose_statistics", json.loads(ordinary.stdout))
         self.assertIn("human_prose_statistics", json.loads(editorial.stdout))
 
+    def test_chinese_sentences_split_without_spaces(self) -> None:
+        statistics = human_prose_statistics("第一句。第二句！第三句？")
+        self.assertEqual(len(statistics["sentence_lengths"]), 3)
+
+    def test_human_prose_flags_fail_before_manifest_resolution(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/harness.py"),
+                "review",
+                "--human-prose",
+                "--json",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--human-prose requires --section", result.stdout)
+        self.assertNotIn("manifest resolution failed", result.stdout)
+
     def test_human_prose_finding_requires_quote_type_protection_and_recheck(self) -> None:
         valid = report(finding(
             "low_information_gain",
@@ -186,8 +209,6 @@ class HumanProseReviewTest(unittest.TestCase):
     def test_optional_perspective_does_not_change_w2_or_independence(self) -> None:
         self.assertEqual(required_perspectives("sprint"), ("semantic_critic",))
         self.assertEqual(required_perspectives("research"), ("semantic_critic", "judge_lens"))
-        self.assertNotIn("model_contract", HUMAN_PROSE_BUNDLE_ROLES)
-        self.assertNotIn("frozen_results", HUMAN_PROSE_BUNDLE_ROLES)
         with tempfile.TemporaryDirectory(prefix="human-prose-status-") as temp:
             summary = summarize_review(Path(temp), "research", require_registration=False)
         self.assertFalse(summary["perspectives"]["human_prose"]["required"])
@@ -213,6 +234,58 @@ class HumanProseReviewTest(unittest.TestCase):
         self.assertEqual(policy["on_demand_roles"], [])
         self.assertIn("frozen_results", policy["excluded_roles"])
         self.assertNotIn("model_contract", [row["role"] for row in manifest["files"]])
+
+    def test_review_binding_recovers_canonical_dag_identity_for_root_paper(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="human-prose-binding-") as temp:
+            root = Path(temp)
+            paper = root / "paper/main.tex"
+            paper.parent.mkdir(parents=True)
+            paper.write_text("paper", encoding="utf-8")
+            dag_path = root / "artifact_dag.json"
+            dag_path.write_text(json.dumps({
+                "nodes": [{
+                    "artifact_id": "ART-PAPER",
+                    "role": "paper",
+                    "path": "paper/main.tex",
+                }],
+            }), encoding="utf-8")
+            state = SimpleNamespace(root=root)
+            state.root_path = lambda role, **_kwargs: {
+                "paper": paper,
+                "artifact_dag": dag_path,
+            }.get(role)
+            bindings = _review_bindings(state, root, ("paper",))
+        self.assertEqual(len(bindings), 1)
+        self.assertEqual(bindings[0]["artifact_id"], "ART-PAPER")
+
+    def test_human_prose_bundle_binds_root_paper_to_canonical_dag_node(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="human-prose-bundle-binding-") as temp:
+            root = Path(temp)
+            paper = root / "paper/main.tex"
+            paper.parent.mkdir(parents=True)
+            paper.write_text("paper", encoding="utf-8")
+            dag_path = root / "artifact_dag.json"
+            dag_path.write_text(json.dumps({
+                "nodes": [{
+                    "artifact_id": "ART-PAPER",
+                    "role": "paper",
+                    "path": "paper/main.tex",
+                }],
+            }), encoding="utf-8")
+            state = SimpleNamespace(root=root, run_id="run-human-prose")
+            state.root_path = lambda role, **_kwargs: {
+                "paper": paper,
+                "artifact_dag": dag_path,
+            }.get(role)
+            _, manifest = build_bundle(
+                state,
+                root,
+                "20260902T000001Z",
+                ["human_prose"],
+                focus_section="results.q1",
+            )
+        self.assertEqual(manifest["bindings"][0]["artifact_id"], "ART-PAPER")
+        self.assertNotIn("paper", {row["role"] for row in manifest["files"]})
 
     def test_section_context_is_local_and_section_id_cannot_be_a_path(self) -> None:
         with tempfile.TemporaryDirectory(prefix="human-prose-context-") as temp:
@@ -247,11 +320,12 @@ class HumanProseReviewTest(unittest.TestCase):
                 source.parent.mkdir(parents=True, exist_ok=True)
                 source.write_text(content, encoding="utf-8")
                 member = bundle_dir / f"{role}.md"
-                member.write_text(content, encoding="utf-8")
+                projected = _writing_spine_excerpt(content, "results.q1") if role == "writing_spine" else content
+                member.write_text(projected, encoding="utf-8")
                 rows.append({
                     "role": role,
                     "source_path": source.relative_to(root).as_posix(),
-                    "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                    "source_sha256": hashlib.sha256(projected.encode("utf-8")).hexdigest(),
                     "path": member.name,
                     "sha256": hashlib.sha256(member.read_bytes()).hexdigest(),
                 })
@@ -271,6 +345,12 @@ class HumanProseReviewTest(unittest.TestCase):
             }
             self.assertEqual(_human_context_freshness(value, root), [])
             self.assertEqual(validate_bundle_boundary(value, root), [])
+            spine_source = sources["writing_spine"][0]
+            spine_source.write_text(
+                "# Spine\n### results.q1 (phase 1)\n### results.q2 (phase 2)\n- unrelated\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(_human_context_freshness(value, root), [])
             source = sources["paper_section"][0]
             source.write_text("changed", encoding="utf-8")
             self.assertTrue(_human_context_freshness(value, root))
@@ -286,14 +366,14 @@ class HumanProseReviewTest(unittest.TestCase):
             value["bundle_ref"]["sha256"] = hashlib.sha256(bundle.read_bytes()).hexdigest()
             self.assertTrue(validate_bundle_boundary(value, root))
 
-    def test_bounded_revision_rejects_whole_section_rewrite(self) -> None:
+    def test_bounded_revision_always_projects_finding_local_scope(self) -> None:
         value = report(finding(
             "redundant_exposition",
             "成本下降 4.44%。",
-            "Rewrite the whole section for a more natural voice.",
+            "Delete the generic praise after the number.",
         ))
-        with self.assertRaises(ValueError):
-            build_bounded_revision_package(PLAN, value)
+        package = build_bounded_revision_package(PLAN, value)
+        self.assertEqual(package["findings"][0]["rewrite_scope"], "finding_local_only")
 
     def test_backend_snapshot_covers_local_human_prose_inputs(self) -> None:
         with tempfile.TemporaryDirectory(prefix="human-prose-protected-") as temp:
