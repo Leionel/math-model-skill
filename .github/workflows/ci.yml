@@ -20,6 +20,20 @@ jobs:
         run: |
           python -m pip install --no-deps -e .
           harness --help
+      - name: Install TeX Live and poppler tools
+        # safe_build.py drives latexmk+xelatex and check_pdf.py drives
+        # pdfinfo/pdffonts/pdftoppm; none are preinstalled on ubuntu runners.
+        # geometry.sty lives in texlive-latex-extra; fonts back the
+        # embedded-fonts assertions in the PDF visual-QA test.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            latexmk \
+            texlive-latex-base \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-xetex \
+            poppler-utils
       - name: Parse schemas
         run: python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]; print('schema parse ok')"
       - name: Unit tests
