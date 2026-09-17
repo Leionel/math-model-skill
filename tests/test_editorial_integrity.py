@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -475,6 +477,43 @@ class EditorialIntegrityTest(unittest.TestCase):
                     self.assertEqual(receipt["template"], template)
                     self.assertEqual(receipt["render"]["sizing_mode"], "placement")
                     self.assertEqual(receipt["arguments"]["show_points"], shows_points)
+
+    def test_plot_box_ticks_categories_without_removed_matplotlib_kwarg(self) -> None:
+        # Matplotlib 3.9 deprecated boxplot(labels=...) and 3.11 removed it.
+        # Escalating that warning to an error makes a kwarg regression fail on
+        # releases that still only deprecate it, and the tick check pins the
+        # category labels the parameter used to carry.
+        figures = ROOT / "scripts" / "figures"
+        sys.path.insert(0, str(figures))
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import plot_templates
+            from matplotlib import pyplot as plt
+
+            rows = [
+                {"condition": "Baseline", "value": 1.0},
+                {"condition": "Baseline", "value": 1.4},
+                {"condition": "Proposed", "value": 2.1},
+                {"condition": "Proposed", "value": 2.6},
+            ]
+            args = argparse.Namespace(
+                x=None, y="value", category="condition", group=None, value_label=None,
+                show_points=False, render_settings={"line_width_pt": 1.0},
+            )
+            figure, ax = plt.subplots()
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", matplotlib.MatplotlibDeprecationWarning)
+                    plot_templates.plot_box(ax, rows, args)
+                self.assertEqual(
+                    [tick.get_text() for tick in ax.get_xticklabels()],
+                    ["Baseline", "Proposed"],
+                )
+            finally:
+                plt.close(figure)
+        finally:
+            sys.path.remove(str(figures))
 
     def test_plot_templates_render_wp7_recipes_at_declared_paper_sizes(self) -> None:
         with tempfile.TemporaryDirectory(prefix="math-plots-wp7-") as temp:

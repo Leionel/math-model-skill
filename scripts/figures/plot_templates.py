@@ -445,12 +445,14 @@ def plot_box(ax: Any, rows: list[dict[str, Any]], args: argparse.Namespace) -> N
     artists = ax.boxplot(
         values,
         patch_artist=True,
-        labels=labels,
         medianprops={"color": "#222222", "linewidth": args.render_settings["line_width_pt"]},
     )
     for index, box in enumerate(artists["boxes"]):
         box.set_facecolor(("#56B4E9", "#E69F00", "#009E73", "#CC79A7")[index % 4])
         box.set_alpha(0.72)
+    # boxplot(labels=...) was deprecated in Matplotlib 3.9 and removed in 3.11;
+    # tick the categories explicitly instead, same as plot_violin.
+    ax.set_xticks(range(1, len(labels) + 1), labels)
     if args.show_points:
         raw_point_overlay(ax, groups, args)
 
