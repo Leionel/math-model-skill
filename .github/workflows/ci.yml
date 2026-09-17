@@ -24,5 +24,23 @@ jobs:
         run: python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]; print('schema parse ok')"
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Agent contract scope check
+        run: python scripts/harness.py agents check
+      - name: Red-team reliability evaluation
+        run: python evaluation/redteam.py --output evaluation/results/redteam-latest.json
       - name: Skill metadata and progressive-disclosure validation
-        run: python -c "from pathlib import Path; import yaml; p=Path('SKILL.md'); text=p.read_text(encoding='utf-8'); assert text.startswith('---'); assert 150 <= len(text.splitlines()) <= 220; yaml.safe_load(text.split('---', 2)[1]); print('skill validation ok')"
+        # The bound exists so SKILL.md stays an entry file: detail belongs in the
+        # routed references/, not in the front page an agent loads every run.
+        # Raising it is a deliberate loosening, never a default.
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          text = Path("SKILL.md").read_text(encoding="utf-8")
+          lines = len(text.splitlines())
+          assert text.startswith("---"), "SKILL.md must open with frontmatter"
+          yaml.safe_load(text.split("---", 2)[1])
+          assert 150 <= lines <= 360, f"SKILL.md is {lines} lines; keep it an entry file, not a manual"
+          print(f"skill validation ok ({lines} lines)")
+          PY

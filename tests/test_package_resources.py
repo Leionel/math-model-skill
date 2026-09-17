@@ -28,7 +28,11 @@ class CheckoutModeTest(unittest.TestCase):
         result = _run_cli("--repo-root", str(ROOT))
         self.assertEqual(result.returncode, 0, result.stdout[-2000:])
         payload = json.loads(result.stdout)
-        self.assertEqual(sorted(payload["resources"]), ["assets", "competition_profiles", "references", "schemas"])
+        self.assertEqual(
+            sorted(payload["resources"]),
+            ["agents", "assets", "competition_profiles", "references", "schemas"],
+        )
+        self.assertGreater(payload["resources"]["agents"]["files"], 0)
         self.assertGreater(payload["resources"]["schemas"]["files"], 0)
 
 

@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "math-modeling-skill-sion"
 version = "2.0.0"
 description = "Evidence-bound math-modeling Harness"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = ["PyYAML>=6", "jsonschema>=4"]
 
@@ -14,7 +15,7 @@ harness = "scripts.harness:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["scripts*", "schemas*", "references*", "competition_profiles*", "assets*"]
+include = ["scripts*", "schemas*", "references*", "competition_profiles*", "assets*", "agents"]
 exclude = ["references.precedents.local-sources*", "assets.figure-gallery*"]
 namespaces = true
 
@@ -23,6 +24,7 @@ include-package-data = false
 
 [tool.setuptools.package-data]
 "schemas" = ["*.json"]
+"agents" = ["*/agent.yaml"]
 "competition_profiles" = ["*.yaml"]
 "references" = ["router.md"]
 "references.cards.failures" = ["*.md"]

@@ -1,5 +1,150 @@
 # Math Modeling Evidence Harness
 
+[![harness-ci](https://github.com/Leionel/math-model-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/Leionel/math-model-skill/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+[![schemas: 32](https://img.shields.io/badge/JSON%20schemas-32-lightgrey)](schemas)
+
+**A MCP-compatible multi-agent execution framework with deterministic
+verification, artifact provenance, and human oversight.**
+
+Mathematical modeling is the first domain-specific testbed. What the project
+actually builds is infrastructure for long-running agents: any agent — Codex,
+Claude Code, Cursor, or your own loop — reaches the same verified runtime through
+MCP, and a human watches the identical read path in a console.
+
+```text
+   Agent layer            Problem Analyst · Modeling · Experiment · Paper
+   (reasoning)            Reviewer · Compliance        + Orchestrator
+                             │                       │
+   MCP interface      scripts/mcp_server.py    (JSON-RPC/stdio)
+   (one door)         13 read-only tools · 1 opt-in mutating tool
+                             │                       │
+   Harness runtime    harness CLI — 39 commands, one project root
+                             │                       │
+   Evidence layer     Gate Engine · Artifact DAG · Execution Receipts
+   (deterministic)    Hash/Freshness · Evidence Registry · Validation
+                      · Review Plane · Freeze / Submission Guard
+                             │
+   Human console      dashboard/ — read-only trace: gates, timeline,
+                      lineage, receipts, reviews. No write path.
+```
+
+Agents reason, plan, generate and review. The Harness decides what is a fact.
+No agent, and no agent conversation, can write a Gate PASS, a receipt, a hash,
+a frozen result or a review verdict — and neither can the dashboard.
+
+### Core capabilities
+
+| | |
+| --- | --- |
+| **Deterministic Gates** | `S0 → M1 → P1 → P2 → W1 → W2 → S1 → F1`. Each verdict is recomputed from files on disk at read time; v2 control state has no field that could hold a hand-written PASS. |
+| **Execution receipts** | `harness execute` runs a real subprocess and captures argv, cwd, exit code, timestamps and optional input/output digests. A number with no receipt behind it cannot reach a frozen result. |
+| **Artifact DAG with hash-driven freshness** | Editing a reviewed artifact invalidates the review; `W2` refuses a stale review, and the selective-rerun plan names the downstream work. |
+| **Fresh review with enforced independence** | `harness review` materializes an allow-listed bundle, runs a backend from that directory, and refuses a report that self-declares its independence level. |
+| **Auditable AI usage** | Three-state declaration, per-use records that must point at a stored interaction transcript, and human verification before strict promotion. |
+| **Agent-agnostic access** | 13 read-only MCP tools (`get_run_state`, `check_gate`, `verify_artifact`, …) with a fail-closed root allowlist, plus a read-only console that renders the *same* tool calls. Agent and human cannot see two different worlds. |
+
+### Why this is not another multi-agent chat
+
+LangGraph-style demos prove that agents can *talk*. They do not prove the
+output is true, traceable, or recoverable after a failure. Here the value is
+not the number of agents — it is that the deterministic layer bounds them:
+
+- **Agents cannot bypass a Gate.** A hand-written `gates.m1.status = "pass"` is
+  rejected as forbidden duplicated state, and the Gate still fails on its facts.
+  Verified by `evaluation/redteam.py`, not by an `if` in a prompt.
+- **Results come from execution.** Re-freezing the same numbers from a
+  free-text command produces a result that `P2` refuses as unbound.
+- **Claims need evidence.** An unevidenced figure in the abstract is refused by
+  deterministic QA even after a fresh re-review.
+- **Role scope is machine-checked.** `harness agents check` fails if any of the
+  seven `agents/*/agent.yaml` contracts names a tool, artifact role, output
+  schema, reference file or Gate that this repository does not actually have.
+- **Limits are published, not hidden.** The evaluation records what is *not*
+  enforced today (see [Known boundaries](#known-boundaries-read-this)).
+
+### 60-second demo
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pip install --no-deps -e .
+python examples/end_to_end/run_demo.py --out tmp/demo-run
+python dashboard/server.py --project tmp/demo-run --port 8765   # http://127.0.0.1:8765/
+```
+
+The driver builds a real project, runs real processes, freezes a real result,
+has a fresh-context reviewer review it, and then attempts five concrete
+bypasses plus one positive traceability check. Each row is decided by the
+Harness's own exit code:
+
+```text
+  [    HELD] an agent cannot pass a Gate by editing state
+  [    HELD] a frozen result must come from a captured execution
+  [    HELD] an upstream edit makes the downstream review stale
+  [    HELD] review independence is bound by the Harness, not claimed
+  [    HELD] a claim without evidence is blocked
+  [    HELD] the final artifact traces to a real execution and the AI call is on record
+  6/6 probe outcomes held
+```
+
+<!-- DEMO_GIF: tmp/demo-run plus the probe table above; record when hosting. -->
+
+### Evaluation
+
+```bash
+python evaluation/redteam.py          # reliability probes, no API key needed
+python evaluation/ablation.py plan    # A/B/C design: reports NOT_RUN until real runs exist
+```
+
+12 scenarios across 9 classes (gate bypass, fabricated evidence, stale
+acceptance, unsupported claim, reviewer independence, AI disclosure, lineage,
+human attention, traceability). Two outcomes are recorded as **documented gaps**
+rather than wins. The A/B/C ablation that would compare single-prompt,
+multi-agent-without-harness and multi-agent-with-harness is
+[pre-registered](evaluation/PREREGISTRATION.md) and **NOT RUN**; nothing here
+claims a capability benchmark.
+
+### Known boundaries — read this
+
+Honest limits of the current implementation:
+
+- **Receipts prove bytes, not provenance.** There is no signature or external
+  witness, so a rewrite that keeps every digest consistent is accepted:
+  `argv` inside a bound receipt is not attested. Closing this needs an external
+  trust anchor, not more prompts.
+- **A human checkpoint is unattested.** `decided_by` is free text; the Harness
+  requires that a decision exist, not that a specific person typed it.
+- **`--fresh` is not an OS sandbox.** It binds bundle, working directory,
+  receipt and report. A submission-grade reviewer still has to run in a
+  genuinely separate context or model.
+- **Regression tests are not capability evidence.** 729 tests prove the code
+  paths and negative guards work. They prove nothing about real-contest
+  generalization.
+
+### Documentation map
+
+| Start here | For |
+| --- | --- |
+| [`SKILL.md`](SKILL.md) | the agent-facing workflow, Gate order and principles |
+| [`agents/*/agent.yaml`](agents) | the seven role contracts and their prohibitions |
+| [`docs/AGENT_CONTRACT.md`](docs/AGENT_CONTRACT.md) | what the contract checker enforces, and what it does not |
+| [`docs/MCP_ARCHITECTURE.md`](docs/MCP_ARCHITECTURE.md) | how an external agent reaches the Harness |
+| [`docs/DASHBOARD_DESIGN.md`](docs/DASHBOARD_DESIGN.md) | the read-only console and why it has no approve button |
+| [`examples/end_to_end/`](examples/end_to_end/README.md) | the runnable demo and its probe table |
+| [`evaluation/PREREGISTRATION.md`](evaluation/PREREGISTRATION.md) | the ablation design written before results |
+| [`references/router.md`](references/router.md) | progressively disclosed method detail |
+| [Chinese operating guide](#公共主流程中文) | 命令、Gate、preset、迁移与排障 |
+
+---
+
+<a id="公共主流程中文"></a>
+
+## 中文：定位与运行手册
+
+以下中文内容是操作面：命令、Gate 语义、preset、迁移、排障与 Agent 分阶段
+Prompt。英文第一屏讲的架构与边界，以本节命令为准。
+
 这是一个证据、验证与竞赛合规 Harness。正常使用只需要一个 paper project
 root、一个比赛 seed/competition 和一个 preset；底层脚本仍保留为 debug
 appendix。Harness 不替用户猜题、伪造结果、上传比赛门户或把测试当成奖项
@@ -576,10 +721,13 @@ python scripts/qa/check_artifact_dag.py --dag artifact_dag.json --project-root C
 ## Development checks
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -q
+python scripts/harness.py agents check
+python evaluation/redteam.py
 python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]"
-python C:\Users\Administrator\.codex\skills\.system\skill-creator\scripts\quick_validate.py .
+ruff check <每个改动的 .py 文件>
 ```
 
+仓库全量 Ruff 并非干净：有 19 条既有告警在收口提交范围之外，按约定不混进改动。
 这些命令的结果必须如实报告；没有跑过的完整回归、真实 benchmark、PDF
 视觉审查或比赛提交，不得写成已完成。

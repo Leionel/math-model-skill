@@ -16,7 +16,7 @@ import json
 import zipfile
 from pathlib import Path
 
-REQUIRED_ROOTS = ("schemas", "references", "competition_profiles", "assets")
+REQUIRED_ROOTS = ("schemas", "references", "competition_profiles", "assets", "agents")
 
 # These are the smallest files that prove each runtime family is usable.  The
 # allowlist below deliberately covers the supported resource families without
@@ -40,6 +40,8 @@ REQUIRED_SENTINELS = (
     "assets/templates/mcm-icm-2026/main.tex",
     "assets/drawio/archetypes/research_framework/example_spec.json",
     "assets/pptx_workflow/README.md",
+    "agents/orchestrator/agent.yaml",
+    "agents/reviewer/agent.yaml",
 )
 
 # Runtime resource families are explicit.  In particular, this does not
@@ -72,6 +74,7 @@ ALLOWED_PATTERNS = (
     "assets/styles/*.mplstyle",
     "assets/templates/*/*.json",
     "assets/templates/*/*.tex",
+    "agents/*/*.yaml",
 )
 
 DENY_PATTERNS = (
