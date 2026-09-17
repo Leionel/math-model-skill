@@ -747,7 +747,7 @@ def register_review_report(root: Path, report: dict[str, Any], report_path: Path
         "path": relative,
         "producer_id": "harness.review",
         "dependencies": dependencies,
-        "lifecycle": "mutable",
+        "lifecycle": "immutable",
         "freshness": "current",
         "digest_owner": f"command_receipt:{receipt_id}" if receipt_id else "artifact_dag",
         "digest_algorithm": "sha256",

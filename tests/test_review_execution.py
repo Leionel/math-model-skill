@@ -31,6 +31,7 @@ from qa.review_evidence import (  # noqa: E402
     validate_review_report,
 )
 from qa.run_review import _safe_run_component, register_review_report  # noqa: E402
+from artifact_dag_projector import project_artifact_dag  # noqa: E402
 
 
 def sha256(path: Path) -> str:
@@ -238,6 +239,25 @@ class ReviewExecutionTest(unittest.TestCase):
         self.assertTrue(summary["has_current_l1_review"])
 
     # -- A: research without a semantic report fails W2 -------------------
+
+    def test_registered_review_report_is_immutable_generated_evidence(self) -> None:
+        """Rewriting an existing report must surface as immutable-artifact drift."""
+
+        path = self._write_report(verdict="pass")
+        dag = json.loads((self.project / "artifact_dag.json").read_text(encoding="utf-8"))
+        node = next(row for row in dag["nodes"] if row["role"] == "review_report")
+        self.assertEqual(node["lifecycle"], "immutable")
+        self.assertEqual(node["sha256"], sha256(path))
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["verdict"] = "fail"
+        write_json(path, report)
+        _, _, events = project_artifact_dag(dag, project_root=self.project)
+        drift = {str(event["artifact_id"]): event for event in events}
+        self.assertEqual(
+            drift[node["artifact_id"]]["reason"],
+            "immutable_digest_drift",
+        )
+        self.assertTrue(drift[node["artifact_id"]]["invalidates_downstream"])
 
     def test_A_research_requires_semantic_report(self) -> None:
         _, errors = evaluate_w2_review(self.project, "research", run_id="run-1")

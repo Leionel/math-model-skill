@@ -132,10 +132,17 @@ def build_rerun_plan(dag: dict[str, Any], root: Path, changed: list[str]) -> dic
             roots.update(match)
         else:
             errors.append(f"changed artifact is not a node of the artifact DAG: {raw}")
+    drift_reasons: dict[str, str] = {}
     for event in events:
         artifact_id = event.get("artifact_id")
-        if isinstance(artifact_id, str) and event.get("invalidates_downstream") is True:
-            roots.add(artifact_id)
+        if not isinstance(artifact_id, str):
+            continue
+        # The projector already propagates `freshness != current` to every
+        # dependent regardless of lifecycle, so any digest drift is a change
+        # root.  Lifecycle only distinguishes a rewritten immutable artifact
+        # (tampering) from an edited mutable upstream (normal rework).
+        roots.add(artifact_id)
+        drift_reasons[artifact_id] = str(event.get("reason", "digest_drift"))
     for node_id, status in freshness.items():
         if status == "not_run":
             roots.add(node_id)
@@ -153,6 +160,7 @@ def build_rerun_plan(dag: dict[str, Any], root: Path, changed: list[str]) -> dic
             "producer_receipt_id": node.get("producer_receipt_id"),
             "freshness": freshness.get(node_id),
             "changed_root": node_id in roots,
+            "drift_reason": drift_reasons.get(node_id),
         })
     pending_gates: dict[str, list[str]] = {}
     for node_id in sorted(affected):

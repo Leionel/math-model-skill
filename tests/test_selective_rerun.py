@@ -22,7 +22,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _write_dag_project(project: Path, *, freeze_digest: bool = True) -> dict:
+def _write_dag_project(project: Path, *, freeze_digest: bool = True, mutable_digest: bool = False) -> dict:
     (project / "data").mkdir(exist_ok=True)
     input_path = project / "data" / "input.json"
     input_path.write_text(json.dumps({"rows": 3}), encoding="utf-8")
@@ -46,6 +46,18 @@ def _write_dag_project(project: Path, *, freeze_digest: bool = True) -> dict:
     }
     if freeze_digest:
         frozen_node["sha256"] = _sha256(frozen_path)
+    results_node = {
+        "artifact_id": "A2",
+        "role": "results",
+        "path": "results.json",
+        "producer_id": "solve_cmd",
+        "dependencies": [{"artifact_id": "A1", "relation": "consumes"}],
+        "lifecycle": "mutable",
+        "freshness": "current",
+        "digest_owner": "artifact_dag",
+    }
+    if mutable_digest:
+        results_node["sha256"] = _sha256(results_path)
     dag = {
         "schema_version": "2.0",
         "run_id": "run-1",
@@ -60,16 +72,7 @@ def _write_dag_project(project: Path, *, freeze_digest: bool = True) -> dict:
                 "freshness": "current",
                 "digest_owner": "artifact_dag",
             },
-            {
-                "artifact_id": "A2",
-                "role": "results",
-                "path": "results.json",
-                "producer_id": "solve_cmd",
-                "dependencies": [{"artifact_id": "A1", "relation": "consumes"}],
-                "lifecycle": "mutable",
-                "freshness": "current",
-                "digest_owner": "artifact_dag",
-            },
+            results_node,
             frozen_node,
             {
                 "artifact_id": "A4",
@@ -140,6 +143,27 @@ class BuildRerunPlanTest(unittest.TestCase):
         self.assertEqual(plan["change_roots"], ["A3"])
         self.assertEqual(plan["affected_artifact_ids"], ["A3", "A4"])
         self.assertIn("p2", plan["pending_gates"])
+
+    def test_mutable_declared_digest_drift_is_not_reported_as_no_change(self) -> None:
+        """A mutable node that declares a digest still signals rework when edited."""
+
+        dag = _write_dag_project(self.project, mutable_digest=True)
+        (self.project / "results.json").write_text(json.dumps({"score": 2.0}), encoding="utf-8")
+        plan = build_rerun_plan(dag, self.project, [])
+        self.assertTrue(plan["ok"], plan["errors"])
+        self.assertEqual(plan["change_roots"], ["A2"])
+        self.assertEqual(plan["affected_artifact_ids"], ["A2", "A3", "A4"])
+        self.assertFalse(plan["warnings"], plan["warnings"])
+
+    def test_drift_reason_distinguishes_mutable_edit_from_immutable_rewrite(self) -> None:
+        dag = _write_dag_project(self.project, mutable_digest=True)
+        (self.project / "results.json").write_text(json.dumps({"score": 2.0}), encoding="utf-8")
+        (self.project / "frozen.json").write_text(json.dumps({"status": "tampered"}), encoding="utf-8")
+        plan = build_rerun_plan(dag, self.project, [])
+        reasons = {step["artifact_id"]: step["drift_reason"] for step in plan["rerun_steps"]}
+        self.assertEqual(reasons["A2"], "digest_drift")
+        self.assertEqual(reasons["A3"], "immutable_digest_drift")
+        self.assertIsNone(reasons["A4"])
 
     def test_v1_dag_is_rejected(self) -> None:
         plan = build_rerun_plan({"schema_version": "1.0", "run_id": "r", "nodes": []}, self.project, [])
