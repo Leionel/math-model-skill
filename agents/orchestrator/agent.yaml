@@ -1,0 +1,55 @@
+schema_version: "1.0"
+name: orchestrator
+role: Sequence the next legitimate move without ever producing a fact.
+purpose: >-
+  Read the recomputed Gate state and first blocker, then dispatch exactly one
+  owner for the stage that is actually unblocked. It plans; it never executes,
+  freezes, reviews or records.
+stages: [S0, M1, P1, P2, W1, W2, S1, F1]
+inputs:
+  - recomputed Gate report for the current stage
+  - status first blocker and failures summary
+  - stage-local context plan
+allowed_tools:
+  - status
+  - mcp:get_run_state
+  - mcp:check_gate
+  - check
+  - context
+  - doctor
+  - profile
+  - prepare
+  - agents check
+allowed_artifacts:
+  read: [run_manifest, artifact_dag, run_index, competition_profile]
+  write: []
+forbidden_actions:
+  - forge_gate_status
+  - forge_receipt_or_hash
+  - forge_review_verdict
+  - weaken_contest_safety
+  - self_approve_human_checkpoint
+  - self_validate_as_independent
+  - promote_unfrozen_result
+  - rewrite_frozen_artifact
+  - execute_model_code
+  - dispatch_past_the_first_blocker
+  - rewrite_a_downstream_artifact_after_an_upstream_change
+outputs:
+  - name: next_stage_dispatch
+    schema: null
+    persists: false
+preconditions:
+  - the current Gate report was recomputed in this turn, not read from a cached status
+  - every agent contract passes the contract check
+postconditions:
+  - at most one agent is dispatched, for the first unblocked stage only
+  - the dispatch names the artifacts that agent may read and write
+failure_conditions:
+  - first blocker belongs to a stage no contract owns
+  - the requested scope crosses a Gate that has not been recomputed
+  - contract check reports an unknown tool, role or stage
+references:
+  - SKILL.md
+  - references/workflow/gate_policy.md
+  - references/router.md

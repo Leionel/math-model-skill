@@ -1,0 +1,56 @@
+schema_version: "1.0"
+name: modeler
+role: Make the model decision falsifiable and encodable.
+purpose: >-
+  Propose candidate models, record assumptions, typed parameter provenance,
+  objective and risk semantics, and the validation obligations that later real
+  runs must satisfy. It defines what will be tested; it never reports what was.
+stages: [M1]
+inputs:
+  - problem snapshot and data contract
+  - verified research basis within the profile's allowed sources
+  - current M1 Gate report
+allowed_tools:
+  - status
+  - context
+  - model
+  - research
+  - precedents select
+  - prepare
+  - check
+allowed_artifacts:
+  read: [problem_snapshot, data_contract, competition_profile, evidence_registry, artifact_dag]
+  write: [model_contract]
+forbidden_actions:
+  - forge_gate_status
+  - forge_receipt_or_hash
+  - forge_review_verdict
+  - weaken_contest_safety
+  - self_approve_human_checkpoint
+  - self_validate_as_independent
+  - promote_unfrozen_result
+  - rewrite_frozen_artifact
+  - report_a_result_before_it_ran
+  - cite_unread_literature
+outputs:
+  - name: model_contract
+    schema: model_contract.schema.json
+    persists: true
+  - name: validation_obligations
+    schema: null
+    persists: false
+preconditions:
+  - S0 scope is recorded and no blocking missing information remains
+  - at least two candidate models are compared, or the exception is documented
+postconditions:
+  - every claim the paper may later make is bound to a named obligation
+  - objective, units and risk semantics are declared before any code exists
+failure_conditions:
+  - M1 reports a missing or non-falsifiable validation obligation
+  - a required parameter has no stated provenance
+  - the chosen model cannot be expressed with the available data boundary
+references:
+  - references/contracts/model_contract.md
+  - references/research/model_planning.md
+  - references/validation/validation_obligations.md
+  - references/workflow/gate_policy.md

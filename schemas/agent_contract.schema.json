@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/agent-contract.schema.json",
+  "title": "Agent Role Contract (v2)",
+  "description": "Declares what one reasoning agent may do on top of the deterministic Harness. It grants no Gate authority: a contract that names a tool, artifact role, schema, or Gate is only valid if that name exists in the Harness today, which scripts/agents/check_contracts.py verifies against the live CLI parser, schemas/, and the declared artifact-role vocabulary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "role",
+    "purpose",
+    "stages",
+    "inputs",
+    "allowed_tools",
+    "allowed_artifacts",
+    "forbidden_actions",
+    "outputs",
+    "preconditions",
+    "postconditions",
+    "failure_conditions",
+    "references"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "role": { "type": "string", "minLength": 1 },
+    "purpose": { "type": "string", "minLength": 20 },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "enum": ["S0", "M1", "P1", "P2", "W1", "W2", "S1", "F1"] }
+    },
+    "inputs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "allowed_tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "allowed_artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["read", "write"],
+      "properties": {
+        "read": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "write": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "forbidden_actions": {
+      "type": "array",
+      "minItems": 5,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "schema", "persists"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "schema": { "type": ["string", "null"] },
+          "persists": { "type": "boolean" }
+        }
+      }
+    },
+    "preconditions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "postconditions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "failure_conditions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "references": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  }
+}

@@ -1,0 +1,63 @@
+schema_version: "1.0"
+name: experimenter
+role: Turn the contract into executed facts, then freeze only what validated.
+purpose: >-
+  Plan and run the real computation through the Harness receipt seam, compare
+  outcomes against the declared obligations, and freeze a claimable result.
+  Every number it reports must trace back to a captured process.
+stages: [P1, P2]
+inputs:
+  - ready model contract with validation obligations
+  - current P1/P2 Gate report and run index
+  - code, inputs and environment actually used for the run
+allowed_tools:
+  - status
+  - mcp:list_artifacts
+  - mcp:verify_artifact
+  - context
+  - execute
+  - solve
+  - freeze
+  - prepare
+  - check
+  - doctor
+allowed_artifacts:
+  read: [model_contract, data_contract, problem_snapshot, artifact_dag, run_index, implementation_map]
+  write: [command_receipt, frozen_results, evidence_registry, validation_report, implementation_map]
+forbidden_actions:
+  - forge_gate_status
+  - forge_receipt_or_hash
+  - forge_review_verdict
+  - weaken_contest_safety
+  - self_approve_human_checkpoint
+  - self_validate_as_independent
+  - promote_unfrozen_result
+  - rewrite_frozen_artifact
+  - claim_a_result_without_a_receipt
+  - delete_a_failed_run
+  - present_regression_or_demo_as_a_benchmark
+outputs:
+  - name: command_receipt
+    schema: command_receipt.schema.json
+    persists: true
+  - name: frozen_results
+    schema: frozen_results.schema.json
+    persists: true
+  - name: validation_report
+    schema: validation_report.schema.json
+    persists: true
+preconditions:
+  - M1 passed on a recomputed report and the model contract is ready
+  - the command to run is a real process, not a rephrasing of expected output
+postconditions:
+  - exactly one selected full run is bound to the frozen result
+  - each obligation carries a recomputed verdict, including failures
+failure_conditions:
+  - the smoke or full receipt is missing, failing, or not selected
+  - independent validation is unavailable, so P2 cannot be claimed
+  - an output metric is absent or non-finite in the real output
+references:
+  - references/research/coding_protocols.md
+  - references/validation/numeric_correctness.md
+  - references/validation/experiment_artifacts.md
+  - references/contracts/scope_contract.md

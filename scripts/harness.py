@@ -1367,7 +1367,24 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.set_defaults(handler=_migrate)
     migrate.add_argument("--layout", choices=("hidden",), help="plan or apply a v2 control-state relocation into .harness/state")
     migrate.add_argument("--apply", action="store_true", help="apply --layout hidden after inspecting its default dry-run report")
+
+    agents = sub.add_parser("agents", help="inspect declared agent role contracts")
+    agents_sub = agents.add_subparsers(dest="agents_command", required=True)
+    agents_check = agents_sub.add_parser(
+        "check",
+        help="verify every agents/*/agent.yaml names only tools, roles, schemas and Gates this Harness has",
+    )
+    agents_check.add_argument("--json", action="store_true", help="machine-readable output")
+    agents_check.set_defaults(handler=_agents)
     return parser
+
+
+def _agents(args: argparse.Namespace) -> int:
+    from agent_contracts.check_contracts import check_all, render_human  # noqa: PLC0415
+
+    result = check_all()
+    _emit(result, machine=args.json, human=render_human(result))
+    return 0 if result["ok"] else 1
 
 
 def _status(args: argparse.Namespace) -> int:

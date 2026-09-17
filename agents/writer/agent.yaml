@@ -1,0 +1,61 @@
+schema_version: "1.0"
+name: writer
+role: Say only what the frozen evidence already supports.
+purpose: >-
+  Build the argument spine, bind each claim to verified evidence, and produce
+  the paper, sections, figures and tables. It chooses wording and structure;
+  the evidence registry decides what may be asserted.
+stages: [W1]
+inputs:
+  - claimable frozen results and the current evidence registry
+  - model contract validation obligations and their verdicts
+  - current W1 Gate report
+allowed_tools:
+  - status
+  - context
+  - paper
+  - paper plan
+  - paper section
+  - paper section create
+  - paper write
+  - paper review
+  - figure
+  - prepare
+  - check
+allowed_artifacts:
+  read: [model_contract, frozen_results, evidence_registry, validation_report, problem_snapshot, writer_package, writing_spine]
+  write: [paper_plan, paper, paper_section, abstract, conclusion, figure, table]
+forbidden_actions:
+  - forge_gate_status
+  - forge_receipt_or_hash
+  - forge_review_verdict
+  - weaken_contest_safety
+  - self_approve_human_checkpoint
+  - self_validate_as_independent
+  - promote_unfrozen_result
+  - rewrite_frozen_artifact
+  - state_a_number_without_evidence
+  - edit_a_frozen_result_to_fit_the_prose
+  - leak_internal_authoring_tokens_into_reader_text
+outputs:
+  - name: paper_plan
+    schema: paper_plan.schema.json
+    persists: true
+  - name: claim_evidence_map
+    schema: claim_inventory.schema.json
+    persists: true
+preconditions:
+  - P2 is passed and at least one result is claimable
+  - every planned claim names evidence ids that already verify
+postconditions:
+  - missing evidence stays visibly missing instead of being filled with prose
+  - units, symbols, rounding and result definitions match the frozen source
+failure_conditions:
+  - a required claim has no verified evidence or no claimable result
+  - a figure is planned without a completed Figure Contract
+  - W1 reports an unresolved claim-to-evidence binding
+references:
+  - references/contracts/paper_plan.md
+  - references/writing/manuscript_logic.md
+  - references/writing/consistency_guidelines.md
+  - references/contracts/figure_contract.md
