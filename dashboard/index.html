@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Console</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --ink: #e6e8ee;
+    --dim: #8b94a7; --ok: #45c07a; --bad: #ef5f5f; --warn: #e0a33a; --lock: #4b5566;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 16px; align-items: baseline; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .04em; text-transform: uppercase; }
+  .meta { color: var(--dim); font-size: 12px; }
+  .badge { padding: 2px 8px; border-radius: 3px; font-size: 11px; border: 1px solid var(--line); color: var(--dim); }
+  main { padding: 20px 24px 48px; display: grid; gap: 18px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
+  h2 { font-size: 11px; margin: 0 0 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+  .gates { display: flex; flex-wrap: wrap; gap: 8px; }
+  .gate { border: 1px solid var(--line); border-radius: 5px; padding: 8px 12px; min-width: 92px; }
+  .gate b { display: block; font-size: 15px; }
+  .gate span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+  .gate.passed { border-color: var(--ok); } .gate.passed span { color: var(--ok); }
+  .gate.blocked { border-color: var(--bad); } .gate.blocked span { color: var(--bad); }
+  .gate.locked { border-color: var(--lock); opacity: .55; } .gate.locked span { color: var(--lock); }
+  ol.timeline { list-style: none; margin: 0; padding: 0; }
+  ol.timeline li { display: grid; grid-template-columns: 16px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  ol.timeline li:last-child { border-bottom: 0; }
+  ol.timeline li .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--lock); }
+  ol.timeline li.ok .dot { background: var(--ok); }
+  ol.timeline li.bad .dot { background: var(--bad); }
+  .t-sub { color: var(--dim); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  td.stale, .stale { color: var(--bad); }
+  td.fresh { color: var(--ok); }
+  ul.blockers { margin: 0; padding-left: 18px; color: var(--warn); }
+  ul.blockers li { margin: 4px 0; }
+  code { color: #b9c6ff; }
+  svg text { font: 10px ui-monospace, Menlo, monospace; fill: var(--ink); }
+  .legend { color: var(--dim); font-size: 11px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Harness Console</h1>
+  <div class="meta" id="head">loading&hellip;</div>
+  <div class="badge">read-only: no write path</div>
+</header>
+<main>
+  <section><h2>Gates</h2><div class="gates" id="gates"></div>
+    <div class="legend" id="gatelegend"></div></section>
+  <section><h2>Blockers &amp; next actions</h2><ul class="blockers" id="blockers"></ul></section>
+  <section><h2>Run timeline</h2><ol class="timeline" id="timeline"></ol></section>
+  <section><h2>Artifact lineage</h2><div id="dag"></div>
+    <div class="legend">Layout is recomputed from <code>artifact_dag.json</code> dependencies; every node's freshness comes from a digest recomputed at request time, not from the stored field.</div></section>
+  <section><h2>Receipts</h2><table id="receipts"></table></section>
+  <section><h2>Reviews</h2><table id="reviews"></table></section>
+</main>
+<script>
+const el = (id) => document.getElementById(id);
+const rows = (id, head, data) => {
+  el(id).innerHTML = `<tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr>` +
+    (data.length ? data.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${head.length}" style="color:#8b94a7">none recorded</td></tr>`);
+};
+
+function layout(artifacts) {
+  const byId = new Map(artifacts.map((a) => [a.artifact_id, a]));
+  const depth = (id, seen = new Set()) => {
+    const node = byId.get(id);
+    if (!node || seen.has(id)) return 0;
+    seen.add(id);
+    const deps = node.deps || [];
+    return deps.length ? 1 + Math.max(...deps.map((d) => depth(d, seen))) : 0;
+  };
+  const columns = [];
+  artifacts.forEach((a) => {
+    const d = depth(a.artifact_id);
+    (columns[d] = columns[d] || []).push(a);
+  });
+  return columns.filter(Boolean);
+}
+
+function drawDag(artifacts) {
+  const columns = layout(artifacts);
+  const w = 168, h = 42, gx = 74, gy = 18;
+  const width = columns.length * (w + gx) + 20;
+  const height = Math.max(...columns.map((c) => c.length)) * (h + gy) + 20;
+  const pos = new Map();
+  columns.forEach((col, x) => col.forEach((a, y) => pos.set(a.artifact_id, {
+    x: 20 + x * (w + gx), y: 20 + y * (h + gy), a,
+  })));
+  let edges = "";
+  pos.forEach((node) => (node.a.deps || []).forEach((dep) => {
+    const from = pos.get(dep);
+    if (!from) return;
+    edges += `<line x1="${from.x + w}" y1="${from.y + h / 2}" x2="${node.x}" y2="${node.y + h / 2}"
+      stroke="#3b4252" stroke-width="1.2" marker-end="url(#arrow)"/>`;
+  }));
+  let boxes = "";
+  pos.forEach((node) => {
+    const stale = node.a.freshness !== "current";
+    boxes += `<rect x="${node.x}" y="${node.y}" width="${w}" height="${h}" rx="5"
+      fill="#1c2029" stroke="${stale ? "#ef5f5f" : "#45c07a"}" stroke-width="1.3"/>
+      <text x="${node.x + 9}" y="${node.y + 17}">${(node.a.role || "").slice(0, 22)}</text>
+      <text x="${node.x + 9}" y="${node.y + 31}" fill="#8b94a7">${node.a.artifact_id}</text>`;
+  });
+  el("dag").innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${Math.min(height, 520)}">
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6"
+      orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b4252"/></marker></defs>
+    ${edges}${boxes}</svg>`;
+}
+
+async function refresh() {
+  const data = await (await fetch("/api/snapshot")).json();
+  el("head").innerHTML = `<code>${data.project_root}</code> &middot; run ${data.run_id} &middot; stage <b>${data.stage}</b>
+    &middot; preset ${data.preset} &middot; ${data.gate_status} &middot; ai_usage <b>${data.ai_usage_state}</b>`;
+  el("gates").innerHTML = data.gates.map((g) =>
+    `<div class="gate ${g.state}"><b>${g.gate}</b><span>${g.state}</span>
+      <div class="meta" style="font-size:10px">${g.human_checkpoint ? `human: ${g.checkpoint_by}` : (g.state === "locked" ? "" : "no checkpoint")}</div>
+    </div>`).join("");
+  el("gatelegend").textContent = `first blocker: ${data.first_blocked_gate || "none"} · pending human: ${data.pending_human_checkpoints.join(", ") || "none"} · stale artifacts: ${data.stale_artifacts.length}`;
+  el("blockers").innerHTML = (data.blockers.length
+    ? data.blockers.map((b) => `<li><b>${b.gate.toUpperCase()}</b> ${b.message}<div class="t-sub">next: ${b.next_action}</div></li>`).join("")
+    : "<li style=\"color:#45c07a\">no blockers reported</li>") +
+    data.next_actions.map((a) => `<li>next action: ${a}</li>`).join("");
+  el("timeline").innerHTML = data.timeline.length ? data.timeline.map((e) =>
+    `<li class="${e.ok ? "ok" : "bad"}"><span class="dot"></span><div>
+      <div>${e.label} <span class="t-sub">${e.kind}</span></div>
+      <div class="t-sub">${e.at || ""} &middot; ${e.detail || ""}</div></div></li>`).join("")
+    : `<li><span class="dot"></span><div class="t-sub">nothing executed yet</div></li>`;
+  drawDag((data.artifacts || []).map((a) => ({ ...a, deps: a.dependencies || [] })));
+  rows("receipts", ["receipt", "stage", "selected", "exit", "started"],
+    data.receipts.map((r) => [r.receipt_id, r.stage, r.selected ? "yes" : "", r.exit_code, r.started_at]));
+  rows("reviews", ["perspective", "independence", "verdict", "findings", "at"],
+    data.reviews.map((r) => [r.perspective, r.independence_level, r.verdict, r.findings, r.reviewed_at]));
+}
+refresh().catch((err) => { el("head").textContent = "failed to load snapshot: " + err; });
+setInterval(() => refresh().catch(() => {}), 5000);
+</script>
+</body>
+</html>

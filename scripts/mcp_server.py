@@ -41,8 +41,20 @@ ALLOWED_ROOTS_ENV = "MATH_HARNESS_ALLOWED_ROOTS"
 CALL_TIMEOUT_SECONDS = 55
 PROTOCOL_VERSION = "2025-03-26"
 SERVER_NAME = "math_harness"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 GATES = ("M1", "P1", "P2", "W1", "W2", "S1")
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+if __package__:
+    from . import mcp_tools
+else:
+    import mcp_tools
+
+from artifact_dag_projector import project_artifact_dag  # noqa: E402
+from project_layout import resolve_control_path  # noqa: E402
 
 PARSE_ERROR = -32700
 METHOD_NOT_FOUND = -32601
@@ -240,6 +252,40 @@ TOOL_BUILDERS = {
     "ai_status": _build_ai_status,
 }
 
+# Shared dependencies handed to computed handlers so this module stays the only
+# place that knows about processes, roots and redaction.
+MODULE_CTX: dict[str, Any] = {
+    "HARNESS_CLI": HARNESS_CLI,
+    "SCHEMA_DIR": HARNESS_REPO / "schemas",
+    "ToolCallError": ToolCallError,
+    "project_artifact_dag": project_artifact_dag,
+    "resolve_control_path": resolve_control_path,
+    "run_harness": None,  # bound below once the function is defined
+}
+
+MUTATING_TOOL_NAMES = frozenset(
+    name for name, spec in mcp_tools.COMPUTED_TOOLS.items() if spec.get("mutating")
+)
+
+FACADE_TOOLS.extend(
+    _tool(
+        name,
+        str(spec["description"]),
+        {**PROJECT_ROOT_PROPERTY, **spec["properties"]},
+        ["project_root", *spec["required"]],
+    )
+    for name, spec in sorted(mcp_tools.COMPUTED_TOOLS.items())
+)
+
+
+def tool_surface(include_mutating: bool = False) -> list[str]:
+    """Every tool name this server can serve; used by the agent contract check."""
+
+    names = set(TOOL_BUILDERS) | set(mcp_tools.COMPUTED_TOOLS)
+    if not include_mutating:
+        names -= MUTATING_TOOL_NAMES
+    return sorted(names)
+
 
 def build_argv(tool_name: str, arguments: Mapping[str, Any], project_root: Path) -> list[str]:
     """Compose the full harness.py argv for one facade call (used by tests too)."""
@@ -263,18 +309,43 @@ def run_harness(argv: list[str], project_root: Path, timeout: float = CALL_TIMEO
     return completed.returncode, stdout, stderr
 
 
+MODULE_CTX["run_harness"] = run_harness
+
+
+def visible_tools(env: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
+    """Tools this server advertises right now.
+
+    A mutating tool is listed only when the operator enabled it, so an agent
+    cannot discover and try a capability that is off by default.
+    """
+
+    source = os.environ if env is None else env
+    enabled = source.get(mcp_tools.review.ALLOW_ENV) == "1"
+    return [tool for tool in FACADE_TOOLS if enabled or tool["name"] not in MUTATING_TOOL_NAMES]
+
+
 def call_tool(name: Any, arguments: Any, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     """Execute one tools/call and return its MCP result envelope."""
 
     if not isinstance(name, str):
         raise ToolCallError("params.name must be a string")
-    if name not in TOOL_BUILDERS:
+    if name not in TOOL_BUILDERS and name not in mcp_tools.COMPUTED_TOOLS:
         raise ToolCallError(f"unknown tool: {name}")
+    if name in MUTATING_TOOL_NAMES and (os.environ if env is None else env).get(mcp_tools.review.ALLOW_ENV) != "1":
+        raise ToolCallError(
+            f"{name} is disabled: set {mcp_tools.review.ALLOW_ENV}=1 on the server to enable a "
+            "mutating tool"
+        )
     if arguments is None:
         arguments = {}
     if not isinstance(arguments, Mapping):
         raise ToolCallError("params.arguments must be an object")
     project_root = ensure_allowed(arguments.get("project_root"), env)
+    if name in mcp_tools.COMPUTED_TOOLS:
+        ctx = {**MODULE_CTX, "env": dict(os.environ if env is None else env)}
+        payload = mcp_tools.COMPUTED_TOOLS[name]["handler"](project_root, arguments, ctx)
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        return {"content": [{"type": "text", "text": redact_text(text)}], "structuredContent": payload}
     try:
         argv = build_argv(name, arguments, project_root)
         exit_code, stdout, stderr = run_harness(argv, project_root)
@@ -332,7 +403,7 @@ class StdioSession:
         if method == "ping":
             return self._result(identifier, {})
         if method == "tools/list":
-            return self._result(identifier, {"tools": FACADE_TOOLS})
+            return self._result(identifier, {"tools": visible_tools(self._env)})
         if method == "tools/call":
             return self._result(identifier, self._call(params))
         if isinstance(identifier, (str, int)):

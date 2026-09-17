@@ -1,0 +1,124 @@
+"""Dashboard console tests.
+
+Two properties matter more than the rendering: the console must show what the
+Harness recomputes (not what a manifest claims), and it must have no write path.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "dashboard"))
+
+import server as console  # noqa: E402
+
+
+def _tree_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+class DashboardTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temp = tempfile.TemporaryDirectory(prefix="dashboard-")
+        cls.project = Path(cls.temp.name) / "proj"
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "harness.py"), "init",
+             "--project", str(cls.project), "--competition", "cumcm", "--preset", "sprint", "--json"],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temp.cleanup()
+
+    def setUp(self) -> None:
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), console.Handler)
+        console.Handler.root = self.project.resolve()
+        thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (self.httpd.shutdown(), self.httpd.server_close()))
+        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+
+    def get(self, path: str) -> tuple[int, bytes]:
+        with urllib.request.urlopen(self.base + path, timeout=20) as response:
+            return response.status, response.read()
+
+    def test_snapshot_is_recomputed_and_names_its_sources(self) -> None:
+        snapshot = console.snapshot(self.project)
+        self.assertTrue(snapshot["read_only"])
+        self.assertEqual(snapshot["gate_status"], "BLOCKED")
+        states = {row["gate"]: row["state"] for row in snapshot["gates"]}
+        self.assertEqual(states["M1"], "blocked")
+        # S0 and F1 are boundary stages, not recomputable Gates: they must not
+        # be rendered as if a Gate were pending.
+        self.assertEqual(states["S0"], "boundary")
+        self.assertEqual(states["F1"], "boundary")
+        self.assertTrue(any("mcp:" in source for source in snapshot["sources"]))
+        self.assertTrue(snapshot["blockers"])
+        self.assertTrue(all(row.get("next_action") for row in snapshot["blockers"]))
+
+    def test_api_serves_the_snapshot_and_index(self) -> None:
+        code, body = self.get("/api/snapshot")
+        self.assertEqual(code, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["project_root"], str(self.project.resolve()))
+        self.assertEqual(len(payload["gates"]), 8)
+        status, page = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Harness Console", page)
+        self.assertIn(b"/api/snapshot", page)
+
+    def test_serving_never_mutates_the_project(self) -> None:
+        before = _tree_digest(self.project)
+        self.get("/api/snapshot")
+        self.get("/")
+        artifact_id = json.loads(self.get("/api/snapshot")[1])["artifacts"][0]["artifact_id"]
+        console.snapshot(self.project)
+        self.assertIsNotNone(artifact_id)
+        self.assertEqual(_tree_digest(self.project), before, "the console wrote to the project")
+
+    def test_post_is_refused_with_the_producer_command_instead(self) -> None:
+        request = urllib.request.Request(self.base + "/api/approve", data=b"{}", method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=20)
+        self.assertEqual(raised.exception.code, 405)
+        body = json.loads(raised.exception.read())
+        self.assertIn("read-only", body["error"])
+        self.assertIn("harness check", body["instead"])
+
+    def test_unknown_route_is_a_404_not_a_stack_trace(self) -> None:
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.get("/api/evaluations")
+        self.assertEqual(raised.exception.code, 404)
+
+    def test_serve_refuses_a_project_outside_the_allowlist(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "dashboard" / "server.py"), "--project", str(self.project), "--port", "0"],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+            env={**os.environ, "DASHBOARD_ALLOWED_ROOTS": str(Path(self.temp.name) / "elsewhere")},
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("refusing to serve", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,16 @@ EXPECTED_TOOLS = {
     "ai_status",
 }
 
+# Computed handlers still call the Harness, but they reshape its answer instead
+# of passing stdout through, so they are tracked separately from the argv facade.
+READ_ONLY_COMPUTED_TOOLS = {
+    "get_run_state",
+    "check_gate",
+    "list_artifacts",
+    "verify_artifact",
+}
+MUTATING_TOOLS = {"request_review"}
+
 
 def sample_arguments(tool: str) -> dict:
     if tool == "research_context":
@@ -46,8 +57,20 @@ class FacadeMappingTest(unittest.TestCase):
     """Every facade tool must map onto the real harness CLI surface."""
 
     def test_facade_covers_exactly_the_planned_tools(self) -> None:
-        self.assertEqual({row["name"] for row in mcp_server.FACADE_TOOLS}, EXPECTED_TOOLS)
+        self.assertEqual(
+            {row["name"] for row in mcp_server.FACADE_TOOLS},
+            EXPECTED_TOOLS | READ_ONLY_COMPUTED_TOOLS | MUTATING_TOOLS,
+        )
         self.assertEqual(set(mcp_server.TOOL_BUILDERS), EXPECTED_TOOLS)
+        self.assertEqual(set(mcp_server.MUTATING_TOOL_NAMES), MUTATING_TOOLS)
+
+    def test_mutating_tools_are_not_advertised_by_default(self) -> None:
+        advertised = {row["name"] for row in mcp_server.visible_tools({})}
+        self.assertEqual(advertised, EXPECTED_TOOLS | READ_ONLY_COMPUTED_TOOLS)
+        enabled = {row["name"] for row in mcp_server.visible_tools(
+            {"MATH_HARNESS_ALLOW_REVIEW_TOOL": "1"},
+        )}
+        self.assertIn("request_review", enabled)
 
     def test_package_module_imports_from_a_clean_working_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -240,7 +263,7 @@ class ProtocolEndToEndTest(unittest.TestCase):
             self.assertEqual(result["serverInfo"]["name"], mcp_server.SERVER_NAME)
             _, message = client.request("tools/list")
             tools = message["result"]["tools"]
-            self.assertEqual({row["name"] for row in tools}, EXPECTED_TOOLS)
+            self.assertEqual({row["name"] for row in tools}, EXPECTED_TOOLS | READ_ONLY_COMPUTED_TOOLS)
             for row in tools:
                 self.assertIn("project_root", row["inputSchema"]["properties"])
                 self.assertIn("project_root", row["inputSchema"]["required"])
@@ -331,3 +354,81 @@ class ProtocolEndToEndTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ComputedToolTest(unittest.TestCase):
+    """Computed tools must answer from a recomputed Harness verdict."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="mcp-computed-")
+        self.root = Path(self.temp.name)
+        subprocess.run(
+            [sys.executable, str(CLI), "init", "--project", str(self.root),
+             "--competition", "cumcm", "--preset", "sprint", "--json"],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+        self.env = {"MATH_HARNESS_ALLOWED_ROOTS": str(self.root)}
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _call(self, name: str, **arguments: object) -> dict:
+        result = mcp_server.call_tool(name, {"project_root": str(self.root), **arguments}, self.env)
+        self.assertNotIn("isError", result, result)
+        return result["structuredContent"]
+
+    def test_get_run_state_reports_the_first_blocker(self) -> None:
+        payload = self._call("get_run_state")
+        self.assertEqual(payload["gate_status"], "BLOCKED")
+        self.assertEqual(payload["first_blocked_gate"], "m1")
+        self.assertTrue(payload["blockers"])
+        self.assertTrue(payload["next_actions"])
+        self.assertTrue(all("next_action" in row for row in payload["blockers"]))
+
+    def test_check_gate_refuses_and_names_the_reason(self) -> None:
+        payload = self._call("check_gate", gate="M1")
+        self.assertFalse(payload["allowed"])
+        self.assertNotEqual(payload["reason"], "gate_recomputed_pass")
+        self.assertIn("recomputed", payload["note"])
+
+    def test_verify_artifact_recomputes_freshness(self) -> None:
+        listed = self._call("list_artifacts")
+        profile = listed["artifacts"][0]
+        # identity_only hashing declares no digest for this node, so there is no
+        # drift to detect; the tool must say so rather than invent one.
+        unhashed = self._call("verify_artifact", artifact_id=profile["artifact_id"])
+        self.assertTrue(unhashed["verified"], unhashed["errors"])
+        self.assertIsNone(profile.get("sha256"))
+
+        draft = self.root / "paper.txt"
+        draft.write_text("first draft\n", encoding="utf-8")
+        dag_path = self.root / "artifact_dag.json"
+        dag = json.loads(dag_path.read_text(encoding="utf-8"))
+        dag["nodes"].append({
+            "artifact_id": "ART-PAPER-9", "role": "paper",
+            "path": "paper.txt", "producer_id": "test",
+            "dependencies": [], "lifecycle": "mutable", "freshness": "current",
+            "digest_owner": "artifact_dag", "digest_algorithm": "sha256",
+            "sha256": hashlib.sha256(draft.read_bytes()).hexdigest(),
+        })
+        dag_path.write_text(json.dumps(dag, indent=2), encoding="utf-8")
+        self.assertTrue(self._call("verify_artifact", artifact_id="ART-PAPER-9")["verified"])
+
+        draft.write_text("second draft\n", encoding="utf-8")
+        stale = self._call("verify_artifact", artifact_id="ART-PAPER-9")
+        self.assertFalse(stale["verified"])
+        self.assertTrue(any("digest_drift" in row for row in stale["errors"]), stale["errors"])
+
+    def test_unknown_artifact_is_reported_not_crashed(self) -> None:
+        payload = self._call("verify_artifact", artifact_id="ART-NOPE")
+        self.assertFalse(payload["verified"])
+        self.assertTrue(any("no artifact DAG node matches" in row for row in payload["errors"]))
+
+    def test_mutating_review_tool_is_denied_without_server_opt_in(self) -> None:
+        with self.assertRaises(mcp_server.ToolCallError) as raised:
+            mcp_server.call_tool("request_review", {"project_root": str(self.root)}, self.env)
+        self.assertIn("disabled", str(raised.exception))
+
+    def test_a_disallowed_root_is_denied_before_any_handler_runs(self) -> None:
+        with self.assertRaises(mcp_server.ToolCallError):
+            mcp_server.call_tool("get_run_state", {"project_root": str(self.root)}, {"MATH_HARNESS_ALLOWED_ROOTS": ""})
