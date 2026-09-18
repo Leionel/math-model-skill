@@ -113,7 +113,7 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 ### 2.2 P1-B Verifier Plugin Architecture（W2–W4）
 
 - **触点**：`scripts/qa/check_gates.py`（Gate 大分支 + `rerun_enhanced_deterministic_qa`）、`scripts/qa/run_deterministic_qa.py`（`PROFILE_FLAG_LEVELS`）、`scripts/qa/check_consistency.py`、`check_math_writing.py`、`check_formula_replay.py`。
-- **契约**：`schemas/verifier.schema.json` + `scripts/verifiers/registry.py`——`id / consumes / gates / severity / deterministic / verify() / repair_hint()`（YAML 声明，路线 §8 形态）。
+- **契约**：`schemas/verifier.schema.json` + `scripts/verifiers/registry.py`——`id / consumes / gates / severity / deterministic / repair_hint()`（YAML 声明，路线 §8 形态）。**契约定稿已完成**：声明经 schema + registry 校验，并由 `tests/test_verifier_registry.py` 绑定到真实 Gate 运行时（`_v2_gate_<gate>` 必须真正调用该入口脚本）；首批两条声明 `artifact-freshness`、`unit-consistency` 服务于 M1。Gate 行为未变，试点迁移为下一步。
 - **试点三个，一次迁一个**（W3 ①、W4 ②③）：
   1. `ClaimEvidenceVerifier`（claim↔evidence 绑定）；
   2. `ArtifactFreshnessVerifier`（**吸收 GAP-16 上游新鲜度复检**）；

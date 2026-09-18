@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://math-modeling-skill-sion/schemas/verifier.schema.json",
+  "title": "Harness verifier declaration",
+  "description": "Metadata about a check this harness already ships: which script performs it, which canonical inputs it consumes, and which gate runtime invokes it. A declaration never replaces the checker's own verdict; it makes the check discoverable, gate-bound and repair-oriented.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verifier_id",
+    "entrypoint",
+    "consumes",
+    "gates",
+    "severity",
+    "deterministic",
+    "repair_hint"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "verifier_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "entrypoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script"],
+      "properties": {
+        "script": { "type": "string", "pattern": "^scripts/[A-Za-z0-9_./-]+\\.py$" }
+      }
+    },
+    "consumes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["ai_ledger", "artifact_dag", "competition_profile", "derived_results", "evidence_registry", "frozen_results", "implementation_map", "model_contract", "paper", "receipts", "review_evidence", "run_index", "run_manifest", "validation_report"] }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["m1", "p1", "p2", "w1", "w2", "s1"] }
+    },
+    "severity": { "enum": ["error", "warning"] },
+    "deterministic": { "type": "boolean" },
+    "repair_hint": { "type": "string", "minLength": 8 }
+  }
+}

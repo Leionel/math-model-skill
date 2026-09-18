@@ -1,0 +1,9 @@
+schema_version: "1.0"
+verifier_id: unit-consistency
+entrypoint:
+  script: scripts/qa/check_units.py
+consumes: [model_contract]
+gates: [m1]
+severity: error
+deterministic: true
+repair_hint: "fix the declared unit or dimension in the model contract, then rerun the M1 gate"

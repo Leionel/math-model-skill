@@ -1,0 +1,9 @@
+schema_version: "1.0"
+verifier_id: artifact-freshness
+entrypoint:
+  script: scripts/qa/check_artifact_dag.py
+consumes: [artifact_dag]
+gates: [m1]
+severity: error
+deterministic: true
+repair_hint: "refresh the stale producer output, then rerun the M1 gate"
