@@ -107,9 +107,8 @@ def execute_argv(receipt: dict[str, Any], project: Path) -> list[str]:
     ]
     if stage == "freeze":
         argv.append("--freeze")
-    selection = receipt.get("selection") if isinstance(receipt.get("selection"), dict) else {}
-    if selection.get("selected") is True:
-        argv.append("--selected")
+    # A repair re-run never re-claims selection: P2 requires exactly one
+    # selected receipt, so the original stays the selected execution fact.
     if receipt.get("seed") is not None:
         argv.extend(["--seed", str(receipt["seed"])])
     for ref in receipt.get("input_refs", []):

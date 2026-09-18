@@ -21,7 +21,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_structured, rel_path, sha256_file, write_json  # noqa: E402
+from _common import load_structured, rel_path, sha256_file, write_json, write_json_atomic  # noqa: E402
 from project_layout import resolve_manifest_path  # noqa: E402
 from qa.validate_contracts import validate_value  # noqa: E402
 
@@ -84,7 +84,7 @@ def record_decision(root: Path, stage: str, role: str, decision: str, *, note: s
         "decision_artifact": rel_path(artifact_path, root),
         "decision_sha256": sha256_file(artifact_path),
     })
-    write_json(manifest_path, manifest, overwrite=True)
+    write_json_atomic(manifest_path, manifest)
     return {
         "checkpoint": stage,
         "decision": decision,
@@ -92,11 +92,3 @@ def record_decision(root: Path, stage: str, role: str, decision: str, *, note: s
         "previous_decision_sha256": previous_hash,
         "manifest_rows": len(rows),
     }
-
-
-def main() -> int:
-    raise SystemExit("human_checkpoints is a producer module; invoke it through `harness checkpoint approve`")
-
-
-if __name__ == "__main__":
-    main()

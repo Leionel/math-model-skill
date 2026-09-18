@@ -466,16 +466,18 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
     if args.verify_chain:
-        if not args.index:
-            print(json.dumps({"ok": False, "errors": ["--verify-chain requires --index <run_index.json>"]}, ensure_ascii=False))
+        try:
+            if not args.index:
+                raise ValueError("--verify-chain requires --index <run_index.json>")
+            index_path = require_within(root / args.index if not Path(args.index).is_absolute() else Path(args.index), root, label="--index")
+            if not index_path.is_file():
+                raise ValueError(f"run_index does not exist: {args.index}")
+            errors = verify_receipt_chain(root, index_path)
+            payload = load_structured(index_path)
+            receipt_count = len(payload.get("receipts", [])) if isinstance(payload, dict) else 0
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            print(json.dumps({"ok": False, "errors": [str(exc)]}, ensure_ascii=False))
             return 2
-        index_path = require_within(root / args.index if not Path(args.index).is_absolute() else Path(args.index), root, label="--index")
-        if not index_path.is_file():
-            print(json.dumps({"ok": False, "errors": [f"run_index does not exist: {args.index}"]}, ensure_ascii=False))
-            return 2
-        errors = verify_receipt_chain(root, index_path)
-        payload = load_structured(index_path)
-        receipt_count = len(payload.get("receipts", [])) if isinstance(payload, dict) else 0
         print(json.dumps({"ok": not errors, "receipts": receipt_count, "errors": errors}, ensure_ascii=False))
         return 0 if not errors else 1
     missing = [

@@ -321,7 +321,7 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 
 任务 D（CI 第二阶段）已完成：
 
-- `.github/workflows/ci.yml` 拆为三个 job：`unit`（Ubuntu × Python 3.10/3.11/3.12，不装 TeX，排除唯一真实消耗 TeX 的 `test_editorial_integrity` 模块）、`full`（3.11 + TeX Live/poppler，全量 discovery + redteam + SKILL 体检）、`windows-light`（3.11，schema 解析 + harness 入口 + MCP/agent/runtime/_capsule/receipt/recovery_fixture 路径语义子集，93 cases）。
+- `.github/workflows/ci.yml` 拆为三个 job：`unit`（Ubuntu × Python 3.10/3.11/3.12，不装 TeX，全量 discovery——唯一的编译渲染测试靠真环境守卫自行 skip）、`full`（3.11 + TeX Live/poppler，全量 discovery + redteam + SKILL 体检）、`windows-light`（3.11，schema 解析 + harness 入口 + MCP/agent/runtime/_capsule/receipt/recovery_fixture 路径语义子集，93 cases）。
 - `constraints-ci.txt` + `requirements-dev.txt` 版本界：numpy<3 / pandas<4 / scipy<2 / matplotlib<4 / networkx<4 / PyYAML<7 / jsonschema<5，CI 以 `-c constraints-ci.txt` 再约束传递解析。
 - `tests/test_editorial_integrity.py::test_safe_build_and_pdf_visual_qa` 补真实环境守卫（缺 latexmk/xelatex/pdfinfo/pdftoppm 时 skip）——这是"有 latexmk 才跑编译"的正确实现，使快路径 job 不装 TeX 也能跑 discovery。
 - nightly 全矩阵与上游最新版 compat job：按交接要求推迟到 P0-A 之后。
@@ -337,3 +337,20 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 - 失败语义明确定义为 **fail-closed**：registry 加载失败或声明缺失 → M1 报 `verifier registry: ...` 错误，绝不静默跳过检查；三种情形（正常/坏 registry/缺声明）均有回归测试。
 - `tests/test_verifier_registry.py` 的源码绑定断言从"函数体含脚本文件名"升级为"函数体含 verifier_id"（接线的更强形式）；`references/contracts/verifier_registry.md` 同步更新。
 - 遗留同类镜像（本次未动，后续批次）：`run_deterministic_qa.PROFILE_FLAG_LEVELS` 与 `check_gates.rerun_enhanced_deterministic_qa`。
+
+### 10.8 推送前自查（2026-09-18）：修掉的缺陷与仍开放项
+
+已修（各配回归测试）：
+
+1. `run_and_record --verify-chain` 在 index/receipt 损坏时抛裸 traceback（分支在 try 之外）→ 现在按 CLI 约定返回退出码 2 + `{"ok": false}`。
+2. `checkpoint approve` 以非原子写更新 `run_manifest.json`（控制文件应用 `write_json_atomic`）→ 已改原子写。
+3. `repair.py` 把原 receipt 的 `--selected` 传染给重跑 → 会产生第二条 selected receipt 并永久打断 P2（与 GAP-R1 同类）；重跑不再抢占选择真相。
+4. README 前置声明数字已漂移且**无机器校验**：schemas 32→37、CLI 39→30（顶层）；新增 `tests/test_readme_claims.py` 锁定 schema 数、命令数、MCP 只读/可写工具数与海报引用。
+5. `human_checkpoints.py` 的死 `main()` 移除。
+
+仍开放（按优先级）：
+
+- **链校验未接 Gate**：`previous_receipt_hash` 目前只在显式 `--verify-chain` 时重算；若要"改史即 fail closed"，需在 P1/P2 重算 receipt 处顺带校验链（旧 receipt 无该字段时按缺链跳过，保持向后兼容）。
+- **GAP-R1**：freeze 产物缺受控修复通道（需 receipt 顶替或新 run scope 迁移的设计决定）。
+- **GAP-R2**：slim fixture 无 receipt-backed 的 DAG 产物，`rerun` 通道只有单元测试覆盖。
+- 其余同类镜像（§10.7 末两条）与 Windows job 的显式测试清单需人工维护。

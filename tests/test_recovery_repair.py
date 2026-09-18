@@ -87,7 +87,7 @@ class RecoveryRepairTest(unittest.TestCase):
         self.assertNotIn("D:\\old\\project", text)
         self.assertIn("D:\\live\\project\\model.py", argv)
 
-    def test_freeze_stage_receives_selected_and_freeze_flags(self) -> None:
+    def test_freeze_stage_receives_freeze_flag_but_never_reclaims_selection(self) -> None:
         receipt = {
             "stage": "freeze",
             "run_id": "run-1",
@@ -99,7 +99,8 @@ class RecoveryRepairTest(unittest.TestCase):
         argv = repair_module.execute_argv(receipt, Path("D:\\live\\project"))
         text = " ".join(argv)
         self.assertIn("--freeze", text)
-        self.assertIn("--selected", text)
+        # Re-claiming selection would leave two selected receipts and break P2.
+        self.assertNotIn("--selected", text)
 
 
 if __name__ == "__main__":

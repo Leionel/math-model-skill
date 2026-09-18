@@ -37,6 +37,7 @@ validation, result freeze, or submission immutability.
 - Do not use an unverified seed as current official rules.
 - Keep failed runs and diagnostic failure evidence; never rewrite a frozen file.
 - `run_index.json` and status are projections, not digest owners.
+- Record a required human decision with `harness checkpoint approve <stage> --role <role> --decision approve|reject`: it appends one evidence artifact under `.harness/human_decisions/` (chained to the previous decision) and one `run_manifest.human_checkpoints` row. The manifest row is the control truth, the artifact is evidence, and the role is a declaration, never a verified identity.
 - Recompute semantic checks independently; SHA-256 only proves bytes unchanged.
 - Changes to immutable inputs create a new version, stale dependants, and
   pending affected Gates.

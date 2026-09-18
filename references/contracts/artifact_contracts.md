@@ -14,6 +14,12 @@ schemas or checker implementations.
 An old manifest command row is a declaration until a real receipt is present.
 Do not promote a copied exit code or a selected flag into execution evidence.
 
+A v2 receipt may also carry `previous_receipt_hash` (the SHA-256 of the previous
+receipt file bytes in `run_index` order, written by the producer) and
+`execution_host_identity`. `run_and_record.py --verify-chain` recomputes that
+chain, so modifying, reordering, or deleting history is detectable; the chain is
+not a signature and the last receipt of a run is not covered by it.
+
 ## v2 roots and DAG
 
 `run_manifest.json` contains only `competition_profile_ref`, normalized

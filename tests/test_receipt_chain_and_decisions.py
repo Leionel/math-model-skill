@@ -98,6 +98,18 @@ class ReceiptChainTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("--verify-chain requires --index", result.stdout)
 
+    def test_verify_chain_reports_corrupt_history_as_an_error_not_a_traceback(self) -> None:
+        for break_which in ("index", "receipt"):
+            with self.subTest(broken=break_which), tempfile.TemporaryDirectory(prefix="receipt-chain-corrupt-") as temp:
+                project = Path(temp)
+                self._record_pair(project)
+                target = project / "reports/run_index.json" if break_which == "index" else project / "reports/r1.json"
+                target.write_text("{ not json\n", encoding="utf-8")
+                result = self._record("--verify-chain", "--index", "reports/run_index.json", cwd=project)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('"ok": false', result.stdout)
+                self.assertNotIn("Traceback", result.stdout + result.stderr)
+
 
 class HumanCheckpointApproveTest(unittest.TestCase):
     def _approve(self, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
