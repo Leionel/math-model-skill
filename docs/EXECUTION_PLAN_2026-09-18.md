@@ -268,6 +268,8 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 
 ## 10. 交接（2026-09-18，P1-F 已交付）
 
+> 接续 agent 请直接执行 `docs/HANDOFF_PROMPT_2026-09-18.md`：它包含环境与验收命令、不可违反的规则、本会话踩过的坑，以及 P2-C / P0-C / P1-B 试点 / P0-D 的逐项任务块与"不要做什么"。
+
 ### 10.1 已交付
 
 - 新增进程内只读面：`scripts/runtime/`（公共面 `__init__.py`，实现 `read_api.py`）——`get_state` / `verify_artifact` / `check_gate`。
