@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent))
 from _common import child_env, load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_gate  # noqa: E402
+from gate_order import GATE_ORDER  # noqa: E402, F401 - re-exported single source
 try:  # Support both direct CLI execution and package-level test imports.
     from validate_contracts import REQUIRED_VALIDATION_CATEGORIES, _validate_document  # type: ignore  # noqa: E402
     from validation.obligations import file_ref, verify_validation_report  # type: ignore  # noqa: E402
@@ -28,7 +29,6 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by package imports.
     from qa.smoke_coverage import smoke_coverage_errors  # noqa: E402
 
 
-GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
 ALLOWED_GATE_STATUS = {"pending", "pass", "fail", "blocked"}
 
 

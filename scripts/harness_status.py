@@ -23,10 +23,10 @@ from _common import load_structured, rel_path, resolve_path  # noqa: E402
 from project_layout import resolve_manifest_path  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_gate  # noqa: E402
+from gate_order import GATE_ORDER  # noqa: E402
 from redaction import redact_text  # noqa: E402
 from ruleset import ruleset_fingerprint  # noqa: E402
 
-GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
 CONFIRMED = {"pass", "confirm"}
 
 

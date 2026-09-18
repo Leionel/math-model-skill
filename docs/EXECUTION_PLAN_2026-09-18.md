@@ -326,3 +326,14 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 - `tests/test_editorial_integrity.py::test_safe_build_and_pdf_visual_qa` 补真实环境守卫（缺 latexmk/xelatex/pdfinfo/pdftoppm 时 skip）——这是"有 latexmk 才跑编译"的正确实现，使快路径 job 不装 TeX 也能跑 discovery。
 - nightly 全矩阵与上游最新版 compat job：按交接要求推迟到 P0-A 之后。
 - 注意：本机无 Python 3.10/3.12，矩阵首验发生在推送后的 CI；Windows 子集为显式清单，新增路径敏感测试时应补入。
+
+### 10.7 交接表更新（2026-09-18，P1-B 试点已交付）
+
+任务 C（P1-B 试点）已完成：
+
+- `scripts/gate_order.py` 成为 GATE_ORDER 单一来源；`harness.py`、`harness_status.py`、`qa/check_gates.py`、`mcp_tools/state.py`（交接说明未列的第四处镜像）与 `verifiers.registry.GATES` 均改为 re-export 同一 tuple 对象，`tests/test_gate_registry_wiring.py` 以 `is` 身份断言锁定。
+- 依赖环已解：`verifiers.registry` 不再 import `check_gates`（GATES 改从 gate_order 取），`v2_gate_runtime` 因此可以安全经 `verifiers.registry` 解析 checker。
+- `_v2_gate_m1` 的 `check_units` / `check_artifact_dag` 路径改由 `_v2_registry_entry_scripts` 经 registry 解析，解析出的绝对路径与原硬编码逐字节一致（argv/退出码不变，fixture 端到端 M1/P1/P2 全绿锁定）。
+- 失败语义明确定义为 **fail-closed**：registry 加载失败或声明缺失 → M1 报 `verifier registry: ...` 错误，绝不静默跳过检查；三种情形（正常/坏 registry/缺声明）均有回归测试。
+- `tests/test_verifier_registry.py` 的源码绑定断言从"函数体含脚本文件名"升级为"函数体含 verifier_id"（接线的更强形式）；`references/contracts/verifier_registry.md` 同步更新。
+- 遗留同类镜像（本次未动，后续批次）：`run_deterministic_qa.PROFILE_FLAG_LEVELS` 与 `check_gates.rerun_enhanced_deterministic_qa`。

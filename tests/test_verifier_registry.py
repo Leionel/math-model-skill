@@ -59,10 +59,13 @@ class CommittedDeclarationsTest(unittest.TestCase):
             self.assertTrue(script.is_file(), f"{verifier_id} names {script}")
 
     def test_declared_gate_runtime_invokes_the_entrypoint(self) -> None:
+        # Since the P1-B pilot, the gate runtime resolves declared entrypoints
+        # through the registry, so the source-level linkage is the verifier_id:
+        # the function body must name it, and the resolved script path is
+        # covered by tests/test_gate_registry_wiring.py.
         for verifier_id, declaration in self.registry.items():
-            basename = Path(declaration["entrypoint"]["script"]).name
             for gate in declaration["gates"]:
-                self.assertIn(basename, gate_runtime_body(gate), f"{verifier_id} claims gate {gate}")
+                self.assertIn(verifier_id, gate_runtime_body(gate), f"{verifier_id} claims gate {gate}")
 
     def test_schema_vocabulary_matches_the_registry(self) -> None:
         schema = json.loads((ROOT / "schemas" / "verifier.schema.json").read_text(encoding="utf-8"))

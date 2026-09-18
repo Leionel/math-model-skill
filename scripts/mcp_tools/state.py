@@ -14,7 +14,11 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
-_GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from gate_order import GATE_ORDER as _GATE_ORDER  # noqa: E402
 
 
 def _harness_json(module: Mapping[str, Any], argv: list[str], root: Path) -> tuple[dict[str, Any], int]:

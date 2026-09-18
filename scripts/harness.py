@@ -55,9 +55,9 @@ from views.setup_card import build_setup_card  # noqa: E402
 from precedents.select_reference_cards import select_cards  # noqa: E402
 from qa.plan_selective_rerun import plan_selective_rerun  # noqa: E402
 from doctor_core import STAGES as DOCTOR_STAGES, evaluate_capabilities  # noqa: E402
+from gate_order import GATE_ORDER  # noqa: E402
 
 
-GATE_ORDER = ("m1", "p1", "p2", "w1", "w2", "s1")
 PRESETS = ("sprint", "research", "submission")
 
 

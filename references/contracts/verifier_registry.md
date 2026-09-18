@@ -40,15 +40,28 @@ are checked for equality, so the two cannot drift.
   error, sorted — a broken declaration is never silently dropped from the
   registry.
 - An entrypoint script must exist inside the tree being loaded, and a
-  declaration cannot claim a gate whose runtime does not invoke that script:
+  declaration cannot claim a gate whose runtime does not invoke that check:
   `tests/test_verifier_registry.py` reads `scripts/v2_gate_runtime.py` and fails
-  if `_v2_gate_<gate>` never mentions the declared entrypoint.
+  if `_v2_gate_<gate>` never names the declaring `verifier_id`; the resolved
+  script paths are locked by `tests/test_gate_registry_wiring.py`.
+
+## Gate resolution (P1-B pilot)
+
+M1 resolves `unit-consistency` and `artifact-freshness` through
+`v2_gate_runtime._v2_registry_entry_scripts` instead of hard-coding
+`scripts/qa/check_units.py` / `check_artifact_dag.py`. The resolved absolute
+paths are byte-identical to the previously hard-coded argv, so checker
+invocation and exit codes are unchanged. Resolution is **fail closed**: a
+registry that cannot load, or a missing declaration for a required verifier, is
+an M1 error — it never silently skips the check.
+
+The gate order itself lives in one place (`scripts/gate_order.py`); `harness`,
+`harness_status`, `check_gates`, `mcp_tools.state` and the registry re-export
+the same tuple object.
 
 ## Status
 
-This is the **contract** step of the roadmap's P1-B. Declarations today describe
-two checks already wired into the M1 gate (`artifact-freshness`,
-`unit-consistency`). Migrating the remaining `scripts/qa/check_*.py` verifiers
-onto the registry, and letting the Gate engine resolve them through
-`registry_for_gate`, is the pilot step that follows; until then no Gate
-behaviour changes.
+This is the **pilot** step of the roadmap's P1-B: M1 is the first gate whose
+checker paths come from the registry. Migrating the remaining
+`scripts/qa/check_*.py` verifiers onto the registry, and letting the Gate
+engine resolve them through `registry_for_gate`, is the step that follows.

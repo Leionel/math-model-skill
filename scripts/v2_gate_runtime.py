@@ -450,6 +450,33 @@ def _v2_require_dag_digests(state: Any, roles: tuple[str, ...], errors: list[str
                 errors.append(f"{role} artifact SHA-256 drift: {raw_path}")
 
 
+def _v2_registry_entry_scripts(errors: list[str]) -> dict[str, str]:
+    """Resolve M1's registry-declared checker entrypoints (fail closed).
+
+    The verifier declarations own the path of every check M1 dispatches; a
+    registry that cannot load, or a declaration that went missing, is an M1
+    error rather than a silently skipped check.
+    """
+
+    from verifiers import registry as verifier_registry
+
+    try:
+        loaded = verifier_registry.load_registry()
+    except (OSError, ValueError, TypeError) as exc:
+        errors.append(f"verifier registry: {exc}")
+        return {}
+    scripts: dict[str, str] = {}
+    for verifier_id in ("unit-consistency", "artifact-freshness"):
+        declaration = loaded.get(verifier_id)
+        script = declaration.get("entrypoint", {}).get("script") if isinstance(declaration, dict) else None
+        if not isinstance(script, str) or not script:
+            errors.append(f"verifier registry: no declaration for {verifier_id}")
+            continue
+        resolved = (SCRIPT_DIR.parent.parent / script).resolve()
+        scripts[verifier_id] = str(resolved)
+    return scripts
+
+
 def _v2_checkpoint_required(state: Any, capabilities: Any, gate: str, errors: list[str]) -> None:
     if not capabilities.require_human_checkpoints:
         return
@@ -482,6 +509,7 @@ def _v2_run_safety_checker(state: Any, capabilities: Any, evidence: dict[str, An
 
 def _v2_gate_m1(state: Any, capabilities: Any, errors: list[str], evidence: dict[str, Any]) -> None:
     errors.extend(_v2_profile_errors(state))
+    registry_scripts = _v2_registry_entry_scripts(errors)
     _, model_contract = _v2_require_role(state, "model_contract", errors)
     _, evidence_registry = _v2_require_role(state, "evidence_registry", errors)
     if model_contract is not None and evidence_registry is not None and model_contract.is_file() and evidence_registry.is_file():
@@ -497,28 +525,32 @@ def _v2_gate_m1(state: Any, capabilities: Any, errors: list[str], evidence: dict
         if capabilities.require_scope_contract:
             modeling_args.append("--require-scope-contract")
         _v2_run_checker(state, "check_modeling_plan", modeling_args, evidence, errors)
+    units_script = registry_scripts.get("unit-consistency")
     if model_contract is not None and model_contract.is_file():
-        _v2_run_checker(
-            state,
-            "check_units",
-            [
-                str(SCRIPT_DIR / "check_units.py"),
-                "--project-root", str(state.root),
-                "--model-contract", str(model_contract),
-                "--strict",
-            ],
-            evidence,
-            errors,
-        )
+        if units_script is not None:
+            _v2_run_checker(
+                state,
+                "check_units",
+                [
+                    units_script,
+                    "--project-root", str(state.root),
+                    "--model-contract", str(model_contract),
+                    "--strict",
+                ],
+                evidence,
+                errors,
+            )
     dag_path = state.root_path("artifact_dag")
+    dag_script = registry_scripts.get("artifact-freshness")
     if dag_path is not None and dag_path.is_file():
-        _v2_run_checker(
-            state,
-            "check_artifact_dag",
-            [str(SCRIPT_DIR / "check_artifact_dag.py"), "--project-root", str(state.root), "--dag", str(dag_path), "--strict"],
-            evidence,
-            errors,
-        )
+        if dag_script is not None:
+            _v2_run_checker(
+                state,
+                "check_artifact_dag",
+                [dag_script, "--project-root", str(state.root), "--dag", str(dag_path), "--strict"],
+                evidence,
+                errors,
+            )
     _v2_checkpoint_required(state, capabilities, "m1", errors)
     _v2_run_safety_checker(state, capabilities, evidence, errors)
     evidence["capabilities"] = state.capabilities.to_dict()

@@ -20,8 +20,8 @@ for _directory in (SCRIPTS_DIR, SCRIPTS_DIR / "qa"):
     if str(_directory) not in sys.path:
         sys.path.insert(0, str(_directory))
 
-import check_gates  # noqa: E402
 from _common import load_structured  # noqa: E402
+from gate_order import GATE_ORDER as _GATE_ORDER  # noqa: E402
 
 # The canonical input vocabulary. ``schemas/verifier.schema.json`` mirrors it,
 # and tests/test_verifier_registry.py fails if the two ever disagree.
@@ -41,7 +41,7 @@ CONSUMES = (
     "run_manifest",
     "validation_report",
 )
-GATES = tuple(check_gates.GATE_ORDER)
+GATES = _GATE_ORDER
 DEFAULT_DECLARATIONS_DIR = SCRIPT_DIR / "declarations"
 
 
