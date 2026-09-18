@@ -226,6 +226,67 @@ def rerun_enhanced_deterministic_qa(
                 pass
 
 
+def v2_gate_result(
+    root: Path,
+    manifest_path: Path,
+    gate: str | None = None,
+    *,
+    strict: bool = False,
+) -> tuple[dict[str, Any], int]:
+    """Return the v2 gate report and exit code for one project without printing.
+
+    This is the single implementation behind ``harness check``/``validate``, the
+    MCP façade and the in-process runtime API. A targeted report is still
+    generated from evidence observed by this invocation; no manifest gates.*
+    status is consulted.
+    """
+
+    try:
+        state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+        requested = gate
+        gates_to_run = [requested] if requested else list(GATE_ORDER)
+        reports: list[dict[str, Any]] = []
+        overall_errors: list[str] = []
+        overall_warnings: list[str] = []
+        for gate_name in gates_to_run:
+            gate_ok, gate_errors, gate_warnings, evidence = _v2_gate(state, gate_name)
+            reports.append({
+                "ok": gate_ok and (not strict or not gate_warnings),
+                "gate": gate_name,
+                "generated_at": datetime.now().astimezone().isoformat(),
+                "source_of_truth": ["run_manifest.v2", "competition_profile.json", "command_receipt", "run_index projection", "artifact DAG"],
+                "evidence": evidence,
+                "errors": gate_errors,
+                "warnings": gate_warnings,
+            })
+            overall_errors.extend(f"{gate_name}: {message}" for message in gate_errors)
+            overall_warnings.extend(f"{gate_name}: {message}" for message in gate_warnings)
+            if not gate_ok:
+                # For an all-gates run, later gates are not allowed to
+                # self-report success after an earlier factual failure.
+                if not requested:
+                    break
+        if requested:
+            output = reports[0]
+        else:
+            output = {
+                "ok": not overall_errors and (not strict or not overall_warnings),
+                "gates": reports,
+                "generated_at": datetime.now().astimezone().isoformat(),
+                "errors": overall_errors,
+                "warnings": overall_warnings,
+            }
+        return output, 0 if output.get("ok") is True else 1
+    except (OSError, ValueError, TypeError, RuntimeStateError, json.JSONDecodeError) as exc:
+        return {
+            "ok": False,
+            "gate": gate,
+            "generated_at": datetime.now().astimezone().isoformat(),
+            "errors": [str(exc)],
+            "warnings": [],
+        }, 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True)
@@ -248,50 +309,9 @@ def main() -> int:
         errors.append("run_manifest must be an object")
         manifest = {}
     if manifest.get("schema_version") == "2.0":
-        try:
-            state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
-            requested = args.gate
-            gates_to_run = [requested] if requested else list(GATE_ORDER)
-            reports: list[dict[str, Any]] = []
-            overall_errors: list[str] = []
-            overall_warnings: list[str] = []
-            for gate_name in gates_to_run:
-                gate_ok, gate_errors, gate_warnings, evidence = _v2_gate(state, gate_name)
-                # A targeted report is still generated from evidence observed
-                # by this invocation; no manifest gates.* status is consulted.
-                report = {
-                    "ok": gate_ok and (not args.strict or not gate_warnings),
-                    "gate": gate_name,
-                    "generated_at": datetime.now().astimezone().isoformat(),
-                    "source_of_truth": ["run_manifest.v2", "competition_profile.json", "command_receipt", "run_index projection", "artifact DAG"],
-                    "evidence": evidence,
-                    "errors": gate_errors,
-                    "warnings": gate_warnings,
-                }
-                reports.append(report)
-                overall_errors.extend(f"{gate_name}: {message}" for message in gate_errors)
-                overall_warnings.extend(f"{gate_name}: {message}" for message in gate_warnings)
-                if not gate_ok:
-                    # For an all-gates run, later gates are not allowed to
-                    # self-report success after an earlier factual failure.
-                    if not requested:
-                        break
-            if args.gate:
-                output = reports[0]
-            else:
-                output = {
-                    "ok": not overall_errors and (not args.strict or not overall_warnings),
-                    "gates": reports,
-                    "generated_at": datetime.now().astimezone().isoformat(),
-                    "errors": overall_errors,
-                    "warnings": overall_warnings,
-                }
-            print(json.dumps(output, ensure_ascii=False, indent=2))
-            return 0 if output.get("ok") is True else 1
-        except (OSError, ValueError, TypeError, RuntimeStateError, json.JSONDecodeError) as exc:
-            report = {"ok": False, "gate": args.gate, "generated_at": datetime.now().astimezone().isoformat(), "errors": [str(exc)], "warnings": []}
-            print(json.dumps(report, ensure_ascii=False, indent=2))
-            return 1
+        output, code = v2_gate_result(root, manifest_path, args.gate, strict=args.strict)
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return code
     _, manifest_schema_errors, _ = _validate_document(
         manifest_path, Path(__file__).resolve().parents[2] / "schemas" / "run_manifest.schema.json"
     )

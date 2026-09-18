@@ -412,6 +412,77 @@ def status_report(manifest: dict[str, Any], root: Path, manifest_path: Path | No
     return _v1_status(manifest, root, path, ruleset=ruleset)
 
 
+def status_result(root: Path, manifest_raw: str | None = None) -> tuple[dict[str, Any], int]:
+    """Return the status report and exit code for one project root.
+
+    This is the single implementation behind ``harness status``, the MCP
+    façade and the in-process runtime API; ``main`` only prints the result.
+    """
+
+    ruleset = ruleset_fingerprint(SCRIPT_DIR.parent)
+    try:
+        manifest_path = resolve_manifest_path(root, manifest_raw)
+        manifest = load_structured(manifest_path)
+    except (OSError, ValueError, TypeError) as exc:
+        return {
+            "ok": False,
+            "errors": [f"cannot read manifest: {exc}"],
+            "manifest": manifest_raw or "active state layout",
+            "ruleset_id": ruleset["ruleset_id"],
+            "ruleset_scope": ruleset["ruleset_scope"],
+        }, 2
+    if not isinstance(manifest, dict):
+        return {
+            "ok": False,
+            "errors": ["run_manifest must be an object"],
+            "ruleset_id": ruleset["ruleset_id"],
+            "ruleset_scope": ruleset["ruleset_scope"],
+        }, 2
+    report = status_report(manifest, root, manifest_path)
+    return report, 0 if report.get("ok") is True else 1
+
+
+def artifact_view(root: Path, artifact_id: str, manifest_raw: str | None = None) -> tuple[dict[str, Any], int]:
+    """Return one artifact's DAG identity and freshness without writing anything.
+
+    The verdict is the projector-backed freshness ``harness status`` reports in
+    ``dag.artifacts``; this is not a second artifact registry.
+    """
+
+    try:
+        manifest_path = resolve_manifest_path(root, manifest_raw)
+        state = load_runtime_state(manifest_path, project_root=root, allow_legacy=False)
+    except (OSError, ValueError, TypeError, RuntimeStateError) as exc:
+        return {"ok": False, "artifact_id": artifact_id, "errors": [str(exc)]}, 1
+    dag = _dag_view(state)
+    node = next((row for row in dag["artifacts"] if row.get("artifact_id") == artifact_id), None)
+    if node is None:
+        return {
+            "ok": False,
+            "artifact_id": artifact_id,
+            "source_of_truth": ["artifact DAG freshness"],
+            "errors": [f"artifact_id is not registered in the artifact DAG: {artifact_id}"],
+            "dag_errors": list(dag["errors"]),
+        }, 1
+    errors = list(dag["errors"])
+    if node.get("freshness") != "current":
+        errors.append(f"artifact {artifact_id} is {node.get('freshness')}")
+    ok = node.get("freshness") == "current" and not errors
+    return {
+        "ok": ok,
+        "artifact_id": artifact_id,
+        "role": node.get("role"),
+        "path": node.get("path"),
+        "lifecycle": node.get("lifecycle"),
+        "freshness": node.get("freshness"),
+        "stale_reasons": [
+            row for row in dag["stale_artifacts"] if row.get("artifact_id") == artifact_id
+        ],
+        "source_of_truth": ["artifact DAG freshness"],
+        "errors": errors,
+    }, (0 if ok else 1)
+
+
 def _human(report: Mapping[str, Any]) -> str:
     lines = [
         f"project: {report.get('project_id')}  run: {report.get('run_id')}  status: {report.get('status')}",
@@ -476,32 +547,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = Path(args.project_root).resolve()
-    ruleset = ruleset_fingerprint(SCRIPT_DIR.parent)
-    try:
-        manifest_path = resolve_manifest_path(root, args.manifest)
-        manifest = load_structured(manifest_path)
-    except (OSError, ValueError, TypeError) as exc:
-        report = {
-            "ok": False,
-            "errors": [f"cannot read manifest: {exc}"],
-            "manifest": args.manifest or "active state layout",
-            "ruleset_id": ruleset["ruleset_id"],
-            "ruleset_scope": ruleset["ruleset_scope"],
-        }
-        print(json.dumps(report, ensure_ascii=False) if args.json else _human(report))
-        return 2
-    if not isinstance(manifest, dict):
-        report = {
-            "ok": False,
-            "errors": ["run_manifest must be an object"],
-            "ruleset_id": ruleset["ruleset_id"],
-            "ruleset_scope": ruleset["ruleset_scope"],
-        }
-        print(json.dumps(report, ensure_ascii=False) if args.json else _human(report))
-        return 2
-    report = status_report(manifest, root, manifest_path)
+    report, code = status_result(root, args.manifest)
     print(json.dumps(report, ensure_ascii=False) if args.json else _human(report))
-    return 0 if report.get("ok") is True else 1
+    return code
 
 
 if __name__ == "__main__":
