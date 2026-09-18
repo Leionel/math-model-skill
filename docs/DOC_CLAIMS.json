@@ -85,6 +85,41 @@
       "doc_pattern": "harness submit receipt",
       "statement": "R8 submission receipt schema has a user-facing checker",
       "check": {"type": "cli_help_contains", "argv": ["scripts/harness.py", "submit", "--help"], "contains": "receipt"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-013",
+      "doc": "docs/THREAT_MODEL.md",
+      "doc_pattern": "receipt provenance is not externally attested",
+      "statement": "Threat model records byte-consistent receipt forgery as a known gap, not a defended property",
+      "check": {"type": "file_contains", "path": "evaluation/redteam.py", "pattern": "def scenario_receipt_provenance_is_not_attested"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-014",
+      "doc": "docs/THREAT_MODEL.md",
+      "doc_pattern": "human checkpoint identity is not attested",
+      "statement": "Threat model records that a human checkpoint decision is not identity-bound",
+      "check": {"type": "file_contains", "path": "evaluation/redteam.py", "pattern": "def scenario_human_checkpoint_is_unattested"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-015",
+      "doc": "docs/THREAT_MODEL.md",
+      "doc_pattern": "a forged run_index projection is inert",
+      "statement": "Threat model records that the run_index is a projection no verdict reads",
+      "check": {"type": "file_contains", "path": "evaluation/redteam.py", "pattern": "def scenario_projection_copy_is_inert"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-016",
+      "doc": "docs/THREAT_MODEL.md",
+      "doc_pattern": "a forged gate field cannot flip a verdict",
+      "statement": "Threat model records that a handwritten gate status cannot change a recomputed verdict",
+      "check": {"type": "file_contains", "path": "examples/end_to_end/run_demo.py", "pattern": "def probe_gate_field_is_inert"}
+    },
+    {
+      "claim_id": "DOC-CLAIM-017",
+      "doc": "docs/THREAT_MODEL.md",
+      "doc_pattern": "evaluation/redteam\\.py",
+      "statement": "Threat model status table is replayed by the red-team step in CI",
+      "check": {"type": "file_contains", "path": ".github/workflows/ci.yml", "pattern": "evaluation/redteam.py"}
     }
   ]
 }

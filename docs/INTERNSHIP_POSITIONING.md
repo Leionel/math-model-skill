@@ -108,7 +108,7 @@ second one is what makes an agent system deployable.
 | "Passed" is a string in memory | v2 has no field that could hold it |
 | Tool list is documentation | Tool names are validated against the live CLI and MCP registries |
 | Metrics are self-reported by the model | Metrics are exit codes under scripted attacks |
-| Green tests imply capability | 729 tests are stated as code-path evidence; benchmark says `NOT RUN` |
+| Green tests imply capability | 738 tests are stated as code-path evidence; benchmark says `NOT RUN` |
 | Everything is allowed by default | Roots, mutating tools and AI backends are denied unless configured |
 
 ## Positions this is aimed at

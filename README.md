@@ -118,9 +118,12 @@ Honest limits of the current implementation:
 - **`--fresh` is not an OS sandbox.** It binds bundle, working directory,
   receipt and report. A submission-grade reviewer still has to run in a
   genuinely separate context or model.
-- **Regression tests are not capability evidence.** 729 tests prove the code
+- **Regression tests are not capability evidence.** 738 tests prove the code
   paths and negative guards work. They prove nothing about real-contest
   generalization.
+- **Full threat model.** `docs/THREAT_MODEL.md` lists the threat actors, every
+  blocked attempt with the scenario that replays it in CI, the two attestation
+  gaps above, and the wording this README may and may not use.
 
 ### Documentation map
 
