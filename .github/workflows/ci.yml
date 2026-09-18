@@ -7,7 +7,45 @@ on:
   pull_request:
 
 jobs:
-  checks:
+  unit:
+    # Fast path: no TeX.  The one test that compiles LaTeX skips itself when
+    # latexmk/poppler are absent (genuine environment check, not a hard skip).
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt -c constraints-ci.txt
+      - name: Install editable CLI and check entry point
+        run: |
+          python -m pip install --no-deps -e .
+          harness --help
+      - name: Parse schemas
+        run: python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]; print('schema parse ok')"
+      - name: Unit tests (TeX-compile test excluded here, exercised by the full job)
+        run: |
+          python - <<'PY'
+          import sys, unittest
+          from pathlib import Path
+          excluded = {"tests.test_editorial_integrity"}
+          names = sorted(f"tests.{p.stem}" for p in Path("tests").glob("test_*.py"))
+          names = [name for name in names if name not in excluded]
+          suite = unittest.TestLoader().loadTestsFromNames(names)
+          result = unittest.TextTestRunner(verbosity=1).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: Agent contract scope check
+        run: python scripts/harness.py agents check
+
+  full:
+    # The TeX-owning job: installs latexmk/poppler so the compile-and-render
+    # path genuinely runs instead of skipping, plus the evaluation plane.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,7 +53,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install development dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt -c constraints-ci.txt
       - name: Install editable CLI and check entry point
         run: |
           python -m pip install --no-deps -e .
@@ -36,10 +74,8 @@ jobs:
             poppler-utils
       - name: Parse schemas
         run: python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]; print('schema parse ok')"
-      - name: Unit tests
+      - name: Full test suite (including the TeX compile-and-render path)
         run: python -m unittest discover -s tests -v
-      - name: Agent contract scope check
-        run: python scripts/harness.py agents check
       - name: Red-team reliability evaluation
         run: python evaluation/redteam.py --output evaluation/results/redteam-latest.json
       - name: Skill metadata and progressive-disclosure validation
@@ -57,4 +93,40 @@ jobs:
           yaml.safe_load(text.split("---", 2)[1])
           assert 150 <= lines <= 360, f"SKILL.md is {lines} lines; keep it an entry file, not a manual"
           print(f"skill validation ok ({lines} lines)")
+          PY
+
+  windows-light:
+    # Lightweight Windows sentinel: no TeX, no full suite.  Covers the
+    # Windows-specific risk surface: imports, schema parsing, MCP tool-path
+    # semantics, and the path-rewriting runtime (capsule reproduction).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt -c constraints-ci.txt
+      - name: Install editable CLI and check entry point
+        run: |
+          python -m pip install --no-deps -e .
+          harness --help
+      - name: Parse schemas
+        run: python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('schemas').glob('*.schema.json')]; print('schema parse ok')"
+      - name: Windows path-semantics subset
+        run: |
+          python - <<'PY'
+          import sys, unittest
+          names = [
+              "tests.test_mcp_server",
+              "tests.test_agent_policy",
+              "tests.test_agent_contracts",
+              "tests.test_runtime_api",
+              "tests.test_execution_capsule",
+              "tests.test_receipt_chain_and_decisions",
+              "tests.test_recovery_fixture",
+          ]
+          suite = unittest.TestLoader().loadTestsFromNames(names)
+          result = unittest.TextTestRunner(verbosity=1).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
           PY

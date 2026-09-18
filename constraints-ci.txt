@@ -1,0 +1,11 @@
+# Bounds shared by requirements-dev.txt; CI installs with `-c constraints-ci.txt`
+# so transitive resolution also respects them.  Ranges reflect versions the
+# suite has actually run against (numpy 2.x / pandas 2-3.x / scipy 1.x on
+# Python 3.10-3.14); widening a bound is a deliberate decision, not a default.
+numpy>=1.24,<3.0
+pandas>=2.0,<4.0
+scipy>=1.10,<2.0
+matplotlib>=3.7,<4.0
+networkx>=3.0,<4.0
+PyYAML>=6.0,<7.0
+jsonschema>=4.17,<5.0

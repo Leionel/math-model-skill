@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -325,6 +326,9 @@ class EditorialIntegrityTest(unittest.TestCase):
             self.assertIn("escapes source root", result.stdout)
 
     def test_safe_build_and_pdf_visual_qa(self) -> None:
+        missing = [name for name in ("latexmk", "xelatex", "pdfinfo", "pdftoppm") if shutil.which(name) is None]
+        if missing:
+            self.skipTest(f"compile-and-render toolchain missing: {', '.join(missing)}")
         with tempfile.TemporaryDirectory(prefix="math-pdf-") as temp:
             project = Path(temp)
             paper = project / "paper"

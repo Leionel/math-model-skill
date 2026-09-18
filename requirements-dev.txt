@@ -1,8 +1,9 @@
 # Optional EDA, numerical-scaffold, plotting, profile, and enhancement-test dependencies.
-numpy
-pandas
-PyYAML
-jsonschema
-scipy
-matplotlib
-networkx
+# Ranges mirror constraints-ci.txt (enforced again at CI resolution time).
+numpy>=1.24,<3.0
+pandas>=2.0,<4.0
+PyYAML>=6.0,<7.0
+jsonschema>=4.17,<5.0
+scipy>=1.10,<2.0
+matplotlib>=3.7,<4.0
+networkx>=3.0,<4.0
