@@ -23,6 +23,8 @@ REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import child_env, exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
+import checkpoints  # noqa: E402
+import run_diff  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
 from figures.pptx_router import stage_pptx_reference  # noqa: E402
 from figures.illustration_execution import build_image_generation_request, collect_illustration_output  # noqa: E402
@@ -1061,6 +1063,41 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--manifest", default=None)
     status.set_defaults(handler=lambda args: _status(args))
 
+    checkpoint = sub.add_parser("checkpoint", help="name a coherent run state so a branch can be forked from it")
+    checkpoint_sub = checkpoint.add_subparsers(dest="checkpoint_action", required=True)
+    checkpoint_create = checkpoint_sub.add_parser("create", help="record one checkpoint under .harness/checkpoints/")
+    _add_common(checkpoint_create)
+    checkpoint_create.add_argument("--name", required=True)
+    checkpoint_create.add_argument("--force", action="store_true")
+    checkpoint_create.set_defaults(handler=_checkpoint)
+    checkpoint_verify = checkpoint_sub.add_parser("verify", help="recompute every recorded digest")
+    _add_common(checkpoint_verify)
+    checkpoint_verify.add_argument("--name", required=True)
+    checkpoint_verify.set_defaults(handler=_checkpoint)
+    checkpoint_list = checkpoint_sub.add_parser("list", help="list recorded checkpoints")
+    _add_common(checkpoint_list)
+    checkpoint_list.set_defaults(handler=_checkpoint)
+
+    fork = sub.add_parser("fork", help="copy a checkpointed run state into a new project root")
+    _add_common(fork)
+    fork.add_argument("--from", dest="source", required=True, help="checkpoint name to fork from")
+    fork.add_argument("--name", required=True, help="branch name recorded in fork.json")
+    fork.add_argument("--output", required=True, help="new project root; it must not hold files yet")
+    fork.add_argument("--force", action="store_true")
+    fork.set_defaults(handler=_fork)
+
+    diff = sub.add_parser("diff", help="diff two run roots as facts, never as a verdict")
+    _add_common(diff)
+    diff.add_argument("run_a")
+    diff.add_argument("run_b")
+    diff.set_defaults(handler=_diff)
+
+    compare = sub.add_parser("compare", help="diff two run roots and verify each side's checkpoints")
+    _add_common(compare)
+    compare.add_argument("run_a")
+    compare.add_argument("run_b")
+    compare.set_defaults(handler=_compare)
+
     check = sub.add_parser("check", help="run one existing Gate checker")
     _add_common(check)
     check.add_argument("gate", choices=tuple(name.upper() for name in GATE_ORDER))
@@ -1394,6 +1431,54 @@ def _status(args: argparse.Namespace) -> int:
     if args.json:
         command.append("--json")
     return _dispatch(command, root)
+
+
+def _checkpoint(args: argparse.Namespace) -> int:
+    root = _project(args)
+    if args.checkpoint_action == "create":
+        document = checkpoints.create_checkpoint(root, args.name, force=args.force)
+        result = {"ok": True, "schema_version": "1.0", "checkpoint": document["checkpoint_id"], "created_at": document["created_at"], "files": len(document["files"])}
+        _emit(result, machine=args.json, human=f"checkpoint {result['checkpoint']} recorded {result['files']} file(s)")
+        return 0
+    if args.checkpoint_action == "verify":
+        ok, errors = checkpoints.verify_checkpoint(root, args.name)
+        result = {"ok": ok, "schema_version": "1.0", "checkpoint": f"ckpt-{args.name}", "errors": errors}
+        human = f"checkpoint ckpt-{args.name}: {'current' if ok else 'drifted'}"
+        _emit(result, machine=args.json, human="\n".join([human, *(f"  - {error}" for error in errors)]))
+        return 0 if ok else 1
+    rows = checkpoints.list_checkpoints(root)
+    result = {"ok": True, "schema_version": "1.0", "checkpoints": rows}
+    human = "\n".join(f"{row['name']}  {row['created_at']}  files={row['files']}" for row in rows)
+    _emit(result, machine=args.json, human=human or "no checkpoints recorded")
+    return 0
+
+
+def _fork(args: argparse.Namespace) -> int:
+    root = _project(args)
+    destination = Path(args.output).resolve()
+    record = checkpoints.fork_project(root, args.source, destination, branch=args.name, force=args.force)
+    result = {
+        "ok": True,
+        "schema_version": "1.0",
+        "fork": record["fork_id"],
+        "destination": str(destination),
+        "parent_checkpoint": record["parent_checkpoint"],
+        "files": len(record["files"]),
+    }
+    _emit(result, machine=args.json, human=f"forked {record['parent_checkpoint']} into {destination} ({result['files']} file(s))")
+    return 0
+
+
+def _diff(args: argparse.Namespace) -> int:
+    document = run_diff.diff_runs(args.run_a, args.run_b)
+    _emit(document, machine=args.json, human=run_diff.human_summary(document))
+    return 0 if document["ok"] else 1
+
+
+def _compare(args: argparse.Namespace) -> int:
+    document, code = run_diff.compare_runs(args.run_a, args.run_b)
+    _emit(document, machine=args.json, human=run_diff.human_summary(document))
+    return code
 
 
 def _migrate(args: argparse.Namespace) -> int:
