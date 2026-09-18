@@ -45,7 +45,21 @@
         "output_refs": { "type": "array", "items": { "$ref": "#/$defs/artifact_ref_v2" } },
         "selection": { "type": "object" },
         "env_note": { "type": "string" },
-        "metadata": { "type": "object" }
+        "metadata": { "type": "object" },
+        "previous_receipt_hash": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$",
+          "description": "SHA-256 of the previous receipt file bytes in run_index order; absent for the first receipt of an index. Raises detectability of silent history rewrites, not tamper resistance."
+        },
+        "execution_host_identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hostname", "platform"],
+          "properties": {
+            "hostname": { "type": "string", "minLength": 1 },
+            "platform": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "artifact_ref_v1": {

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-modeling-harness/human-decision.schema.json",
+  "title": "Human Checkpoint Decision Record (v1)",
+  "description": "Append-only evidence artifact for one human checkpoint decision. The recorded role is a declaration, never a verified identity; the run_manifest.human_checkpoints row remains the control truth that gates read.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "checkpoint", "decision", "role", "recorded_at"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "checkpoint": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "decision": { "enum": ["approve", "reject"] },
+    "role": { "type": "string", "minLength": 1 },
+    "note": { "type": "string" },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "previous_decision_sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$",
+      "description": "SHA-256 of the previous decision artifact file bytes in append order; absent for the first decision. Raises detectability of silent decision rewrites, not tamper resistance."
+    }
+  }
+}

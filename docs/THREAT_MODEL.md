@@ -63,15 +63,21 @@ verified_against: 64842a6@2026-09-18
 
 ### 5.1 receipt provenance is not externally attested
 
-字节一致地改写 receipt（摘要、路径绑定全部仍然合法）会被接受。receipt 证明的是"字节相同"，不是"哪个进程跑的"。
-证据：`evaluation/redteam.py::scenario_receipt_provenance_is_not_attested`（`expect="allowed"`，即**有意**记录的已知缺口）。
-关闭路径：P2-C 的 `previous_receipt_hash` + `execution_host_identity` + 可选签名——只提高**事后静默改史**的可检测性，不防恶意宿主。
+字节一致地改写 receipt（摘要、路径绑定全部仍然合法）仍会被接受。receipt 证明的是"字节相同"，不是"哪个进程跑的"。
+证据：`evaluation/redteam.py::scenario_receipt_provenance_is_not_attested`（`expect="allowed"`）。
+
+已实现（P2-C）：producer 为每条 v2 receipt 写入 `previous_receipt_hash`（run_index 顺序上上一条 receipt 文件字节的 SHA-256）与 `execution_host_identity`（hostname + platform）；`run_and_record.py --verify-chain` 按同一顺序重算链，历史 receipt 被删改、重排或删除后链校验报错（退出码 1）。
+
+仍未覆盖：链上**最后一条** receipt 仍可被静默改写；攻击者按顺序重算整条链（同步改写全部后继 receipt）后不可检测；无签名、无外部见证；宿主自愿作恶（§5.3）完全在边界之外。这是可检测性的提升，不是 tamper-proof。
 
 ### 5.2 human checkpoint identity is not attested
 
 丢掉 W1 checkpoint 会让 W1 失败（缺证据 → fail closed），但再以任意角色名重新加入即可通过；`decided_by` 是自由文本。
 证据：`evaluation/redteam.py::scenario_human_checkpoint_is_unattested`（`expect="allowed"`）。
-关闭路径：P2-C 的 `harness checkpoint approve` producer（append-only 决策 artifact + identity + previous 指针）。
+
+已实现（P2-C）：`harness checkpoint approve <STAGE> --role <ROLE> --decision approve|reject` 生产者——写 append-only 决策 artifact（`.harness/human_decisions/`，含 checkpoint、decision、role、recorded_at、`previous_decision_sha256` 决策链），并追加 `run_manifest.human_checkpoints` 行（manifest 仍是控制真相，行内以 `decision_artifact` + `decision_sha256` 绑定证据）；manifest 侧 dashboard 不提供审批入口。
+
+仍未覆盖：`role` 是调用者的自我声明，**不是已验证身份**；决策 artifact 与 manifest 都在宿主可写盘面上，宿主可一并改写（§5.3），故只能说 "a recorded human checkpoint decision exists"，不能说 "verified human approval"（§6）。
 
 ### 5.3 宿主自愿作恶
 
@@ -113,7 +119,9 @@ verified_against: 64842a6@2026-09-18
 - 模型/求解的数学正确性（Gate 只建立契约内的部分）。
 - P2-A 引入外部执行后端后的容器/主机隔离强度。
 - 多用户权限模型（P2-B 落地后回填 §3 的 T3 一行）。
+- 宿主自愿作恶（§5.3）：P2-C 的 receipt 链与决策链都运行在宿主盘面上，宿主可连同 Harness 一起改写；两条链只提高对 T1/T3 类"事后静默改史"的可检测性。
 
 ## 变更记录
 
 - 2026-09-18 初版：T1–T4、§4 现状表、§5 两个已知缺口、§6 措辞边界。P2-B / P2-C 落地后必须同步更新 §5 与 §8。
+- 2026-09-18 P2-C：§5.1/§5.2 改写为"已实现 X（receipt 哈希链 + `--verify-chain`；`harness checkpoint approve` 决策链）、仍未覆盖 Y（链尾改写、整链重算、自我声明身份、宿主自愿作恶）"；§8 补充宿主边界说明。

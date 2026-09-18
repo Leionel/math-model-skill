@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import platform
 import re
+import socket
 import subprocess
 import sys
 import uuid
@@ -91,6 +93,72 @@ def _v2_ref(path: Path, root: Path, *, role: str, digest: str | None, critical: 
         ref["sha256"] = digest
         ref["digest_owner"] = "command_receipt"
     return ref
+
+
+def execution_host_identity() -> dict[str, str]:
+    return {"hostname": socket.gethostname(), "platform": platform.platform()}
+
+
+def _receipt_target(root: Path, receipt_path: str) -> Path:
+    resolved = Path(receipt_path)
+    return (root / receipt_path).resolve() if not resolved.is_absolute() else resolved.resolve()
+
+
+def _previous_receipt_hash(root: Path, index_path: Path | None) -> str | None:
+    """Hash the previous receipt file bytes in run_index order, or None for a fresh index."""
+
+    if index_path is None or not index_path.is_file():
+        return None
+    index = load_structured(index_path)
+    rows = index.get("receipts") if isinstance(index, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return None
+    last = rows[-1]
+    if not isinstance(last, dict) or not isinstance(last.get("receipt_path"), str):
+        raise ValueError("run_index's last receipt row has no receipt_path; refusing to chain onto it")
+    previous = _receipt_target(root, last["receipt_path"])
+    if not previous.is_file():
+        raise ValueError(
+            f"receipt history is broken: the previous receipt file is missing ({last['receipt_path']}); "
+            "run --verify-chain and repair the history before recording more receipts"
+        )
+    return sha256_file(previous)
+
+
+def verify_receipt_chain(root: Path, index_path: Path) -> list[str]:
+    """Recompute the receipt hash chain in run_index order and return the errors."""
+
+    index = load_structured(index_path)
+    rows = index.get("receipts") if isinstance(index, dict) else None
+    if not isinstance(rows, list):
+        return ["run_index is not a v2 receipt projection; nothing to chain-verify"]
+    errors: list[str] = []
+    previous_path: Path | None = None
+    for position, row in enumerate(rows):
+        if not isinstance(row, dict) or not isinstance(row.get("receipt_path"), str):
+            errors.append(f"receipts[{position}] has no receipt_path")
+            previous_path = None
+            continue
+        path = _receipt_target(root, row["receipt_path"])
+        if not path.is_file():
+            errors.append(f"receipts[{position}] receipt file is missing: {row['receipt_path']}")
+            previous_path = None
+            continue
+        document = load_structured(path)
+        if not isinstance(document, dict):
+            errors.append(f"receipts[{position}] receipt is not a JSON object: {row['receipt_path']}")
+            previous_path = None
+            continue
+        declared = document.get("previous_receipt_hash")
+        if previous_path is not None and isinstance(declared, str):
+            actual = sha256_file(previous_path)
+            if declared != actual:
+                errors.append(
+                    f"receipts[{position}] ({row['receipt_path']}) previous_receipt_hash does not match the bytes of "
+                    f"{rel_path(previous_path, root)}: receipt history was modified, reordered, or deleted"
+                )
+        previous_path = path
+    return errors
 
 
 def _append_v2_index(
@@ -265,6 +333,10 @@ def _run_v2(args: argparse.Namespace, root: Path, manifest_path: Path | None, ar
     if hash_io:
         receipt["stdout_sha256"] = sha256_file(stdout_path)
         receipt["stderr_sha256"] = sha256_file(stderr_path)
+    previous_hash = _previous_receipt_hash(root, index_path)
+    if previous_hash is not None:
+        receipt["previous_receipt_hash"] = previous_hash
+    receipt["execution_host_identity"] = execution_host_identity()
     if missing_outputs:
         receipt["metadata"].update({"outcome": "failed", "failure_reason": "declared_output_missing", "missing_outputs": missing_outputs})
     else:
@@ -369,9 +441,9 @@ def _run_v1(args: argparse.Namespace, root: Path, argv: list[str]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-id", required=True)
-    parser.add_argument("--stage", required=True, choices=("safety", "smoke", "full", "freeze", "evidence", "qa", "review", "submission"))
-    parser.add_argument("--receipt", required=True)
+    parser.add_argument("--run-id")
+    parser.add_argument("--stage", choices=("safety", "smoke", "full", "freeze", "evidence", "qa", "review", "submission"))
+    parser.add_argument("--receipt")
     parser.add_argument("--receipt-id", help="predeclared v2 receipt id for producer/output binding")
     parser.add_argument("--index")
     parser.add_argument("--manifest", help="v2 run_manifest; activates the normalized receipt path")
@@ -389,9 +461,30 @@ def main() -> int:
     parser.add_argument("--covers-contract-item", action="append", default=[], help="equation, constraint, or validation-obligation id exercised by this smoke command")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--command-cwd", help="child working directory, relative to project root")
+    parser.add_argument("--verify-chain", action="store_true", help="verify the receipt hash chain of --index and exit without running a command")
     parser.add_argument("argv", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     root = Path(args.project_root).resolve()
+    if args.verify_chain:
+        if not args.index:
+            print(json.dumps({"ok": False, "errors": ["--verify-chain requires --index <run_index.json>"]}, ensure_ascii=False))
+            return 2
+        index_path = require_within(root / args.index if not Path(args.index).is_absolute() else Path(args.index), root, label="--index")
+        if not index_path.is_file():
+            print(json.dumps({"ok": False, "errors": [f"run_index does not exist: {args.index}"]}, ensure_ascii=False))
+            return 2
+        errors = verify_receipt_chain(root, index_path)
+        payload = load_structured(index_path)
+        receipt_count = len(payload.get("receipts", [])) if isinstance(payload, dict) else 0
+        print(json.dumps({"ok": not errors, "receipts": receipt_count, "errors": errors}, ensure_ascii=False))
+        return 0 if not errors else 1
+    missing = [
+        name for name, value in (("--run-id", args.run_id), ("--stage", args.stage), ("--receipt", args.receipt))
+        if not value
+    ]
+    if missing:
+        print(json.dumps({"ok": False, "errors": [f"{name} is required unless --verify-chain is used" for name in missing]}, ensure_ascii=False))
+        return 2
     argv = [part for part in args.argv if part != "--"]
     if argv and argv[0] == "--":
         argv = argv[1:]

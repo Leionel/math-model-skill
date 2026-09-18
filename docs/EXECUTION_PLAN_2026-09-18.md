@@ -293,3 +293,15 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 - 新消费者的验收线：任何新的读取都必须通过 CLI↔API 持平测试（`tests/test_runtime_api.py` 的模式），**不得新增第二实现**；若某读取尚无 CLI 对应命令，先在 CLI 侧有行为、再抽 runtime。
 - 已知边界：闸门名 runtime 接受任意大小写并归一为小写（CLI 仅接受大写 `M1`）；`artifact_view` / `check_gate` 只走 v2 运行时，v1 manifest 仅 `get_state` 给出降级视图。
 - 下一步（与 §2.1 一致）：先接 P0-C C3（恢复编排器），再依次抽 rerun planning → review projection。
+
+### 10.4 交接表更新（2026-09-18，P2-C 已交付）
+
+任务 A（P2-C：Receipt 哈希链 + Human Checkpoint Producer）已完成：
+
+- `schemas/command_receipt.schema.json` 增加可选 `previous_receipt_hash`（run_index 顺序上上一条 receipt 文件字节的 SHA-256）与 `execution_host_identity`（hostname + platform）；v1 receipt 不受影响。
+- 生产者 `scripts/run_and_record.py::_run_v2` 写入上述字段；历史链断裂（上一条 receipt 缺失）时拒绝写新 receipt（fail closed）。
+- 新增 `run_and_record.py --verify-chain --index <run_index.json>`：按 run_index 顺序重算链，删改/重排/删除历史 receipt 报错（退出码 1）；`--run-id/--stage/--receipt` 改为非 verify 模式下手动校验。
+- 新增 `schemas/human_decision.schema.json`（schema 计数守卫 36 → 37）与生产者 `scripts/human_checkpoints.py`；新增 `harness checkpoint approve <STAGE> --role <ROLE> --decision approve|reject`：append-only 决策 artifact（`.harness/human_decisions/`，带全局序号 + `previous_decision_sha256` 决策链）+ 追加 `run_manifest.human_checkpoints` 行（`decision_artifact` + `decision_sha256` 绑定证据）；manifest 仍是控制真相。
+- `docs/THREAT_MODEL.md` §5.1/§5.2/§8 改写为"已实现 X，仍未覆盖 Y"；redteam 场景与 DOC-CLAIMS 绑定保持不变（场景仍准确：无签名、无外部见证、身份为自我声明）。
+- 回归测试 `tests/test_receipt_chain_and_decisions.py`（9 项）：链串联、完好/篡改/删除三种链校验退出码、approve 追加与决策链、append-only、非法 stage 与非 v2 manifest 拒绝（退出码 2）。
+- 验证：目标测试 + 相邻面（doc_claims / checkpoints_and_diff / execution_capsule / agent_policy）+ `ruff check` + `harness agents check` 通过；全量 unittest 见提交记录。

@@ -26,6 +26,7 @@ from _common import child_env, exclusive_path_lock, load_structured, rel_path, r
 import bench_run  # noqa: E402
 import capability_composition  # noqa: E402
 import checkpoints  # noqa: E402
+import human_checkpoints  # noqa: E402
 import run_diff  # noqa: E402
 from runtime import backend as runtime_backend  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
@@ -1108,6 +1109,13 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint_list = checkpoint_sub.add_parser("list", help="list recorded checkpoints")
     _add_common(checkpoint_list)
     checkpoint_list.set_defaults(handler=_checkpoint)
+    checkpoint_approve = checkpoint_sub.add_parser("approve", help="record one human checkpoint decision (append-only evidence + manifest row)")
+    _add_common(checkpoint_approve)
+    checkpoint_approve.add_argument("stage", help="checkpoint stage, lowercase (e.g. w1)")
+    checkpoint_approve.add_argument("--role", required=True, help="deciding role; recorded as a declaration, not a verified identity")
+    checkpoint_approve.add_argument("--decision", required=True, choices=("approve", "reject"))
+    checkpoint_approve.add_argument("--note", default="")
+    checkpoint_approve.set_defaults(handler=_checkpoint)
 
     fork = sub.add_parser("fork", help="copy a checkpointed run state into a new project root")
     _add_common(fork)
@@ -1498,6 +1506,23 @@ def _checkpoint(args: argparse.Namespace) -> int:
         document = checkpoints.create_checkpoint(root, args.name, force=args.force)
         result = {"ok": True, "schema_version": "1.0", "checkpoint": document["checkpoint_id"], "created_at": document["created_at"], "files": len(document["files"])}
         _emit(result, machine=args.json, human=f"checkpoint {result['checkpoint']} recorded {result['files']} file(s)")
+        return 0
+    if args.checkpoint_action == "approve":
+        document = human_checkpoints.record_decision(root, args.stage, args.role, args.decision, note=args.note)
+        result = {
+            "ok": True,
+            "schema_version": "1.0",
+            "checkpoint": document["checkpoint"],
+            "decision": document["decision"],
+            "artifact": document["artifact"],
+            "previous_decision_sha256": document["previous_decision_sha256"],
+            "manifest_rows": document["manifest_rows"],
+        }
+        chained = "chained to previous decision" if document["previous_decision_sha256"] else "first decision"
+        _emit(result, machine=args.json, human=(
+            f"checkpoint {document['checkpoint']}: {document['decision']} recorded as {document['artifact']} ({chained}); "
+            f"role is a declaration, not a verified identity"
+        ))
         return 0
     if args.checkpoint_action == "verify":
         ok, errors = checkpoints.verify_checkpoint(root, args.name)
