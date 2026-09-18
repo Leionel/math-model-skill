@@ -32,3 +32,6 @@ evaluation/results/
 
 # Agent session state for this workspace; may contain private context.
 .qoder/
+
+# Recovery benchmark baseline is built per run (see build_slim_fixture.py).
+evaluation/recovery/fixtures/slim_v2/

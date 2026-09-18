@@ -1,4 +1,0 @@
-# 结构化实现映射 source：不复制 receipt、冻结结果或 Gate 状态。
-# 编译：harness solve --compile
-# implementation_map:
-#   schema_version: "1.0"

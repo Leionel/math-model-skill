@@ -10,18 +10,22 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = ROOT / "evaluation" / "recovery" / "fixtures" / "slim_v2"
 FAULTS = ROOT / "evaluation" / "recovery" / "faults"
 REPAIR = ROOT / "evaluation" / "recovery" / "repair.py"
 UTF8_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 sys.path.insert(0, str(REPAIR.parent))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import repair as repair_module  # noqa: E402
+from _recovery_baseline import built_fixture  # noqa: E402
 
 
-@unittest.skipUnless(FIXTURE.is_dir(), "slim fixture has not been generated yet")
 class RecoveryRepairTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.fixture = built_fixture()
+
     def test_freeze_artifact_repair_is_contract_blocked(self) -> None:
         """F03 documents the recovery channel gap: a deleted frozen result has no
         sanctioned repair (P2 requires exactly one successful freeze receipt, so
@@ -30,7 +34,7 @@ class RecoveryRepairTest(unittest.TestCase):
         fault = FAULTS / "F03_frozen_results_deleted"
         with tempfile.TemporaryDirectory(prefix="repair-f03-") as temp:
             project = Path(temp) / "project"
-            shutil.copytree(FIXTURE, project)
+            shutil.copytree(self.fixture, project)
             injected = subprocess.run(
                 [sys.executable, str(fault / "inject.py"), "--project-root", str(project)],
                 text=True, capture_output=True, encoding="utf-8", check=False,

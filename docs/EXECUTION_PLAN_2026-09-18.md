@@ -311,7 +311,7 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 任务 B（Recovery Benchmark）已完成：
 
 - 设计文档 `docs/RECOVERY_BENCHMARK_DESIGN_2026-09-21.md`：F01–F10 故障清单（含可注入性判定）、恢复环、指标定义（含 `unnecessary_rerun_ratio`）、PASS/FAIL 判定、§6 已知 gap。
-- slim fixture `evaluation/recovery/fixtures/slim_v2/`（203K，无竞赛原文）：由 `build_slim_fixture.py` 调 `run_demo` 同一套 helpers 生成，S0→W2 全 gate PASS；`tests/test_recovery_fixture.py` 锁定 schema 校验 + 全 gate 绿。
+- slim fixture：由 `evaluation/recovery/fixtures/build_slim_fixture.py` 调 `run_demo` 同一套 helpers **每轮生成**（不入库，原因见设计文档 §6 GAP-R3），S0→W2 全 gate PASS；`tests/test_recovery_fixture.py` 锁定 schema 校验 + 全 gate 绿。
 - 故障注入 `evaluation/recovery/faults/F01/F02/F03/F04/F05/F08`（`fault.json` + `inject.py`）：每条都有回归测试锁定"注入后必须报 blocker"，检测锚点取自实证（非猜测）；空目录等错误形态返回退出码 2。
 - 恢复执行端 `evaluation/recovery/repair.py`（GAP-08）：planner 计划 → 步骤分类（rerun / contract_blocked / author_plane）→ smoke/full 经 `harness execute` 重放留 receipt → 经 `scripts/runtime.check_gate` 复检 → `.harness/recovery/<fault_id>.json` 日志。
 - **实证 gap（回写设计文档 §6）**：GAP-R1——P2 "恰好一条成功 freeze receipt" 不变量使 freeze 产物无合规修复通道（重放 freeze 实证打穿 P2）；GAP-R2——fixture 无 receipt-backed 的 smoke/full DAG 产物，`rerun` 通道暂无端到端用例。
@@ -354,3 +354,14 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 - **GAP-R1**：freeze 产物缺受控修复通道（需 receipt 顶替或新 run scope 迁移的设计决定）。
 - **GAP-R2**：slim fixture 无 receipt-backed 的 DAG 产物，`rerun` 通道只有单元测试覆盖。
 - 其余同类镜像（§10.7 末两条）与 Windows job 的显式测试清单需人工维护。
+
+### 10.9 CI 首跑暴露并修复的两个缺陷（2026-09-18）
+
+推送后 `harness-ci` 四个 job 全红，根因两条（本地 Windows 全绿无法暴露）：
+
+1. **按字节固化的 fixture 进了版本库**：`core.autocrlf=true` 把生成时的 CRLF 存成 LF blob，Linux checkout 后 8 个 DAG artifact + freeze receipt + AI 交互记录全部 `digest_drift`，并连带把 F08 的检测信号淹成搬迁噪声。修法：fixture **不再提交**，改由 `tests/_recovery_baseline.py` 每轮构建一次并缓存、各测试 `copytree` 克隆（与 `evaluation/redteam.py::built_project` 同约定），目录加入 `.gitignore`。
+2. **windows-light 用了 bash heredoc**：Windows runner 默认 pwsh → `ParserError: Missing file specification after redirection operator`。修法：改为直接 `python -m unittest <显式模块清单>`。
+
+顺带补强：`tests/test_recovery_faults.py` 新增**反假绿锁**——注入前先断言该克隆自身在 M1/P1/P2（validate 类故障还需先做一次 scripted 重审以复位 W2 搬迁噪声）为绿。这条锁是本次 CI 失败真正该暴露的方法论缺陷：原先"检出"可能只是搬迁造成的红。
+
+验证：本地 recovery 全套 + `test_readme_claims` 在 `git archive` 导出的**逐字节、无行尾转换**检出树上同样全绿（等价 Linux checkout），`ruff check` 通过。

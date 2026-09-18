@@ -72,11 +72,15 @@ PASS/FAIL 判定（单故障）：
 - **FAIL**：复检未回 PASS，或修复引入新 blocker。
 - 指标汇总只在 C4a 通道验证 + C4b 真实运行后写入 `evaluation/PREREGISTRATION.md` 修订版；README 不得引用。
 
-## 4. C1 slim fixture（`evaluation/recovery/fixtures/slim_v2/`）
+## 4. C1 slim fixture（每轮生成，不入库）
 
-- 形状取自 `battle/2026-08-17` 的 v2 项目结构，**不含任何竞赛原文**；内容由 `evaluation/recovery/fixtures/build_slim_fixture.py` 调 `examples/end_to_end/run_demo.py` 的同一套 helpers（`Demo`/`build`/`refresh_dag`/`add_checkpoint`）生成后固化，不设第二实现。
-- 覆盖生命周期：S0 init → M1（contract + registry + checkpoint）→ P1 smoke → P2 full + freeze + W1/W2（paper + review），即 `harness status` 全 gate PASS 的最小项目。
-- `tests/test_recovery_fixture.py`：对 manifest / run_index / artifact_dag / frozen_results / receipts 逐文件 schema 校验 + 在 fixture 上跑 `harness check M1/P1/P2` 全部 PASS（保证故障注入的 delta 可归因）。
+- 形状取自 `battle/2026-08-17` 的 v2 项目结构，**不含任何竞赛原文**；由 `evaluation/recovery/fixtures/build_slim_fixture.py` 调 `examples/end_to_end/run_demo.py` 的同一套 helpers（`Demo`/`build`/`refresh_dag`/`add_checkpoint`）生成，不设第二实现。
+- **生成而非提交**，与 `evaluation/redteam.py::built_project` 同一约定，原因有两条（都是 CI 实测教训，见 §6 GAP-R3）：
+  1. receipt 的 I/O 摘要与 DAG 摘要是对**确切文件字节**求值，Git 的行尾归一化（Windows `core.autocrlf=true`）会让 Linux checkout 后每个 artifact 都读成 stale；
+  2. review 证据绑定生成时的**绝对路径**，任何重定位都会让 W2 因路径而非故障失败——那会让"检出"变成假绿。
+- `tests/_recovery_baseline.py` 每轮构建一次并缓存，故障/修复测试各自 `copytree` 克隆。
+- 覆盖生命周期：S0 init → M1（contract + registry + checkpoint）→ P1 smoke → P2 full + freeze → W1/W2（paper + review），即全 gate PASS 的最小项目。
+- 回归锁：`tests/test_recovery_fixture.py`（逐文件 schema 校验 + 全 gate/validate 绿）；`tests/test_recovery_faults.py` 在注入前先断言**该克隆自身**在 M1/P1/P2（validate 类故障还含 W2，需先做一次 scripted 重审以复位搬迁噪声）为绿，再断言注入后报出预期 blocker——保证 delta 可归因。
 
 ## 5. 恢复执行端（GAP-08）
 
@@ -94,6 +98,7 @@ PASS/FAIL 判定（单故障）：
 
 - **GAP-R1（2026-09-18 实证）：freeze 产物无合规修复通道。** P2 硬性要求"恰好一条成功 freeze receipt"（`v2_gate_runtime._v2_gate_p2`）；经 `harness execute` 重放 freeze receipt 会产生第二条成功 freeze receipt，P2 从此永远失败（已在临时副本实证：`P2 requires exactly one successful freeze receipt`）。`harness reproduce` 只在隔离副本内比对字节、不把产物落回（重定位后的）项目。结论：F03/F04 类故障的"检测"完备，"修复"在当前契约下不可达，需要新的受控机制（如 receipt 顶替/新 run scope 迁移）才能闭合；执行端如实记 `contract_blocked`，不绕过。
 - **GAP-R2：slim fixture 的 DAG 产物均为作者平面或 freeze 产物**——smoke/full 重跑路径（`rerun` 类）当前没有可注入的 fixture 故障能走通端到端，只有 argv 映射的单元测试覆盖。补 fixture（增加 receipt-backed 的 DAG 产物）后方可端到端验证 `rerun` 通道。
+- **GAP-R3（2026-09-18 CI 实测）：按字节固化的证据不能进版本库。** 初版把 fixture 提交在 `evaluation/recovery/fixtures/slim_v2/`，Linux CI 上 8 个 DAG artifact 全部读成 `digest_drift`（`core.autocrlf` 把 CRLF 存成 LF），且 review 证据绑死生成时的绝对路径。现改为每轮生成（§4）。**遗留事实**：v2 的 review 平面整体不可搬迁——重定位后 W2 必红，除非重跑 `harness review`；任何需要跨机比对 W2 的评测都必须先重建 review 证据。
 - F06 sensitivity、F07 implementation_map 所需产物不在 slim fixture 中——恢复矩阵以 §2 表格"可注入"列为准。
 
 ## 7. 不做什么

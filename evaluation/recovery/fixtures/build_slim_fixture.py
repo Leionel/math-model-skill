@@ -1,10 +1,12 @@
-"""Rebuild the recovery benchmark's slim v2 fixture from the demo lifecycle.
+"""Build the recovery benchmark's slim v2 fixture from the demo lifecycle.
 
 The fixture is the demo project (S0 init -> M1 -> P1 -> P2 -> W1/W2) generated
-through the same ``harness`` CLI steps as ``examples/end_to_end/run_demo.py``,
-then pinned under ``evaluation/recovery/fixtures/slim_v2/``.  Nothing here
-writes a Gate verdict, receipt or hash by hand; regeneration reruns the real
-producers and the committed bytes change only through them.
+through the same ``harness`` CLI steps as ``examples/end_to_end/run_demo.py``.
+It is built per evaluation run rather than committed: review evidence binds the
+absolute project path and every digest is computed over exact file bytes, so a
+checked-in tree would read as stale the moment it lands anywhere else (and
+line-ending normalization alone would break it).  This mirrors how
+``evaluation/redteam.py`` builds one baseline and clones it for each attack.
 """
 
 from __future__ import annotations
@@ -19,15 +21,22 @@ sys.path.insert(0, str(REPO_ROOT / "examples" / "end_to_end"))
 import run_demo  # noqa: E402
 
 
+def build(target: Path, *, verbose: bool = False) -> Path:
+    """Materialize one green slim fixture at ``target`` and return its root."""
+
+    if target.exists() and any(target.iterdir()):
+        raise ValueError(f"fixture target is not empty: {target}")
+    run_demo.build(run_demo.Demo(target, verbose=verbose))
+    return target
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, help="target directory for the fixture project (must be empty or absent)")
+    parser.add_argument("--verbose", action="store_true", help="print every harness step as it runs")
     args = parser.parse_args()
-    out = Path(args.out).resolve()
-    if out.exists() and any(out.iterdir()):
-        raise SystemExit(f"target is not empty: {out}")
-    run_demo.build(run_demo.Demo(out, verbose=True))
-    print(f"fixture written to {out}")
+    build(Path(args.out).resolve(), verbose=args.verbose)
+    print(f"fixture written to {Path(args.out).resolve()}")
     return 0
 
 
