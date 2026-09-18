@@ -299,8 +299,9 @@ class WP1ContractsTest(unittest.TestCase):
         # + agent_contract.schema.json (Agent role contracts)
         # + verifier.schema.json (verifier registry contract)
         # + bench_task.schema.json (harness regression task declaration)
-        # + capability.schema.json (capability composition contract).
-        self.assertEqual(len(paths), 35)
+        # + capability.schema.json (capability composition contract)
+        # + execution_capsule.schema.json (local backend reproduction).
+        self.assertEqual(len(paths), 36)
         for path in paths:
             with self.subTest(path=path.name):
                 json.loads(path.read_text(encoding="utf-8"))

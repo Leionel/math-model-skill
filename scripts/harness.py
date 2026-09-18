@@ -27,6 +27,7 @@ import bench_run  # noqa: E402
 import capability_composition  # noqa: E402
 import checkpoints  # noqa: E402
 import run_diff  # noqa: E402
+from runtime import backend as runtime_backend  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
 from figures.pptx_router import stage_pptx_reference  # noqa: E402
 from figures.illustration_execution import build_image_generation_request, collect_illustration_output  # noqa: E402
@@ -1128,6 +1129,14 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("run_b")
     compare.set_defaults(handler=_compare)
 
+    reproduce = sub.add_parser("reproduce", help="re-run one recorded command from its receipt and compare bytes")
+    reproduce.add_argument("source", help="a command receipt, or a capsule derived from one")
+    reproduce.add_argument("--capsule-out", help="write the derived execution capsule here")
+    reproduce.add_argument("--no-isolate", action="store_true", help="run in the recorded root instead of a copy")
+    reproduce.add_argument("--timeout", type=int, default=900)
+    reproduce.add_argument("--json", action="store_true")
+    reproduce.set_defaults(handler=_reproduce)
+
     bench = sub.add_parser("bench", help="re-run one declared task against a harness revision")
     bench_sub = bench.add_subparsers(dest="bench_action", required=True)
     bench_run = bench_sub.add_parser("run", help="record engineering facts for one task and harness revision")
@@ -1529,6 +1538,24 @@ def _compare(args: argparse.Namespace) -> int:
     document, code = run_diff.compare_runs(args.run_a, args.run_b)
     _emit(document, machine=args.json, human=run_diff.human_summary(document))
     return code
+
+
+def _reproduce(args: argparse.Namespace) -> int:
+    capsule = runtime_backend.load_capsule_or_receipt(args.source)
+    if args.capsule_out:
+        target = Path(args.capsule_out)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(capsule, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    report = runtime_backend.reproduce(capsule, isolate=not args.no_isolate, timeout=args.timeout)
+    human = "\n".join([
+        f"capsule {report['capsule_id']}  isolated {report['isolated']}",
+        f"exit {report['exit_code']} (expected {report['expected_exit_code']})",
+        f"outputs matched: {sum(1 for row in report['outputs'] if row['match'])}/{len(report['outputs'])}",
+        *([f"mismatch: {path}" for path in report["mismatches"]]),
+        *([f"missing: {report['missing_output']}"] if report.get("missing_output") else []),
+    ])
+    _emit(report, machine=args.json, human=human)
+    return 0 if report["ok"] else 1
 
 
 def _bench(args: argparse.Namespace) -> int:

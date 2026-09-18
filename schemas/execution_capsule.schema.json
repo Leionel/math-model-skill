@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://math-modeling-skill-sion/schemas/execution_capsule.schema.json",
+  "title": "Execution capsule",
+  "description": "Everything needed to re-run one recorded command and check that it produced the same bytes. Derived from a command receipt; fields the receipt does not capture (environment variables, seed) are recorded as null with an explicit note instead of being invented.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "capsule_id", "source_receipt", "command", "randomness", "environment", "expected", "outputs", "recorded_at"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "capsule_id": { "type": "string", "minLength": 1 },
+    "source_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "receipt_id", "exit_code"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "receipt_id": { "type": "string", "minLength": 1 },
+        "exit_code": { "type": "integer" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "cwd"],
+      "properties": {
+        "argv": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "cwd": { "type": "string", "minLength": 1 },
+        "run_id": { "type": ["string", "null"] },
+        "integrity_mode": { "type": ["string", "null"] }
+      }
+    },
+    "randomness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed", "captured"],
+      "properties": {
+        "seed": { "type": ["integer", "null"] },
+        "captured": { "type": "boolean" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "python", "implementation", "platform", "variables_captured"],
+      "properties": {
+        "backend": { "type": "string", "minLength": 1 },
+        "python": { "type": "string", "minLength": 1 },
+        "implementation": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "variables_captured": { "const": false }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exit_code"],
+      "properties": {
+        "exit_code": { "type": "integer" }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}

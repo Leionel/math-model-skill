@@ -11,6 +11,16 @@ harness subprocess or re-implementing a projection.
 
 from __future__ import annotations
 
+from .backend import CapsuleError, LocalBackend, build_capsule, reproduce
 from .read_api import RuntimeView, check_gate, get_state, verify_artifact
 
-__all__ = ["RuntimeView", "check_gate", "get_state", "verify_artifact"]
+__all__ = [
+    "CapsuleError",
+    "LocalBackend",
+    "RuntimeView",
+    "build_capsule",
+    "check_gate",
+    "get_state",
+    "reproduce",
+    "verify_artifact",
+]
