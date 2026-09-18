@@ -1,0 +1,56 @@
+{
+  "evaluator_version": "p0-comparator-v1",
+  "measurement_snapshot": {
+    "path": "validation_measurements.json",
+    "sha256": "22f66531402b4e5e2f1e76f8cc5f7305504ad13490cf7fc36fbc8b9ce52dd93b"
+  },
+  "model_contract_snapshot": {
+    "path": "model_contract.json",
+    "sha256": "de05a4e44ffb37ada2c07b244fb27c1e22d6cb36178969a2678ff8e65aec7c42"
+  },
+  "obligations": [
+    {
+      "locator": "model.capacity_violation",
+      "message": "0 item <= 0 item",
+      "obligation_id": "VAL-FEASIBILITY",
+      "observed": {
+        "locator": "model.capacity_violation",
+        "metric_id": "max_violation",
+        "unit": "item",
+        "value": 0.0
+      },
+      "operator": "<=",
+      "status": "PASS",
+      "threshold": {
+        "kind": "literal",
+        "value": 0.0
+      },
+      "unit": "item"
+    },
+    {
+      "locator": "model.cost_by_product | model.cost_by_depot",
+      "message": "230 CNY == 230 CNY (tolerance 1e-06)",
+      "obligation_id": "VAL-OBJECTIVE",
+      "observed": {
+        "locator": "model.cost_by_product",
+        "metric_id": "solver_objective",
+        "unit": "CNY",
+        "value": 230.0
+      },
+      "operator": "==",
+      "status": "PASS",
+      "threshold": {
+        "kind": "metric",
+        "locator": "model.cost_by_depot",
+        "metric_id": "independent_objective",
+        "unit": "CNY",
+        "value": 230.0
+      },
+      "unit": "CNY"
+    }
+  ],
+  "ok": true,
+  "run_id": "run-1",
+  "schema_version": "1.0",
+  "verdict": "PASS"
+}

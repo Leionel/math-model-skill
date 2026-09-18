@@ -1,0 +1,54 @@
+{
+  "argv": [
+    "C:\\Python314\\python.exe",
+    "D:\\Projects\\随便做做\\math-modeling-skill-sion\\tests\\fixtures\\review_stub\\stub_reviewer.py"
+  ],
+  "command_id": "CMD-faf38fda02cd",
+  "cwd": "D:\\Projects\\随便做做\\math-modeling-skill-sion\\evaluation\\recovery\\fixtures\\slim_v2\\reports\\review\\bundle\\run-1-20260918T044350489985Z",
+  "duration_s": 0.13,
+  "env_note": "environment inherited from parent process; not captured",
+  "execution_host_identity": {
+    "hostname": "SIu",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "exit_code": 0,
+  "finished_at": "2026-09-18T04:43:53.517605+00:00",
+  "input_refs": [
+    {
+      "artifact_id": "ART-131788DCF1956978664C",
+      "critical": true,
+      "digest_owner": "command_receipt",
+      "path": "reports/review/bundle/run-1-20260918T044350489985Z/bundle_manifest.json",
+      "sha256": "f1cad92490d08ea096d69a130b8e985ecf467d965cb58e9c1bd20f47f258f59e"
+    }
+  ],
+  "metadata": {
+    "integrity_mode": "sprint",
+    "io_hashes_bound": true,
+    "note": "review:semantic_critic:fresh_context:L1_fresh_context",
+    "outcome": "success"
+  },
+  "output_refs": [
+    {
+      "artifact_id": "ART-B9F0041DBAB1E9DAC42D",
+      "critical": true,
+      "digest_owner": "command_receipt",
+      "path": "reports/review/semantic_critic-run-1-20260918T044350489985Z.json",
+      "sha256": "fc8462e9ebc3346321d85fd5720aba296a2b36844897a0c2eeed4b97b88f70fe"
+    }
+  ],
+  "previous_receipt_hash": "d1822900f910b5931aec227e13e2a6770df76cf208276cdb6eeafc9ede0fad65",
+  "receipt_id": "REC-8266dc160d924ddf",
+  "run_id": "run-1",
+  "schema_version": "2.0",
+  "seed": null,
+  "selection": {
+    "selected": false
+  },
+  "stage": "review",
+  "started_at": "2026-09-18T04:43:53.388054+00:00",
+  "stderr_path": "receipts/review-20260918T044353047803Z-65612d.json.stderr",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_path": "receipts/review-20260918T044353047803Z-65612d.json.stdout",
+  "stdout_sha256": "6b8075e7605bcc4502f362cde83c9a910bb1648034b782b8e897eafe0383c5f5"
+}

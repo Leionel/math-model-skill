@@ -1,0 +1,12 @@
+{
+  "fault_id": "F08",
+  "name": "unsupported numerical claim",
+  "attack_surface": "abstract.txt + artifact_dag.json + review evidence",
+  "mutation": "append an unevidenced 40-percent savings claim to the abstract, refresh the DAG digest, and re-review with the scripted reviewer; the deterministic content QA must refuse the claim independently of review staleness",
+  "expected_detection": {
+    "tool": "harness validate",
+    "gate": "W2",
+    "error_substring": "consistency failed"
+  },
+  "minimal_repair_set": ["abstract"]
+}

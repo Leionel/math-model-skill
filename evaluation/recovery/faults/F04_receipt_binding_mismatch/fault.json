@@ -1,0 +1,12 @@
+{
+  "fault_id": "F04",
+  "name": "receipt/result binding mismatch",
+  "attack_surface": "frozen_results.json#command",
+  "mutation": "repoint the frozen result's command binding from the selected full receipt to the smoke receipt",
+  "expected_detection": {
+    "tool": "harness check",
+    "gate": "P2",
+    "error_substring": "frozen_results is not bound to the selected full receipt"
+  },
+  "minimal_repair_set": ["frozen_results"]
+}

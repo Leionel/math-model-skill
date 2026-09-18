@@ -1,0 +1,61 @@
+{
+  "schema_version": "2.0",
+  "profile_id": "harness-demo",
+  "status": "verified",
+  "competition": {
+    "family": "other",
+    "name": "Harness end-to-end demo (synthetic)",
+    "season": "2026",
+    "mode": "practice",
+    "language": "en"
+  },
+  "official_rules": [
+    {
+      "rule_id": "DEMO-RULES",
+      "title": "Synthetic demo competition rules",
+      "url": "https://example.invalid/harness-demo/rules",
+      "retrieved_at": "2026-09-18T04:43:40+00:00",
+      "snapshot": {
+        "path": "rules.md"
+      }
+    }
+  ],
+  "official_submission_endpoints": [
+    {
+      "name": "synthetic demo portal",
+      "url": "https://example.invalid/harness-demo/submit",
+      "kind": "portal"
+    }
+  ],
+  "submission": {
+    "paper_extensions": [
+      ".txt",
+      ".pdf"
+    ],
+    "max_paper_bytes": null,
+    "max_pages": 25,
+    "max_pages_excludes_ai_report": false,
+    "page_count_scope": "paper_body",
+    "support_policy": "optional",
+    "max_support_bytes": null,
+    "ai_disclosure_policy": "required_when_used",
+    "ai_disclosure_format": "separate_file",
+    "ai_manual_checks": {
+      "when_used": [
+        "ai_generated_content_marked"
+      ],
+      "when_not_used": [
+        "no_ai_declaration_after_references"
+      ]
+    },
+    "required_manual_checks": [
+      "ai_generated_content_marked"
+    ]
+  },
+  "template_id": null,
+  "visual_profile_id": null,
+  "metadata": {
+    "source": "examples/end_to_end",
+    "official_verified": true
+  }
+}

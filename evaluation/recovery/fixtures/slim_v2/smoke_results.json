@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "result_id": "R-Q1-01",
+      "question_id": "q1",
+      "name": "optimal_cost",
+      "value": 420,
+      "unit": "CNY",
+      "precision": 0,
+      "statistical_definition": "total procurement cost of the selected feasible assignment",
+      "boundary": "declared demand, capacities and unit costs only",
+      "validation_status": "passed"
+    }
+  ]
+}

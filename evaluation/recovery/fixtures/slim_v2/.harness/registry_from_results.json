@@ -1,0 +1,29 @@
+{
+  "evidence": [
+    {
+      "artifacts": [
+        {
+          "path": "raw_results.json",
+          "sha256": "af08cc137bc41c6a57d96e18e611069911e091f3fcd23552225338acfebeaab5"
+        }
+      ],
+      "boundary": "declared demand, capacities and unit costs only",
+      "evidence_id": "E-R-Q1-01",
+      "result_ids": [
+        "R-Q1-01"
+      ],
+      "supports": "optimal_cost = 230 CNY",
+      "type": "result",
+      "verification_status": "verified"
+    }
+  ],
+  "run_id": "run-1",
+  "schema_version": "1.1",
+  "source_snapshots": [
+    {
+      "kind": "frozen_results",
+      "path": "frozen_results.json",
+      "sha256": "232bb24c8309ef890832bc63adb295783f24a804a99665ac742abd03ecc707bf"
+    }
+  ]
+}

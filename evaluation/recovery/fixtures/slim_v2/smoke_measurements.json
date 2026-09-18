@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "run_id": "run-1",
+  "observations": [
+    {
+      "obligation_id": "VAL-FEASIBILITY",
+      "metrics": [
+        {
+          "metric_id": "max_violation",
+          "value": 0,
+          "unit": "item",
+          "locator": "model.capacity_violation"
+        }
+      ]
+    }
+  ]
+}

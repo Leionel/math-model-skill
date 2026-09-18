@@ -305,3 +305,24 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 - `docs/THREAT_MODEL.md` §5.1/§5.2/§8 改写为"已实现 X，仍未覆盖 Y"；redteam 场景与 DOC-CLAIMS 绑定保持不变（场景仍准确：无签名、无外部见证、身份为自我声明）。
 - 回归测试 `tests/test_receipt_chain_and_decisions.py`（9 项）：链串联、完好/篡改/删除三种链校验退出码、approve 追加与决策链、append-only、非法 stage 与非 v2 manifest 拒绝（退出码 2）。
 - 验证：目标测试 + 相邻面（doc_claims / checkpoints_and_diff / execution_capsule / agent_policy）+ `ruff check` + `harness agents check` 通过；全量 unittest 见提交记录。
+
+### 10.5 交接表更新（2026-09-18，P0-C C0/C1 + GAP-08 执行端已交付）
+
+任务 B（Recovery Benchmark）已完成：
+
+- 设计文档 `docs/RECOVERY_BENCHMARK_DESIGN_2026-09-21.md`：F01–F10 故障清单（含可注入性判定）、恢复环、指标定义（含 `unnecessary_rerun_ratio`）、PASS/FAIL 判定、§6 已知 gap。
+- slim fixture `evaluation/recovery/fixtures/slim_v2/`（203K，无竞赛原文）：由 `build_slim_fixture.py` 调 `run_demo` 同一套 helpers 生成，S0→W2 全 gate PASS；`tests/test_recovery_fixture.py` 锁定 schema 校验 + 全 gate 绿。
+- 故障注入 `evaluation/recovery/faults/F01/F02/F03/F04/F05/F08`（`fault.json` + `inject.py`）：每条都有回归测试锁定"注入后必须报 blocker"，检测锚点取自实证（非猜测）；空目录等错误形态返回退出码 2。
+- 恢复执行端 `evaluation/recovery/repair.py`（GAP-08）：planner 计划 → 步骤分类（rerun / contract_blocked / author_plane）→ smoke/full 经 `harness execute` 重放留 receipt → 经 `scripts/runtime.check_gate` 复检 → `.harness/recovery/<fault_id>.json` 日志。
+- **实证 gap（回写设计文档 §6）**：GAP-R1——P2 "恰好一条成功 freeze receipt" 不变量使 freeze 产物无合规修复通道（重放 freeze 实证打穿 P2）；GAP-R2——fixture 无 receipt-backed 的 smoke/full DAG 产物，`rerun` 通道暂无端到端用例。
+- 验证：recovery 三套测试 10 项 + `ruff check` 通过；全量 unittest 见提交记录。
+
+### 10.6 交接表更新（2026-09-18，P0-D CI 第二阶段已交付）
+
+任务 D（CI 第二阶段）已完成：
+
+- `.github/workflows/ci.yml` 拆为三个 job：`unit`（Ubuntu × Python 3.10/3.11/3.12，不装 TeX，排除唯一真实消耗 TeX 的 `test_editorial_integrity` 模块）、`full`（3.11 + TeX Live/poppler，全量 discovery + redteam + SKILL 体检）、`windows-light`（3.11，schema 解析 + harness 入口 + MCP/agent/runtime/_capsule/receipt/recovery_fixture 路径语义子集，93 cases）。
+- `constraints-ci.txt` + `requirements-dev.txt` 版本界：numpy<3 / pandas<4 / scipy<2 / matplotlib<4 / networkx<4 / PyYAML<7 / jsonschema<5，CI 以 `-c constraints-ci.txt` 再约束传递解析。
+- `tests/test_editorial_integrity.py::test_safe_build_and_pdf_visual_qa` 补真实环境守卫（缺 latexmk/xelatex/pdfinfo/pdftoppm 时 skip）——这是"有 latexmk 才跑编译"的正确实现，使快路径 job 不装 TeX 也能跑 discovery。
+- nightly 全矩阵与上游最新版 compat job：按交接要求推迟到 P0-A 之后。
+- 注意：本机无 Python 3.10/3.12，矩阵首验发生在推送后的 CI；Windows 子集为显式清单，新增路径敏感测试时应补入。

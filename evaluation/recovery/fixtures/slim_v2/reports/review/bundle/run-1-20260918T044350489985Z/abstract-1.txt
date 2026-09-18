@@ -1,0 +1,1 @@
+The three products are supplied from the candidate depots under the declared capacities. The selected assignment costs 230 CNY, which is the minimum of the enumerated feasible assignments and was recomputed independently by summation order.

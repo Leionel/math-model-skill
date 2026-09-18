@@ -1,0 +1,63 @@
+{
+  "evidence": [
+    {
+      "artifacts": [
+        {
+          "path": "raw_results.json",
+          "sha256": "af08cc137bc41c6a57d96e18e611069911e091f3fcd23552225338acfebeaab5"
+        }
+      ],
+      "boundary": "declared demand, capacities and unit costs only",
+      "evidence_id": "E-R-Q1-01",
+      "result_ids": [
+        "R-Q1-01"
+      ],
+      "supports": "optimal_cost = 230 CNY",
+      "type": "result",
+      "verification_status": "verified"
+    },
+    {
+      "evidence_id": "E-CITE-PLAN",
+      "type": "citation",
+      "result_ids": [],
+      "artifacts": [],
+      "supports": "enumeration is exact and auditable for a small capacitated assignment",
+      "boundary": "method choice only; it does not validate this run's numerical result",
+      "verification_status": "verified",
+      "citation": {
+        "bib_key": "demomethod2026",
+        "title": "Exact enumeration for small capacitated assignment",
+        "authors": [
+          "Demo Author"
+        ],
+        "year": 2026,
+        "canonical_url": "https://example.invalid/demo/enumeration",
+        "venue": "Demo Methods Note",
+        "source_tier": "publisher",
+        "metadata_sources": [
+          "https://example.invalid/demo/enumeration"
+        ],
+        "access_level": "full_text",
+        "locator": "Section 2",
+        "metadata_verified": true,
+        "content_verified": true,
+        "publication_status_checked": true,
+        "verified_at": "2026-09-17T00:00:00Z"
+      }
+    }
+  ],
+  "run_id": "run-1",
+  "schema_version": "1.1",
+  "source_snapshots": [
+    {
+      "kind": "frozen_results",
+      "path": "frozen_results.json",
+      "sha256": "232bb24c8309ef890832bc63adb295783f24a804a99665ac742abd03ecc707bf"
+    },
+    {
+      "kind": "manual_seed",
+      "path": "problem.md",
+      "sha256": "c111c9d90f5446f4b1e11c8c693765b069690c4a2745fb1820afa914e2f929ca"
+    }
+  ]
+}

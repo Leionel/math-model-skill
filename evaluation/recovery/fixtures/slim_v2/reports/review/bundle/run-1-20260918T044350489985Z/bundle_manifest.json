@@ -1,0 +1,77 @@
+{
+  "created_at": "2026-09-18T04:43:53.044340+00:00",
+  "files": [
+    {
+      "artifact_id": "ART-MODEL-CONTRACT-1",
+      "path": "model_contract-1.json",
+      "role": "model_contract",
+      "sha256": "de05a4e44ffb37ada2c07b244fb27c1e22d6cb36178969a2678ff8e65aec7c42",
+      "source_path": "model_contract.json"
+    },
+    {
+      "artifact_id": "ART-FROZEN-RESULTS-3",
+      "path": "frozen_results-1.json",
+      "role": "frozen_results",
+      "sha256": "232bb24c8309ef890832bc63adb295783f24a804a99665ac742abd03ecc707bf",
+      "source_path": "frozen_results.json"
+    },
+    {
+      "artifact_id": "ART-EVIDENCE-REGISTRY-2",
+      "path": "evidence_registry-1.json",
+      "role": "evidence_registry",
+      "sha256": "d443278c43960879d86020475a3464746a77c8b36070b6151eefd369b3de564f",
+      "source_path": "evidence_registry.json"
+    },
+    {
+      "artifact_id": "ART-PAPER-PLAN-4",
+      "path": "paper_plan-1.json",
+      "role": "paper_plan",
+      "sha256": "b93341ee262a6a36655ab9ca5883269aeb0a4c76227bc66892f703d32fd68944",
+      "source_path": "paper_plan.json"
+    },
+    {
+      "artifact_id": "ART-ABSTRACT-5",
+      "path": "abstract-1.txt",
+      "role": "abstract",
+      "sha256": "a3db49b41a62598fcd78c094ebded29ba63e997f19b89d14cec186a2a080f51d",
+      "source_path": "abstract.txt"
+    },
+    {
+      "artifact_id": "ART-PAPER-6",
+      "path": "paper-1.txt",
+      "role": "paper",
+      "sha256": "2659a9f48b6d323d25258752077be2f4b46b09de1738d60685adaa915d671c1d",
+      "source_path": "paper.txt"
+    },
+    {
+      "artifact_id": "ART-CONCLUSION-7",
+      "path": "conclusion-1.txt",
+      "role": "conclusion",
+      "sha256": "a362d8c7789ef7757b9c6039fb160dedbddfce911eab36e441c96f9dc56e4927",
+      "source_path": "conclusion.txt"
+    },
+    {
+      "artifact_id": null,
+      "path": "judge_scan_structural.json",
+      "role": "judge_scan_structural",
+      "sha256": "e31b602a418362316e33ca97f2fc6ba6c720e00468235e2f27ca7e5e883247f2"
+    }
+  ],
+  "information_boundary": {
+    "deny_by_default": [
+      "writer private reasoning",
+      "previous reviewer reasoning",
+      "previous semantic/judge verdict",
+      "revision negotiation",
+      "unrelated drafts",
+      "session logs",
+      "hidden chain-of-thought"
+    ],
+    "policy": "allow_list_only"
+  },
+  "perspectives": [
+    "semantic_critic"
+  ],
+  "run_id": "run-1",
+  "schema_version": "1.0"
+}

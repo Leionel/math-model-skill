@@ -1,0 +1,246 @@
+{
+  "checks": [
+    {
+      "exit_code": 0,
+      "label": "contracts",
+      "ok": true,
+      "report": {
+        "engine": "fallback",
+        "errors": [],
+        "files": {
+          "evidence_registry": "evidence_registry.json",
+          "frozen_results": "frozen_results.json",
+          "model_contract": "model_contract.json",
+          "paper_plan": "paper_plan.json",
+          "run_manifest": "run_manifest.json"
+        },
+        "ok": true,
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "scope_consistency",
+      "ok": true,
+      "report": {
+        "details": {
+          "paper_check": "not_run",
+          "status": "NOT_APPLICABLE"
+        },
+        "errors": [],
+        "model_contract": "model_contract.json",
+        "ok": true,
+        "paper": "paper.txt",
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "formula_replay",
+      "ok": true,
+      "report": {
+        "details": {
+          "paper_check": {
+            "status": "not_run"
+          },
+          "status": "NOT_APPLICABLE"
+        },
+        "errors": [],
+        "model_contract": "model_contract.json",
+        "ok": true,
+        "paper": "paper.txt",
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "math_semantics",
+      "ok": true,
+      "report": {
+        "errors": [],
+        "model_contract": "model_contract.json",
+        "ok": true,
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "units",
+      "ok": true,
+      "report": {
+        "boundary": "Parses declared unit expressions only; it does not infer dimensions from equation text or perform numeric unit conversion. Unknown unit names are model-local custom dimensions.",
+        "checked": {
+          "equations": 1,
+          "obligations": 2,
+          "symbols": 4,
+          "unit_balances": 0
+        },
+        "errors": [],
+        "method": "declared_unit_dimension_algebra",
+        "model_contract": "model_contract.json",
+        "ok": true,
+        "scope": "within_each_model",
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "contest_safety",
+      "ok": true,
+      "report": {
+        "ai_usage_state": "unknown",
+        "checked_ai_usage": 0,
+        "checked_rules": 1,
+        "competition_profile": "harness-demo",
+        "effective_policy": {
+          "ai_tool_use": "allow",
+          "current_problem_discussion": "allow",
+          "external_write": "allow",
+          "interactive_human_help": "allow",
+          "public_posting": "allow",
+          "static_reference_search": "allow"
+        },
+        "errors": [],
+        "manifest": "run_manifest.json",
+        "mode": "practice",
+        "ok": true,
+        "profile_status": "verified",
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "consistency",
+      "ok": true,
+      "report": {
+        "checked_evidence": 2,
+        "checked_results": 1,
+        "checked_texts": [
+          "abstract",
+          "conclusion",
+          "paper"
+        ],
+        "errors": [],
+        "figure_semantic_review": {
+          "details": {
+            "figures": {}
+          },
+          "issues": []
+        },
+        "files": {
+          "evidence_registry": "evidence_registry.json",
+          "frozen_results": "frozen_results.json",
+          "paper_plan": "paper_plan.json"
+        },
+        "inference_role_review": {
+          "checked_models": [],
+          "role_conflicts": []
+        },
+        "metric_semantics": {
+          "checked": [],
+          "mismatches": []
+        },
+        "ok": true,
+        "required_answer_coverage": {
+          "questions": {
+            "q1": {
+              "question_id": "q1",
+              "status": "not_declared"
+            }
+          },
+          "required": false
+        },
+        "terminology_semantics": {
+          "semantic_terms": 0,
+          "symbols": 0
+        },
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "exit_code": 0,
+      "label": "artifact_dag",
+      "ok": true,
+      "report": {
+        "dag": "artifact_dag.json",
+        "edges": 10,
+        "errors": [],
+        "freshness": {
+          "ART-ABSTRACT-5": "current",
+          "ART-CONCLUSION-7": "current",
+          "ART-EVIDENCE-REGISTRY-2": "current",
+          "ART-FROZEN-RESULTS-3": "current",
+          "ART-MODEL-CONTRACT-1": "current",
+          "ART-PAPER-6": "current",
+          "ART-PAPER-PLAN-4": "current",
+          "PROFILE-CUMCM-2026-ELECTRONIC": "current"
+        },
+        "generated": "projected from canonical DAG and current filesystem; manual freshness is ignored",
+        "invalidation_events": [],
+        "nodes": 8,
+        "ok": true,
+        "run_id": "run-49ec067ff412",
+        "schema_version": "2.0",
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "label": "citations",
+      "ok": true,
+      "status": "not_applicable"
+    }
+  ],
+  "generated_at": "2026-09-18T04:43:52.703112+00:00",
+  "inputs": [
+    {
+      "path": "model_contract.json",
+      "role": "model_contract",
+      "sha256": "de05a4e44ffb37ada2c07b244fb27c1e22d6cb36178969a2678ff8e65aec7c42"
+    },
+    {
+      "path": "frozen_results.json",
+      "role": "frozen_results",
+      "sha256": "232bb24c8309ef890832bc63adb295783f24a804a99665ac742abd03ecc707bf"
+    },
+    {
+      "path": "evidence_registry.json",
+      "role": "evidence_registry",
+      "sha256": "d443278c43960879d86020475a3464746a77c8b36070b6151eefd369b3de564f"
+    },
+    {
+      "path": "paper_plan.json",
+      "role": "paper_plan",
+      "sha256": "b93341ee262a6a36655ab9ca5883269aeb0a4c76227bc66892f703d32fd68944"
+    },
+    {
+      "path": "abstract.txt",
+      "role": "abstract",
+      "sha256": "a3db49b41a62598fcd78c094ebded29ba63e997f19b89d14cec186a2a080f51d"
+    },
+    {
+      "path": "paper.txt",
+      "role": "paper",
+      "sha256": "2659a9f48b6d323d25258752077be2f4b46b09de1738d60685adaa915d671c1d"
+    },
+    {
+      "path": "conclusion.txt",
+      "role": "conclusion",
+      "sha256": "a362d8c7789ef7757b9c6039fb160dedbddfce911eab36e441c96f9dc56e4927"
+    },
+    {
+      "path": "artifact_dag.json",
+      "role": "artifact_dag",
+      "sha256": "ee5eab7ba7aa1cfa392f9bc5071157072f8b2098f37ead860208da6b4a95f78d"
+    }
+  ],
+  "ok": true,
+  "schema_version": "1.0"
+}

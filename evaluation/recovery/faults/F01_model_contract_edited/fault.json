@@ -1,0 +1,12 @@
+{
+  "fault_id": "F01",
+  "name": "model_contract edited",
+  "attack_surface": "model_contract.json",
+  "mutation": "rewrite the unit_system text in the contract; bytes change, the document stays schema-valid",
+  "expected_detection": {
+    "tool": "harness check",
+    "gate": "M1",
+    "error_substring": "digest_drift"
+  },
+  "minimal_repair_set": ["model_contract"]
+}

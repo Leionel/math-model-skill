@@ -1,0 +1,12 @@
+{
+  "fault_id": "F03",
+  "name": "frozen result deleted",
+  "attack_surface": "frozen_results.json",
+  "mutation": "delete the frozen results file; every binding that depends on its bytes must fail closed",
+  "expected_detection": {
+    "tool": "harness check",
+    "gate": "P2",
+    "error_substring": "canonical frozen_results artifact does not exist"
+  },
+  "minimal_repair_set": ["frozen_results"]
+}

@@ -1,0 +1,50 @@
+{
+  "argv": [
+    "C:\\Python314\\python.exe",
+    "model.py",
+    "--smoke",
+    "--results",
+    "smoke_results.json",
+    "--measurements",
+    "smoke_measurements.json"
+  ],
+  "command_id": "CMD-2069f840049e",
+  "cwd": "D:\\Projects\\随便做做\\math-modeling-skill-sion\\evaluation\\recovery\\fixtures\\slim_v2",
+  "duration_s": 0.225,
+  "env_note": "environment inherited from parent process; not captured",
+  "execution_host_identity": {
+    "hostname": "SIu",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "exit_code": 0,
+  "finished_at": "2026-09-18T04:43:43.664623+00:00",
+  "input_refs": [],
+  "metadata": {
+    "integrity_mode": "sprint",
+    "io_hashes_bound": false,
+    "outcome": "success",
+    "smoke_coverage": {
+      "covered_contract_item_ids": [
+        "EQ-Q1-OBJ"
+      ],
+      "model_ids": [
+        "M-Q1"
+      ],
+      "question_ids": [
+        "q1"
+      ]
+    }
+  },
+  "output_refs": [],
+  "receipt_id": "REC-80e20ae76ff34724",
+  "run_id": "run-1",
+  "schema_version": "2.0",
+  "seed": null,
+  "selection": {
+    "selected": false
+  },
+  "stage": "smoke",
+  "started_at": "2026-09-18T04:43:43.439387+00:00",
+  "stderr_path": "receipts/smoke-20260918T044343Z-0731c2.json.stderr",
+  "stdout_path": "receipts/smoke-20260918T044343Z-0731c2.json.stdout"
+}

@@ -1,0 +1,63 @@
+{
+  "argv": [
+    "C:\\Python314\\python.exe",
+    "D:\\Projects\\随便做做\\math-modeling-skill-sion\\scripts\\freeze_results.py",
+    "--project-root",
+    "D:\\Projects\\随便做做\\math-modeling-skill-sion\\evaluation\\recovery\\fixtures\\slim_v2",
+    "--source",
+    "raw_results.json",
+    "--output",
+    "frozen_results.json",
+    "--receipt",
+    "receipts/full-20260918T044345Z-5143cf.json",
+    "--run-id",
+    "run-1",
+    "--model-contract",
+    "model_contract.json",
+    "--input",
+    "input.json",
+    "--code",
+    "model.py",
+    "--validation",
+    "full_validation.json"
+  ],
+  "command_id": "CMD-a88dafa8c495",
+  "cwd": "D:\\Projects\\随便做做\\math-modeling-skill-sion\\evaluation\\recovery\\fixtures\\slim_v2",
+  "duration_s": 0.294,
+  "env_note": "environment inherited from parent process; not captured",
+  "execution_host_identity": {
+    "hostname": "SIu",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "exit_code": 0,
+  "finished_at": "2026-09-18T04:43:47.203531+00:00",
+  "input_refs": [],
+  "metadata": {
+    "integrity_mode": "sprint",
+    "io_hashes_bound": true,
+    "outcome": "success"
+  },
+  "output_refs": [
+    {
+      "artifact_id": "ART-2BB7DC77AA6B8B17D3EE",
+      "critical": true,
+      "digest_owner": "command_receipt",
+      "path": "frozen_results.json",
+      "sha256": "232bb24c8309ef890832bc63adb295783f24a804a99665ac742abd03ecc707bf"
+    }
+  ],
+  "previous_receipt_hash": "ca48befbfe333f5eba8e8f57c98aac25fd0205e5cbf1543e522266a18d969219",
+  "receipt_id": "REC-f9266f89ad614cfc",
+  "run_id": "run-1",
+  "schema_version": "2.0",
+  "seed": null,
+  "selection": {
+    "selected": false
+  },
+  "stage": "freeze",
+  "started_at": "2026-09-18T04:43:46.910005+00:00",
+  "stderr_path": "receipts/freeze-20260918T044346Z-224ad7.json.stderr",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_path": "receipts/freeze-20260918T044346Z-224ad7.json.stdout",
+  "stdout_sha256": "abbf8687683b5165830a48a3fe2a3f601eac8883b082136ba1f9c773da03d5c8"
+}

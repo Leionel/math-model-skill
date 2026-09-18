@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "report_id": "REV-semantic_critic-run-1",
+  "run_id": "run-1",
+  "perspective": "semantic_critic",
+  "review_mode": "fresh_context",
+  "independence_level": "L1_fresh_context",
+  "degraded_independence": false,
+  "reviewed_at": "2026-09-18T04:43:53.508471+00:00",
+  "reviewed_artifacts": [
+    {
+      "artifact_id": "ART-MODEL-CONTRACT-1",
+      "role": "model_contract",
+      "path": "model_contract.json",
+      "sha256": "de05a4e44ffb37ada2c07b244fb27c1e22d6cb36178969a2678ff8e65aec7c42"
+    },
+    {
+      "artifact_id": "ART-FROZEN-RESULTS-3",
+      "role": "frozen_results",
+      "path": "frozen_results.json",
+      "sha256": "232bb24c8309ef890832bc63adb295783f24a804a99665ac742abd03ecc707bf"
+    },
+    {
+      "artifact_id": "ART-EVIDENCE-REGISTRY-2",
+      "role": "evidence_registry",
+      "path": "evidence_registry.json",
+      "sha256": "d443278c43960879d86020475a3464746a77c8b36070b6151eefd369b3de564f"
+    },
+    {
+      "artifact_id": "ART-PAPER-PLAN-4",
+      "role": "paper_plan",
+      "path": "paper_plan.json",
+      "sha256": "b93341ee262a6a36655ab9ca5883269aeb0a4c76227bc66892f703d32fd68944"
+    },
+    {
+      "artifact_id": "ART-ABSTRACT-5",
+      "role": "abstract",
+      "path": "abstract.txt",
+      "sha256": "a3db49b41a62598fcd78c094ebded29ba63e997f19b89d14cec186a2a080f51d"
+    },
+    {
+      "artifact_id": "ART-PAPER-6",
+      "role": "paper",
+      "path": "paper.txt",
+      "sha256": "2659a9f48b6d323d25258752077be2f4b46b09de1738d60685adaa915d671c1d"
+    },
+    {
+      "artifact_id": "ART-CONCLUSION-7",
+      "role": "conclusion",
+      "path": "conclusion.txt",
+      "sha256": "a362d8c7789ef7757b9c6039fb160dedbddfce911eab36e441c96f9dc56e4927"
+    }
+  ],
+  "bundle_ref": {
+    "path": "reports/review/bundle/run-1-20260918T044350489985Z/bundle_manifest.json",
+    "sha256": "f1cad92490d08ea096d69a130b8e985ecf467d965cb58e9c1bd20f47f258f59e"
+  },
+  "execution_receipt_ref": {
+    "receipt_id": "REC-8266dc160d924ddf",
+    "path": "receipts/review-20260918T044353047803Z-65612d.json"
+  },
+  "rubric_ref": "D:\\Projects\\随便做做\\math-modeling-skill-sion\\references\\review\\semantic_critic_rubric.md",
+  "findings": [],
+  "verdict": "pass",
+  "superseded_by": null,
+  "notes": "deterministic e2e stub reviewer"
+}

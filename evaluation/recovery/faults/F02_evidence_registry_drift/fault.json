@@ -1,0 +1,12 @@
+{
+  "fault_id": "F02",
+  "name": "upstream artifact hash drift (evidence_registry)",
+  "attack_surface": "evidence_registry.json",
+  "mutation": "edit the boundary text of one evidence row; bytes change, the document stays schema-valid",
+  "expected_detection": {
+    "tool": "harness check",
+    "gate": "M1",
+    "error_substring": "digest_drift"
+  },
+  "minimal_repair_set": ["evidence_registry"]
+}

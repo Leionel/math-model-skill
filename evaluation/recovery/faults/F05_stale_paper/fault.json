@@ -1,0 +1,12 @@
+{
+  "fault_id": "F05",
+  "name": "stale paper (edited without re-review)",
+  "attack_surface": "paper.txt",
+  "mutation": "append a section to the paper without refreshing the DAG digest or re-reviewing; downstream freshness must go stale",
+  "expected_detection": {
+    "tool": "harness validate",
+    "gate": "W2",
+    "error_substring": "stale"
+  },
+  "minimal_repair_set": ["paper"]
+}

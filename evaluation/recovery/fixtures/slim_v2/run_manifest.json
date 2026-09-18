@@ -1,0 +1,120 @@
+{
+  "schema_version": "2.0",
+  "project_id": "harness-demo",
+  "run_id": "run-1",
+  "status": "active",
+  "stage": "paper",
+  "preset": "sprint",
+  "profile_overrides": {},
+  "competition_profile_ref": {
+    "path": "competition_profile.json",
+    "profile_id": "harness-demo"
+  },
+  "roots": {
+    "artifact_dag": {
+      "path": "artifact_dag.json"
+    },
+    "run_index": {
+      "path": "run_index.json"
+    },
+    "model_contract": {
+      "path": "model_contract.json"
+    },
+    "evidence_registry": {
+      "path": "evidence_registry.json"
+    },
+    "paper_plan": {
+      "path": "paper_plan.json"
+    }
+  },
+  "control": {
+    "selection_policy": {
+      "owner": "run_manifest.control",
+      "rule": "select exactly one successful full receipt after independent validation",
+      "version": "2.0"
+    },
+    "required_human_stages": [
+      "m1",
+      "p2"
+    ],
+    "historical_evidence_policy": "preserve"
+  },
+  "safety": {
+    "official_rule": {
+      "interactive_human_help": "allow",
+      "current_problem_discussion": "allow",
+      "public_posting": "allow",
+      "external_write": "allow",
+      "static_reference_search": "allow",
+      "ai_tool_use": "allow"
+    },
+    "local_conservative_policy": {
+      "interactive_human_help": "allow",
+      "current_problem_discussion": "allow",
+      "public_posting": "allow",
+      "external_write": "allow",
+      "static_reference_search": "allow",
+      "ai_tool_use": "allow"
+    },
+    "events": []
+  },
+  "ai_usage_state": "used",
+  "ai_usage": [
+    {
+      "usage_id": "AI-REVIEW-8266dc160d924ddf",
+      "tool_name": "demo-reviewer",
+      "model": "fixture-model",
+      "provider": "local-fixture",
+      "used_at": "2026-09-18T04:43:53.888086+00:00",
+      "stage": "review",
+      "purpose": "Run the semantic_critic reviewer on the allow-listed review bundle",
+      "prompt_summary": "Apply the semantic_critic rubric to reports/review/bundle/run-1-20260918T044350489985Z/bundle_manifest.json and write a schema-bound review report",
+      "output_use": "candidate review report produced; acceptance remains subject to schema and human verification",
+      "human_changes": "accepted no changes; findings already matched evidence",
+      "interaction_record": {
+        "path": "receipts/review-20260918T044353047803Z-65612d.json",
+        "sha256": "c6b3e38c52e9ff4827aa7ca346ac4f49f53cb4b7f975c4632ec886dd8b8bef14"
+      },
+      "verification": {
+        "status": "verified",
+        "checked_by_role": "demo-operator",
+        "method": "compared the report against the frozen evidence",
+        "checked_at": "2026-09-18T04:43:54.513595+00:00"
+      }
+    }
+  ],
+  "human_checkpoints": [
+    {
+      "checkpoint_id": "CHK-M1",
+      "stage": "m1",
+      "decision": "pass",
+      "decided_by": "demo-operator",
+      "decided_at": "2026-09-18T04:43:41.011654+00:00",
+      "note": "operator confirmed the M1 scope in the demo run"
+    },
+    {
+      "checkpoint_id": "CHK-P2",
+      "stage": "p2",
+      "decision": "pass",
+      "decided_by": "demo-operator",
+      "decided_at": "2026-09-18T04:43:46.244792+00:00",
+      "note": "operator confirmed the P2 scope in the demo run"
+    },
+    {
+      "checkpoint_id": "CHK-W1",
+      "stage": "w1",
+      "decision": "pass",
+      "decided_by": "demo-operator",
+      "decided_at": "2026-09-18T04:43:48.575669+00:00",
+      "note": "operator confirmed the W1 scope in the demo run"
+    },
+    {
+      "checkpoint_id": "CHK-W2",
+      "stage": "w2",
+      "decision": "pass",
+      "decided_by": "demo-operator",
+      "decided_at": "2026-09-18T04:43:54.581623+00:00",
+      "note": "operator confirmed the W2 scope in the demo run"
+    }
+  ]
+}

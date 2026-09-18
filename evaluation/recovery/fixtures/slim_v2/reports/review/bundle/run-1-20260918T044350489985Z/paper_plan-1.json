@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.2",
+  "run_id": "run-1",
+  "central_thesis": {
+    "text": "The selected depot assignment meets every capacity and costs the least of the enumerated feasible assignments.",
+    "claim_ids": [
+      "C1"
+    ],
+    "boundary": "Under the declared demand, capacities and unit costs."
+  },
+  "requirements": [
+    {
+      "requirement_id": "RQ1",
+      "text": "answer question 1",
+      "claim_ids": [
+        "C1"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "C1",
+      "claim_type": "observation",
+      "text": "the selected assignment costs 230 CNY",
+      "question_id": "q1",
+      "evidence_ids": [
+        "E-R-Q1-01"
+      ],
+      "result_ids": [
+        "R-Q1-01"
+      ],
+      "section": "results.q1",
+      "boundary": "under the frozen run",
+      "support_level": "direct"
+    }
+  ],
+  "sections": [
+    {
+      "section_id": "results.q1",
+      "purpose": "answer question 1",
+      "claim_ids": [
+        "C1"
+      ]
+    }
+  ],
+  "argument_units": [
+    {
+      "unit_id": "AU-Q1-FORM",
+      "section_id": "results.q1",
+      "rhetorical_role": "mechanism_derivation",
+      "claim_ids": [
+        "C1"
+      ],
+      "evidence_ids": [
+        "E-R-Q1-01"
+      ],
+      "prerequisite_unit_ids": [],
+      "expected_reader_judgment": "The formulation matches the one-depot-per-product mechanism.",
+      "boundary": "One depot per product.",
+      "target_words": 60
+    },
+    {
+      "unit_id": "AU-Q1-RESULT",
+      "section_id": "results.q1",
+      "rhetorical_role": "result_observation",
+      "claim_ids": [
+        "C1"
+      ],
+      "evidence_ids": [
+        "E-R-Q1-01"
+      ],
+      "prerequisite_unit_ids": [
+        "AU-Q1-FORM"
+      ],
+      "expected_reader_judgment": "The reported cost comes from the frozen run.",
+      "boundary": "Under the frozen run.",
+      "target_words": 60
+    },
+    {
+      "unit_id": "AU-Q1-VALID",
+      "section_id": "results.q1",
+      "rhetorical_role": "validation",
+      "claim_ids": [
+        "C1"
+      ],
+      "evidence_ids": [
+        "E-R-Q1-01"
+      ],
+      "prerequisite_unit_ids": [
+        "AU-Q1-RESULT"
+      ],
+      "expected_reader_judgment": "Feasibility and objective were recomputed independently.",
+      "boundary": "Declared constraints only.",
+      "target_words": 60
+    },
+    {
+      "unit_id": "AU-Q1-INTERP",
+      "section_id": "results.q1",
+      "rhetorical_role": "boundary",
+      "claim_ids": [
+        "C1"
+      ],
+      "evidence_ids": [
+        "E-R-Q1-01"
+      ],
+      "prerequisite_unit_ids": [
+        "AU-Q1-VALID"
+      ],
+      "expected_reader_judgment": "The result is not extrapolated beyond the stated data.",
+      "boundary": "No stochastic-demand claim.",
+      "target_words": 60
+    }
+  ],
+  "depth_budget": [
+    {
+      "question_id": "q1",
+      "target_words": 180,
+      "rationale": "One validated allocation result."
+    }
+  ],
+  "precision_policy": {
+    "audit_source": "frozen_display_value",
+    "prose_source": "frozen_display_value",
+    "table_source": "frozen_display_value",
+    "abstract_max_numeric_claims": 2
+  },
+  "abstract_results": [
+    {
+      "result_id": "R-Q1-01",
+      "priority": "primary",
+      "selection_reason": "The decision-defining validated cost.",
+      "claim_ids": [
+        "C1"
+      ],
+      "word_budget": 24
+    }
+  ],
+  "terminology": [
+    {
+      "canonical": "selected assignment cost",
+      "forbidden_variants": [
+        "best cost ever"
+      ]
+    }
+  ],
+  "figures": [],
+  "tables": [],
+  "readiness": {
+    "stage": "technical_draft",
+    "question_coverage": [
+      {
+        "question_id": "q1",
+        "formulation_unit_ids": [
+          "AU-Q1-FORM"
+        ],
+        "result_unit_ids": [
+          "AU-Q1-RESULT"
+        ],
+        "validation_unit_ids": [
+          "AU-Q1-VALID"
+        ],
+        "interpretation_unit_ids": [
+          "AU-Q1-INTERP"
+        ],
+        "display_ids": [],
+        "display_waiver": "One scalar result; prose is clearer than a display."
+      }
+    ]
+  },
+  "status": "ready"
+}
