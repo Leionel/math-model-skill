@@ -250,7 +250,7 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 
 ## 8. 本周行动清单（W1 = 2026-09-21 ~ 09-25）
 
-1. **P1-F**：`scripts/runtime/` 只读抽取（`get_state` / `check_gate`），回归锁定 CLI 行为不变。
+1. **P1-F**：`scripts/runtime/` 只读抽取（`get_state` / `check_gate` / `verify_artifact`），回归锁定 CLI 行为不变 —— **已完成，交接见 §10**。
 2. **P2-D**：`docs/THREAT_MODEL.md` 初稿（T1–T4 + 现状表，对齐 redteam 场景）。
 3. **P0-C**：C0 设计文档落稿；C1 slim fixture 开工（从 `battle/2026-08-17` 形状抽取）。
 4. **P1-B**：`schemas/verifier.schema.json` 契约定稿。
@@ -263,3 +263,31 @@ P0-A、P0-B ──→ 【后续安排】专区（触发条件见 §4）
 - `evaluation/PREREGISTRATION.md`：评测协议唯一真源；P0-A 启动时修订，本轮不动其 `NOT_RUN` 状态。
 - `docs/CAPABILITY_BENCHMARK_PLAN.md`：任务 families 与预算清单思想，届时并入预注册修订；本轮不被引用出数字。
 - 本轮工程数字（recovery v1、harness 版本回归）一律标注为工程回归证据，不与 A/B/C 能力数字混用；README 措辞以 `docs/THREAT_MODEL.md` 为边界。
+
+---
+
+## 10. 交接（2026-09-18，P1-F 已交付）
+
+### 10.1 已交付
+
+- 新增进程内只读面：`scripts/runtime/`（公共面 `__init__.py`，实现 `read_api.py`）——`get_state` / `verify_artifact` / `check_gate`。
+- 抽取点放在**持有逻辑的模块**，runtime 不重写任何判定：
+  - `harness_status.status_result(root, manifest_raw)`：原 `main()` 的装载与错误分支（退出码 0/1/2 语义原样保留）；
+  - `harness_status.artifact_view(root, artifact_id, manifest_raw)`：基于 `_dag_view` 同一投影的单 artifact 判定（不是第二份 artifact 登记表）；
+  - `check_gates.v2_gate_result(root, manifest_path, gate, strict)`：原 `main()` 的 v2 分支（含"后面的闸门不得在更早失败后自我报成功"的 break 语义与同一异常封装）。
+  - 两处 `main()` 改为委托，行为不变。
+- 契约：每个函数返回 `RuntimeView(payload, exit_code)`——`payload` 即 CLI 打印的 JSON，`exit_code` 即 CLI 返回码。
+- 回归测试 `tests/test_runtime_api.py`（8 项）：CLI↔API 载荷持平（仅剔除时间戳）、退出码持平、`--strict` 持平、未知闸门拒绝、DAG current/stale 判定与 `harness status` 的 `dag.artifacts` 逐字段一致、未登记 artifact 为负判定、三次读取前后项目文件零变更（只读性）。
+- 验证：全量 738 tests OK；`ruff check` 通过；CI 配置未变。
+
+### 10.2 有意未做（下一手接续）
+
+1. **CLI / MCP 的进程内接线未做**。`harness status`、`harness check` 与 MCP façade 仍走原有子进程门面；它们子进程内运行的已是被 runtime 复用的同一函数，因此「CLI verdict = API verdict」成立且已被测试锁住。首个真实进程内消费者应是 **P0-C C3 的恢复编排器**；届时若改动 `harness._dispatch`，必须保留其 `child_env()`/`cwd` 语义，或在 PR 里写明迁移理由。
+2. **runtime 覆盖面仍是第一批**：`check_gate` → `verify_artifact` 已就位；`rerun planning`、`review projection`、mutation paths 按路线 §12 的顺序排在后面，不在本批。
+
+### 10.3 接手所需的最小事实
+
+- 入口：`scripts/runtime/__init__.py`（`RuntimeView`、`get_state`、`verify_artifact`、`check_gate`）。
+- 新消费者的验收线：任何新的读取都必须通过 CLI↔API 持平测试（`tests/test_runtime_api.py` 的模式），**不得新增第二实现**；若某读取尚无 CLI 对应命令，先在 CLI 侧有行为、再抽 runtime。
+- 已知边界：闸门名 runtime 接受任意大小写并归一为小写（CLI 仅接受大写 `M1`）；`artifact_view` / `check_gate` 只走 v2 运行时，v1 manifest 仅 `get_state` 给出降级视图。
+- 下一步（与 §2.1 一致）：先接 P0-C C3（恢复编排器），再依次抽 rerun planning → review projection。
