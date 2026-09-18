@@ -19,6 +19,7 @@ from typing import Any, Mapping
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from agent_contracts import policy as policy_module  # noqa: E402
 from agent_contracts.contract import (  # noqa: E402
     AGENT_CONTRACTS_DIR,
     AGENT_CONTRACT_SCHEMA,
@@ -155,7 +156,7 @@ def check_contract(
     return report
 
 
-def check_all(contracts_dir: Path = AGENT_CONTRACTS_DIR) -> dict[str, Any]:
+def check_all(contracts_dir: Path = AGENT_CONTRACTS_DIR, *, agents_dir: Path | None = None) -> dict[str, Any]:
     surface = agent_tool_surface()
     mutating = truth_mutating_commands(cli_command_surface()) | mcp_mutating_tools()
     roles = artifact_roles()
@@ -197,10 +198,28 @@ def check_all(contracts_dir: Path = AGENT_CONTRACTS_DIR) -> dict[str, Any]:
     if not reports:
         errors.append("no agent contracts found")
 
+    # The compiled policy is what the MCP boundary enforces; a contract that
+    # cannot compile is a scope claim the runtime would have to guess at.
+    policy_errors: list[str] = []
+    policies: dict[str, Any] = {}
+    try:
+        policies = policy_module.compile_all(agents_dir=agents_dir or contracts_dir)
+    except policy_module.AgentPolicyError as exc:
+        policy_errors = exc.errors
+    errors.extend(f"policy: {message}" for message in policy_errors)
+
     return {
         "ok": not errors,
         "errors": errors,
         "agents": reports,
+        "policies": {
+            role: {
+                "cli_commands": row["cli_commands"],
+                "mcp_tools": row["mcp_tools"],
+                "mutating_tools": row["mutating_tools"],
+            }
+            for role, row in sorted(policies.items())
+        },
         "ground_truth": {
             "agent_tools": len(surface),
             "truth_mutating_commands": sorted(mutating),

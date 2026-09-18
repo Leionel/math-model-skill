@@ -23,6 +23,7 @@ Safety contract (P0):
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -42,6 +43,8 @@ CALL_TIMEOUT_SECONDS = 55
 PROTOCOL_VERSION = "2025-03-26"
 SERVER_NAME = "math_harness"
 SERVER_VERSION = "1.1.0"
+# When set, the session serves only the tools the named role's contract compiles to.
+AGENT_ROLE_ENV = "HARNESS_AGENT_ROLE"
 GATES = ("M1", "P1", "P2", "W1", "W2", "S1")
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -312,6 +315,19 @@ def run_harness(argv: list[str], project_root: Path, timeout: float = CALL_TIMEO
 MODULE_CTX["run_harness"] = run_harness
 
 
+def policy_allowed_tools(role: str) -> set[str]:
+    """The MCP tool names one agent role may call.
+
+    The contract is the claim; the compiled policy is what this boundary
+    enforces. An unknown role or an uncompilable contract raises rather than
+    granting the default surface.
+    """
+
+    from agent_contracts import policy  # noqa: PLC0415 - policy imports this module
+
+    return set(policy.compile_policy(role)["mcp_tools"])
+
+
 def visible_tools(env: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
     """Tools this server advertises right now.
 
@@ -321,17 +337,31 @@ def visible_tools(env: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
 
     source = os.environ if env is None else env
     enabled = source.get(mcp_tools.review.ALLOW_ENV) == "1"
-    return [tool for tool in FACADE_TOOLS if enabled or tool["name"] not in MUTATING_TOOL_NAMES]
+    tools = [tool for tool in FACADE_TOOLS if enabled or tool["name"] not in MUTATING_TOOL_NAMES]
+    role = source.get(AGENT_ROLE_ENV)
+    if role:
+        allowed = policy_allowed_tools(role)
+        tools = [tool for tool in tools if tool["name"] in allowed]
+    return tools
 
 
-def call_tool(name: Any, arguments: Any, env: Mapping[str, str] | None = None) -> dict[str, Any]:
+def call_tool(
+    name: Any,
+    arguments: Any,
+    env: Mapping[str, str] | None = None,
+    role: str | None = None,
+) -> dict[str, Any]:
     """Execute one tools/call and return its MCP result envelope."""
 
     if not isinstance(name, str):
         raise ToolCallError("params.name must be a string")
     if name not in TOOL_BUILDERS and name not in mcp_tools.COMPUTED_TOOLS:
         raise ToolCallError(f"unknown tool: {name}")
-    if name in MUTATING_TOOL_NAMES and (os.environ if env is None else env).get(mcp_tools.review.ALLOW_ENV) != "1":
+    source = os.environ if env is None else env
+    effective_role = role if role is not None else (source.get(AGENT_ROLE_ENV) or None)
+    if effective_role is not None and name not in policy_allowed_tools(effective_role):
+        raise ToolCallError(f"tool {name} is outside the policy of agent role {effective_role}")
+    if name in MUTATING_TOOL_NAMES and source.get(mcp_tools.review.ALLOW_ENV) != "1":
         raise ToolCallError(
             f"{name} is disabled: set {mcp_tools.review.ALLOW_ENV}=1 on the server to enable a "
             "mutating tool"
@@ -434,7 +464,25 @@ class StdioSession:
 
 
 def main() -> int:
-    sys.stderr.write(f"{SERVER_NAME} {SERVER_VERSION}: serving harness facade on stdio\n")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--agent-role",
+        help="enforce one agent contract's capability policy; an unknown role refuses to start",
+    )
+    args = parser.parse_args()
+    if args.agent_role:
+        try:
+            allowed = policy_allowed_tools(args.agent_role)
+        except Exception as exc:  # noqa: BLE001 - AgentPolicyError, reported as a failed start
+            sys.stderr.write(f"ERROR: {exc}\n")
+            return 2
+        os.environ[AGENT_ROLE_ENV] = args.agent_role
+        sys.stderr.write(
+            f"{SERVER_NAME} {SERVER_VERSION}: enforcing policy of role {args.agent_role} "
+            f"({len(allowed)} tool(s))\n"
+        )
+    else:
+        sys.stderr.write(f"{SERVER_NAME} {SERVER_VERSION}: serving harness facade on stdio\n")
     StdioSession(sys.stdin.buffer, sys.stdout.buffer).serve()
     return 0
 
