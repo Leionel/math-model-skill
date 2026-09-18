@@ -296,8 +296,9 @@ class WP1ContractsTest(unittest.TestCase):
         paths = sorted((ROOT / "schemas").glob("*.schema.json"))
         # 29 contract schemas + review_report.schema.json (Review Execution Plane)
         # + precedent_index.schema.json (quarantined precedent subsystem)
-        # + agent_contract.schema.json (Agent role contracts).
-        self.assertEqual(len(paths), 32)
+        # + agent_contract.schema.json (Agent role contracts)
+        # + verifier.schema.json (verifier registry contract).
+        self.assertEqual(len(paths), 33)
         for path in paths:
             with self.subTest(path=path.name):
                 json.loads(path.read_text(encoding="utf-8"))
