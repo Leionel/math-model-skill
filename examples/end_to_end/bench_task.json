@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "task_id": "end-to-end-depot",
+  "entry": "run_demo.py",
+  "arguments": ["--out", "{workdir}", "--quiet", "--skip-probes"],
+  "timeout_seconds": 900,
+  "description": "Committed demo chain: receipts, freeze, review evidence and the red-team probes' base project."
+}

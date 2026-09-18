@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://math-modeling-skill-sion/schemas/bench_task.schema.json",
+  "title": "Harness regression task declaration",
+  "description": "One task a harness revision can be re-run against. The task owns its entry script and argument template; the bench substitutes {workdir} and records engineering facts only (exit code, wall time, gate outcomes) - never a capability score.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "entry", "arguments", "timeout_seconds"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "task_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "entry": { "type": "string", "pattern": "^[A-Za-z0-9_./-]+\\.py$" },
+    "arguments": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "timeout_seconds": { "type": "integer", "minimum": 1 },
+    "description": { "type": "string" }
+  }
+}

@@ -23,6 +23,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import child_env, exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
+import bench_run  # noqa: E402
 import checkpoints  # noqa: E402
 import run_diff  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
@@ -1098,6 +1099,24 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("run_b")
     compare.set_defaults(handler=_compare)
 
+    bench = sub.add_parser("bench", help="re-run one declared task against a harness revision")
+    bench_sub = bench.add_subparsers(dest="bench_action", required=True)
+    bench_run = bench_sub.add_parser("run", help="record engineering facts for one task and harness revision")
+    _add_common(bench_run)
+    bench_run.add_argument("--task", required=True, help="task directory holding bench_task.json")
+    bench_run.add_argument("--harness-root", default=str(REPO_ROOT))
+    bench_run.add_argument("--harness-ref", help="git revision to extract and use as the harness under test")
+    bench_run.add_argument("--output", required=True, help="bench report JSON path")
+    bench_run.add_argument("--label")
+    bench_run.add_argument("--timeout", type=int)
+    bench_run.add_argument("--keep-workdir", action="store_true")
+    bench_run.set_defaults(handler=_bench)
+    bench_compare = bench_sub.add_parser("compare", help="compare two bench reports as engineering deltas")
+    _add_common(bench_compare)
+    bench_compare.add_argument("report_a")
+    bench_compare.add_argument("report_b")
+    bench_compare.set_defaults(handler=_bench)
+
     check = sub.add_parser("check", help="run one existing Gate checker")
     _add_common(check)
     check.add_argument("gate", choices=tuple(name.upper() for name in GATE_ORDER))
@@ -1479,6 +1498,24 @@ def _compare(args: argparse.Namespace) -> int:
     document, code = run_diff.compare_runs(args.run_a, args.run_b)
     _emit(document, machine=args.json, human=run_diff.human_summary(document))
     return code
+
+
+def _bench(args: argparse.Namespace) -> int:
+    if args.bench_action == "run":
+        report = bench_run.run_bench(
+            args.task,
+            harness_root=args.harness_root,
+            harness_ref=args.harness_ref,
+            output_path=args.output,
+            label=args.label,
+            keep_workdir=args.keep_workdir,
+            timeout=args.timeout,
+        )
+        _emit(report, machine=args.json, human=bench_run.human_summary(report))
+        return 0
+    document = bench_run.compare_bench(args.report_a, args.report_b)
+    _emit(document, machine=args.json, human=json.dumps(document["deltas"], ensure_ascii=False))
+    return 0
 
 
 def _migrate(args: argparse.Namespace) -> int:
