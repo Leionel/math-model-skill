@@ -3,10 +3,13 @@
 [![harness-ci](https://github.com/Leionel/math-model-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/Leionel/math-model-skill/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
-[![schemas: 32](https://img.shields.io/badge/JSON%20schemas-32-lightgrey)](schemas)
+[![schemas: 37](https://img.shields.io/badge/JSON%20schemas-37-lightgrey)](schemas)
 
 **A MCP-compatible multi-agent execution framework with deterministic
 verification, artifact provenance, and human oversight.**
+
+![How the Harness bounds an AI-assisted modeling run: analysis, modeling,
+experiment, writing and review, with every result traceable to a receipt](assets/poster_v1.png)
 
 Mathematical modeling is the first domain-specific testbed. What the project
 actually builds is infrastructure for long-running agents: any agent — Codex,
@@ -20,7 +23,7 @@ MCP, and a human watches the identical read path in a console.
    MCP interface      scripts/mcp_server.py    (JSON-RPC/stdio)
    (one door)         13 read-only tools · 1 opt-in mutating tool
                              │                       │
-   Harness runtime    harness CLI — 39 commands, one project root
+   Harness runtime    harness CLI — 30 commands, one project root
                              │                       │
    Evidence layer     Gate Engine · Artifact DAG · Execution Receipts
    (deterministic)    Hash/Freshness · Evidence Registry · Validation
