@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://math-modeling-skill-sion/schemas/capability.schema.json",
+  "title": "Harness capability declaration",
+  "description": "One composable bundle of verifiers, schemas, artifact roles and gates. A competition profile composes capability ids; a capability never restates another capability's content, and every bundled verifier must exist in the verifier registry and serve at least one of the capability's gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "capability_id", "verifiers", "schemas", "artifact_roles", "gates", "requires"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "capability_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "verifiers": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+      "uniqueItems": true
+    },
+    "schemas": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+\\.schema\\.json$" },
+      "uniqueItems": true
+    },
+    "artifact_roles": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "uniqueItems": true
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["m1", "p1", "p2", "w1", "w2", "s1"] }
+    },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+      "uniqueItems": true
+    },
+    "description": { "type": "string" }
+  }
+}

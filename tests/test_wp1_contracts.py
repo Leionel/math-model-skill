@@ -298,8 +298,9 @@ class WP1ContractsTest(unittest.TestCase):
         # + precedent_index.schema.json (quarantined precedent subsystem)
         # + agent_contract.schema.json (Agent role contracts)
         # + verifier.schema.json (verifier registry contract)
-        # + bench_task.schema.json (harness regression task declaration).
-        self.assertEqual(len(paths), 34)
+        # + bench_task.schema.json (harness regression task declaration)
+        # + capability.schema.json (capability composition contract).
+        self.assertEqual(len(paths), 35)
         for path in paths:
             with self.subTest(path=path.name):
                 json.loads(path.read_text(encoding="utf-8"))

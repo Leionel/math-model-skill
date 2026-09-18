@@ -1,0 +1,8 @@
+schema_version: "1.0"
+capability_id: base-modeling
+verifiers: [artifact-freshness, unit-consistency]
+schemas: [model_contract.schema.json]
+artifact_roles: [model_contract]
+gates: [m1]
+requires: []
+description: "Model contract, units and artifact lineage; every other capability builds on it."

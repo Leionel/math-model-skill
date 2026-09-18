@@ -1,0 +1,12 @@
+# Which capability set each competition profile composes.
+#
+# The competition profile schema is a closed contract, so this mapping lives
+# with the capability layer until the profile contract carries its own
+# `capabilities` list. Every key here must be a profile_id that exists in
+# competition_profiles/*.yaml; tests/test_capability_composition.py fails when
+# the two drift apart.
+schema_version: "1.0"
+profiles:
+  cumcm-2026-electronic: [base-modeling, numerical-validation, contest-compliance]
+  mcm_icm: [base-modeling, numerical-validation, contest-compliance]
+  apmcm: [base-modeling, numerical-validation, contest-compliance]

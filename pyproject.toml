@@ -25,6 +25,7 @@ include-package-data = false
 [tool.setuptools.package-data]
 "schemas" = ["*.json"]
 "scripts.verifiers" = ["declarations/*.yaml"]
+"scripts.capability_composition" = ["declarations/*.yaml", "compositions.yaml"]
 "agents" = ["*/agent.yaml"]
 "competition_profiles" = ["*.yaml"]
 "references" = ["router.md"]

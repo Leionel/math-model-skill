@@ -1,0 +1,8 @@
+schema_version: "1.0"
+capability_id: numerical-validation
+verifiers: []
+schemas: [frozen_results.schema.json, validation_report.schema.json]
+artifact_roles: [frozen_results]
+gates: [p2]
+requires: [base-modeling]
+description: "Frozen results and independent validation reports behind the P2 evidence gate."

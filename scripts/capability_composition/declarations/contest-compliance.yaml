@@ -1,0 +1,8 @@
+schema_version: "1.0"
+capability_id: contest-compliance
+verifiers: []
+schemas: [competition_profile.schema.json, submission_manifest.schema.json]
+artifact_roles: [competition_profile]
+gates: [m1]
+requires: [base-modeling]
+description: "Contest rules, AI disclosure and submission boundary; the safety checker runs inside the M1 gate."

@@ -24,6 +24,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import child_env, exclusive_path_lock, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, write_json_atomic  # noqa: E402
 import bench_run  # noqa: E402
+import capability_composition  # noqa: E402
 import checkpoints  # noqa: E402
 import run_diff  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
@@ -984,6 +985,8 @@ def _submit_receipt(args: argparse.Namespace) -> int:
 
 
 def _profile(args: argparse.Namespace) -> int:
+    if args.profile_id and not args.compose:
+        raise ValueError("--profile-id requires --compose")
     root = _project(args)
     manifest = _manifest_path(root, args.manifest)
     overrides = _parse_overrides(args.override)
@@ -997,7 +1000,33 @@ def _profile(args: argparse.Namespace) -> int:
         capabilities = resolve_profile(preset, overrides)
         profile = {"path": None, "profile_id": None, "status": "unresolved", "competition": None}
     result = {"ok": True, "preset": preset, "capabilities": capabilities.to_dict(), "profile": profile}
-    _emit(result, machine=args.json, human=f"preset: {preset}\nprofile: {profile.get('profile_id') or 'unresolved'} ({profile.get('status')})\ncapabilities: {', '.join(key for key, value in capabilities.capabilities.items() if value)}")
+    human = f"preset: {preset}\nprofile: {profile.get('profile_id') or 'unresolved'} ({profile.get('status')})\ncapabilities: {', '.join(key for key, value in capabilities.capabilities.items() if value)}"
+    if args.compose:
+        target = args.profile_id or profile.get("profile_id")
+        if target is None:
+            result["composition"] = {
+                "schema_version": "1.0",
+                "profile_id": None,
+                "capabilities": [],
+                "verifiers": [],
+                "schemas": [],
+                "artifact_roles": [],
+                "gates": [],
+                "note": "this project has no resolved competition profile, so no capability set is composed",
+            }
+            human += "\ncomposition: none (project profile is unresolved)"
+        else:
+            composition = capability_composition.compose(str(target))
+            result["composition"] = composition
+            joined = lambda values: ", ".join(values) or "none"  # noqa: E731 - one-line join for the human view
+            human += (
+                f"\ncomposition[{target}]: {joined(composition['capabilities'])}"
+                f"\n  verifiers: {joined(composition['verifiers'])}"
+                f"\n  schemas: {joined(composition['schemas'])}"
+                f"\n  roles: {joined(composition['artifact_roles'])}"
+                f"\n  gates: {joined(composition['gates'])}"
+            )
+    _emit(result, machine=args.json, human=human)
     return 0
 
 
@@ -1401,6 +1430,8 @@ def build_parser() -> argparse.ArgumentParser:
     profile.add_argument("--manifest", default=None)
     profile.add_argument("--preset", choices=PRESETS, default="research")
     profile.add_argument("--override", action="append", default=[])
+    profile.add_argument("--compose", action="store_true", help="also resolve the capability set this profile composes")
+    profile.add_argument("--profile-id", help="compose a named profile instead of the project's resolved one")
     profile.set_defaults(handler=_profile)
 
     doctor = sub.add_parser("doctor", help="check Python, optional dependencies, schemas, and critical files")
