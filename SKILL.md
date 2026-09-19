@@ -306,6 +306,7 @@ normal path should require one project root plus stage/preset.
 
 Read only the relevant router entry before a specialized task:
 
+- [harness walkthrough](references/usage/harness_walkthrough.md) — the human-facing, Chinese guide to command order and operator modes; read it when a person, not an agent, is driving
 - [reference router](references/router.md) for contracts, Gate policy,
   validation, writing, figures, literature, and submission details;
 - [artifact contracts](references/contracts/artifact_contracts.md) for

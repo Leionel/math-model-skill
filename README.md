@@ -5,6 +5,8 @@
 [![python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 [![schemas: 37](https://img.shields.io/badge/JSON%20schemas-37-lightgrey)](schemas)
 
+[跳到中文说明](#公共主流程中文) · [给人看的 Harness 使用说明](references/usage/harness_walkthrough.md)
+
 **A MCP-compatible multi-agent execution framework with deterministic
 verification, artifact provenance, and human oversight.**
 
@@ -23,7 +25,7 @@ MCP, and a human watches the identical read path in a console.
    MCP interface      scripts/mcp_server.py    (JSON-RPC/stdio)
    (one door)         13 read-only tools · 1 opt-in mutating tool
                              │                       │
-   Harness runtime    harness CLI — 30 commands, one project root
+   Harness runtime    harness CLI — 31 commands, one project root
                              │                       │
    Evidence layer     Gate Engine · Artifact DAG · Execution Receipts
    (deterministic)    Hash/Freshness · Evidence Registry · Validation
@@ -140,6 +142,7 @@ Honest limits of the current implementation:
 | [`examples/end_to_end/`](examples/end_to_end/README.md) | the runnable demo and its probe table |
 | [`evaluation/PREREGISTRATION.md`](evaluation/PREREGISTRATION.md) | the ablation design written before results |
 | [`references/router.md`](references/router.md) | progressively disclosed method detail |
+| [`references/usage/harness_walkthrough.md`](references/usage/harness_walkthrough.md) | 给人看的中文使用说明:该敲哪条命令、按什么顺序、它会留下什么 |
 | [Chinese operating guide](#公共主流程中文) | 命令、Gate、preset、迁移与排障 |
 
 ---
@@ -186,6 +189,30 @@ python scripts/harness.py submit check --project C:\work\math-q1 --json
 阶段在 `prepare` 和 `check` 中选择。`status --json` 与 `context --json` 会返回
 `ruleset_id` 及命中文件范围；id 相同只表示可复用已有规则理解，Gate 和合同
 freshness 仍照常检查。
+
+### 需要人点头的两条动作
+
+上面的循环全是可重算的事实，机器自己就能跑。只有两处必须人参与，它们不在这六类
+动作里：
+
+```powershell
+# 记一次人工确认。需要人工 checkpoint 的 Gate 只认 --actor human 的行
+python scripts/harness.py checkpoint approve w1 --project C:\work\math-q1 `
+  --role "队长" --decision approve
+
+# 声明这一程 agent 可以替你走多远
+python scripts/harness.py mode auto --project C:\work\math-q1 --set-by "你的名字"
+```
+
+`checkpoint approve` 追加一份哈希链化的决策 artifact，并在 `run_manifest` 里追加一行
+控制真相；`--actor agent` 表示这一条是 agent 代答的，它**不会**清掉任何需要人工确认的
+Gate。`mode` 有 `auto`（非 Gate 动作不必逐条问）和 `accept-edits`（改动逐条批）两种，
+只写入 `control.operator_mode` 及其只追加的变更史，**不放宽任何 Gate**——它的作用是让
+"全程无人监督跑完"这件事在事后无法被说成有人看过。
+
+给人看的完整顺序、每个 preset 的边界和排障路径，见
+[使用说明](references/usage/harness_walkthrough.md)；跑起来之后用只读控制台
+`dashboard/` 看，它没有写入路径。
 
 ## Advanced/compat
 

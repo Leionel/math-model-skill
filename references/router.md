@@ -6,6 +6,7 @@ scripts and schemas.
 
 | Need | Read next |
 |---|---|
+| driving the tool from a terminal: which command, in what order, what it leaves behind (human-facing, 中文) | [usage/harness_walkthrough.md](usage/harness_walkthrough.md) |
 | v2 artifact identity, result semantics, and generated-file ownership | [contracts/artifact_contracts.md](contracts/artifact_contracts.md) |
 | Gate order, minimum evidence, and non-bypassable checkpoints | [workflow/gate_policy.md](workflow/gate_policy.md) |
 | human-facing M1/W1/W2/S1 projections, AI tri-state, or submission staging | [workflow/authoring_plane.md](workflow/authoring_plane.md) |
