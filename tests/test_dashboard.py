@@ -105,6 +105,29 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("read-only", body["error"])
         self.assertIn("harness check", body["instead"])
 
+    def test_snapshot_surfaces_the_declared_mode_and_who_recorded_a_checkpoint(self) -> None:
+        manifest_path = console.resolve_control_path(self.project, "run_manifest.json")
+        original = manifest_path.read_bytes()
+        self.addCleanup(manifest_path.write_bytes, original)
+        manifest = json.loads(original.decode("utf-8"))
+        control = manifest.setdefault("control", {})
+        control["operator_mode"] = "auto"
+        control["operator_mode_history"] = [
+            {"mode": "auto", "set_by": "shengxin", "set_at": "2026-09-19T00:00:00+00:00"},
+        ]
+        manifest["human_checkpoints"] = [{
+            "checkpoint_id": "CHK-M1-001", "stage": "m1", "decision": "pass",
+            "actor_class": "agent", "decided_by": "orchestrator",
+        }]
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+        snapshot = console.snapshot(self.project)
+        self.assertEqual(snapshot["operator_mode"], "auto")
+        self.assertEqual([row["kind"] for row in snapshot["timeline"]], ["mode"])
+        m1 = next(row for row in snapshot["gates"] if row["gate"] == "M1")
+        self.assertEqual(m1["checkpoint_actor"], "agent")
+        self.assertEqual(m1["checkpoint_by"], "orchestrator")
+
     def test_unknown_route_is_a_404_not_a_stack_trace(self) -> None:
         with self.assertRaises(urllib.error.HTTPError) as raised:
             self.get("/api/evaluations")

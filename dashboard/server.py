@@ -88,8 +88,9 @@ def _reviews(root: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _timeline(state: dict[str, Any], receipts: list[dict[str, Any]], reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Merge Gate, execution and review facts into one chronological trace."""
+def _timeline(state: dict[str, Any], receipts: list[dict[str, Any]], reviews: list[dict[str, Any]],
+              mode_history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge Gate, execution, review and operator-mode facts into one trace."""
     events: list[dict[str, Any]] = []
     for receipt in receipts:
         events.append({
@@ -106,6 +107,14 @@ def _timeline(state: dict[str, Any], receipts: list[dict[str, Any]], reviews: li
             "label": f"{review.get('perspective')} ({review.get('independence_level')})",
             "detail": f"verdict={review.get('verdict')} findings={review.get('findings')}",
             "ok": review.get("verdict") == "pass",
+        })
+    for entry in mode_history:
+        events.append({
+            "at": entry.get("set_at"),
+            "kind": "mode",
+            "label": f"operator mode → {entry.get('mode')}",
+            "detail": f"set_by={entry.get('set_by')}",
+            "ok": True,
         })
     return sorted(events, key=lambda row: str(row.get("at") or ""))
 
@@ -140,14 +149,27 @@ def snapshot(root: Path) -> dict[str, Any]:
     receipts = _receipts(root)
     reviews = _reviews(root)
     manifest = _read_json(resolve_control_path(root, "run_manifest.json"))
-    checkpoints = {
-        str(row.get("stage")): row for row in manifest.get("human_checkpoints", []) if isinstance(row, dict)
-    }
+    control = manifest.get("control") if isinstance(manifest.get("control"), dict) else {}
+    mode_history = [row for row in control.get("operator_mode_history", []) if isinstance(row, dict)]
+    checkpoints: dict[str, dict[str, Any]] = {}
+    for row in manifest.get("human_checkpoints", []):
+        if not isinstance(row, dict):
+            continue
+        stage = str(row.get("stage"))
+        kept = checkpoints.get(stage)
+        # A Gate counts the stage once any human row exists, so the console must
+        # not let a later agent row hide the human decision beside it.
+        if kept is None or (
+            kept.get("actor_class", "human") == "agent" and row.get("actor_class", "human") == "human"
+        ):
+            checkpoints[stage] = row
     return {
         "project_root": str(root),
         "run_id": state.get("run_id"),
         "stage": state.get("stage"),
         "preset": state.get("preset"),
+        "operator_mode": state.get("operator_mode"),
+        "operator_mode_history": mode_history,
         "gate_status": state.get("gate_status"),
         "first_blocked_gate": state.get("first_blocked_gate"),
         "gates": [
@@ -161,6 +183,10 @@ def snapshot(root: Path) -> dict[str, Any]:
                 ),
                 "human_checkpoint": (checkpoints.get(gate.lower()) or {}).get("decision"),
                 "checkpoint_by": (checkpoints.get(gate.lower()) or {}).get("decided_by"),
+                "checkpoint_actor": (
+                    (checkpoints.get(gate.lower()) or {}).get("actor_class", "human")
+                    if (checkpoints.get(gate.lower()) or {}).get("decision") else None
+                ),
             }
             for gate in GATE_ORDER
         ],
@@ -172,7 +198,7 @@ def snapshot(root: Path) -> dict[str, Any]:
         "artifact_errors": artifacts.get("errors") or [],
         "receipts": receipts,
         "reviews": reviews,
-        "timeline": _timeline(state, receipts, reviews),
+        "timeline": _timeline(state, receipts, reviews, mode_history),
         "ai_usage_state": manifest.get("ai_usage_state"),
         "sources": [
             "mcp:get_run_state", "mcp:list_artifacts",
