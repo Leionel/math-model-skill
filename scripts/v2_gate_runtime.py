@@ -13,7 +13,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent / "qa"
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import child_env, load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
+from _common import child_env, confirmed_checkpoints, human_confirmed_checkpoints, load_structured, rel_path, resolve_path, sha256_file  # noqa: E402
 from artifact_dag_projector import project_artifact_dag  # noqa: E402
 from qa.smoke_coverage import smoke_coverage_errors  # noqa: E402
 
@@ -480,14 +480,16 @@ def _v2_registry_entry_scripts(errors: list[str]) -> dict[str, str]:
 def _v2_checkpoint_required(state: Any, capabilities: Any, gate: str, errors: list[str]) -> None:
     if not capabilities.require_human_checkpoints:
         return
-    checkpoints = state.manifest.get("human_checkpoints", [])
-    if not isinstance(checkpoints, list) or not any(
-        isinstance(row, dict)
-        and row.get("stage") == gate
-        and row.get("decision") in {"pass", "confirm"}
-        for row in checkpoints
-    ):
-        errors.append(f"{gate.upper()} requires a confirmed {gate.upper()} human checkpoint")
+    rows = state.manifest.get("human_checkpoints", [])
+    if human_confirmed_checkpoints(rows, gate):
+        return
+    if confirmed_checkpoints(rows, gate):
+        errors.append(
+            f"{gate.upper()} has only agent-recorded checkpoints; a human must confirm it with "
+            f"`harness checkpoint approve {gate} --role <role> --decision approve`"
+        )
+        return
+    errors.append(f"{gate.upper()} requires a confirmed {gate.upper()} human checkpoint")
 
 
 def _v2_run_safety_checker(state: Any, capabilities: Any, evidence: dict[str, Any], errors: list[str]) -> None:

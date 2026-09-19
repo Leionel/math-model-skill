@@ -49,7 +49,12 @@ def get_run_state(root: Path, arguments: Mapping[str, Any], module: Mapping[str,
         for row in (payload.get("failures_summary") or {}).get("items", [])
         if isinstance(row, Mapping)
     ]
-    pending = [str(row) for row in payload.get("pending_human_checkpoints") or []]
+    # Callers act on these as stage names ("a human must confirm w1"), so a
+    # projected row is rendered as its stage rather than as a Python repr.
+    pending = [
+        str(row.get("stage")) if isinstance(row, Mapping) and row.get("stage") else str(row)
+        for row in payload.get("pending_human_checkpoints") or []
+    ]
     stale = [str(row) for row in payload.get("stale_artifacts") or []]
     stage = str(payload.get("stage") or "")
     if blocked:
@@ -65,6 +70,7 @@ def get_run_state(root: Path, arguments: Mapping[str, Any], module: Mapping[str,
         "run_id": payload.get("run_id"),
         "stage": stage,
         "preset": payload.get("preset"),
+        "operator_mode": payload.get("operator_mode"),
         "gate_status": gate_status,
         "first_blocked_gate": blocked,
         "gates_passed": sorted(name for name, row in gates.items() if isinstance(row, Mapping) and row.get("ok")),
@@ -106,8 +112,9 @@ def gate_order(module: Mapping[str, Any]) -> list[str]:
 TOOLS: dict[str, dict[str, Any]] = {
     "get_run_state": {
         "description": (
-            "Recomputed run state for one project: stage, Gate readiness, blockers with the "
-            "repair action, pending human checkpoints and stale artifacts. Read-only."
+            "Recomputed run state for one project: stage, the declared operator mode, Gate "
+            "readiness, blockers with the repair action, pending human checkpoints and stale "
+            "artifacts. Read-only."
         ),
         "properties": {},
         "required": [],

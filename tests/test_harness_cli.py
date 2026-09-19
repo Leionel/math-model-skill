@@ -34,6 +34,48 @@ class HarnessCliTest(unittest.TestCase):
     def read(self, name: str) -> dict:
         return json.loads((self.project / name).read_text(encoding="utf-8"))
 
+    def test_mode_records_the_declaration_and_its_history(self) -> None:
+        self.init()
+        first = self.run_cli("mode", "auto", "--set-by", "shengxin", "--project", str(self.project), "--json")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        payload = json.loads(first.stdout)
+        self.assertEqual(payload["operator_mode"], "auto")
+        self.assertIsNone(payload["previous_mode"])
+
+        second = self.run_cli("mode", "accept-edits", "--set-by", "shengxin", "--project", str(self.project), "--json")
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(json.loads(second.stdout)["previous_mode"], "auto")
+
+        control = self.read("run_manifest.json")["control"]
+        self.assertEqual(control["operator_mode"], "accept-edits")
+        self.assertEqual(
+            [(row["mode"], row["set_by"]) for row in control["operator_mode_history"]],
+            [("auto", "shengxin"), ("accept-edits", "shengxin")],
+        )
+        status = self.run_cli("status", "--project", str(self.project), "--json")
+        self.assertEqual(json.loads(status.stdout)["operator_mode"], "accept-edits")
+
+    def test_mode_never_relaxes_a_human_checkpoint(self) -> None:
+        self.init()
+        declared = self.run_cli("mode", "auto", "--set-by", "shengxin", "--project", str(self.project))
+        self.assertEqual(declared.returncode, 0, declared.stdout + declared.stderr)
+        approved = self.run_cli(
+            "checkpoint", "approve", "w1", "--role", "orchestrator", "--decision", "approve",
+            "--actor", "agent", "--project", str(self.project), "--json",
+        )
+        self.assertEqual(approved.returncode, 0, approved.stdout + approved.stderr)
+        blocked = self.run_cli("check", "W1", "--project", str(self.project), "--json")
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("only agent-recorded checkpoints", blocked.stdout)
+
+    def test_mode_requires_a_known_mode_and_a_named_owner(self) -> None:
+        self.init()
+        unknown = self.run_cli("mode", "yolo", "--set-by", "shengxin", "--project", str(self.project))
+        self.assertEqual(unknown.returncode, 2)
+        anonymous = self.run_cli("mode", "auto", "--project", str(self.project))
+        self.assertEqual(anonymous.returncode, 2)
+        self.assertNotIn("operator_mode", self.read("run_manifest.json")["control"])
+
     def test_init_emits_only_minimal_v2_state(self) -> None:
         self.init()
         names = sorted(path.name for path in self.project.glob("*.json"))

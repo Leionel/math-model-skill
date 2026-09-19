@@ -385,6 +385,14 @@ class ComputedToolTest(unittest.TestCase):
         self.assertTrue(payload["next_actions"])
         self.assertTrue(all("next_action" in row for row in payload["blockers"]))
 
+    def test_get_run_state_names_pending_stages_rather_than_projected_rows(self) -> None:
+        payload = self._call("get_run_state")
+        self.assertTrue(payload["pending_human_checkpoints"])
+        self.assertTrue(
+            all(row in ("m1", "p1", "p2", "w1", "w2", "s1", "f1") for row in payload["pending_human_checkpoints"]),
+            payload["pending_human_checkpoints"],
+        )
+
     def test_check_gate_refuses_and_names_the_reason(self) -> None:
         payload = self._call("check_gate", gate="M1")
         self.assertFalse(payload["allowed"])

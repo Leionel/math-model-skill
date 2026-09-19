@@ -16,7 +16,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import ai_usage_snapshot, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from _common import ai_usage_snapshot, confirmed_checkpoints, human_confirmed_checkpoints, load_structured, rel_path, resolve_ai_usage_state, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
 from runtime_state import load_runtime_state  # noqa: E402
 
 
@@ -136,13 +136,13 @@ def main() -> int:
             conditional_manual = []
         required_manual.update(conditional_manual)
 
-        s1_checkpoints = [
-            row for row in manifest.get("human_checkpoints", [])
-            if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") in {"pass", "confirm"}
-        ]
+        s1_checkpoints = human_confirmed_checkpoints(manifest.get("human_checkpoints", []), "s1")
         selected_checkpoint: dict[str, Any] | None = None
         if not s1_checkpoints:
-            errors.append("submission QA requires a passing S1 human checkpoint")
+            if confirmed_checkpoints(manifest.get("human_checkpoints", []), "s1"):
+                errors.append("submission QA S1 checkpoints are all agent-recorded; a human must confirm S1")
+            else:
+                errors.append("submission QA requires a passing S1 human checkpoint")
             completed_manual: set[str] = set()
             checkpoint_refs: set[tuple[Any, Any]] = set()
         else:

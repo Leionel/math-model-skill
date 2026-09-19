@@ -13,7 +13,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from _common import ai_usage_hash_matches, load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
+from _common import ai_usage_hash_matches, confirmed_checkpoints, human_confirmed_checkpoints, load_structured, rel_path, resolve_path, sha256_file, sha256_json  # noqa: E402
 from validate_contracts import _validate_document  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 
@@ -121,12 +121,16 @@ def main() -> int:
                 errors.append("S1 report submission rules hash does not match run_manifest")
             if not ai_usage_hash_matches(report.get("ai_usage_sha256"), run_manifest):
                 errors.append("S1 report AI usage hash does not match run_manifest")
-            s1_checkpoints = [
-                row for row in run_manifest.get("human_checkpoints", [])
-                if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") in {"pass", "confirm"}
-            ]
+            s1_rows = run_manifest.get("human_checkpoints", [])
+            s1_checkpoints = human_confirmed_checkpoints(s1_rows, "s1")
             report_checkpoint = report.get("s1_checkpoint")
-            if not s1_checkpoints or not isinstance(report_checkpoint, dict) or (
+            if not s1_checkpoints:
+                errors.append(
+                    "S1 report human checkpoint was recorded by an agent; a human must confirm S1"
+                    if confirmed_checkpoints(s1_rows, "s1")
+                    else "S1 report human checkpoint hash does not match run_manifest"
+                )
+            elif not isinstance(report_checkpoint, dict) or (
                 report_checkpoint.get("checkpoint_id") != s1_checkpoints[-1].get("checkpoint_id")
                 or report_checkpoint.get("sha256") != sha256_json(s1_checkpoints[-1])
             ):

@@ -14,7 +14,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import ai_usage_hash_matches, load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
+from _common import ai_usage_hash_matches, confirmed_checkpoints, human_confirmed_checkpoints, load_structured, rel_path, resolve_path, sha256_file, sha256_json, write_json  # noqa: E402
 from runtime_state import load_runtime_state  # noqa: E402
 
 
@@ -229,10 +229,15 @@ def main() -> int:
         if not ai_usage_hash_matches(report.get("ai_usage_sha256"), manifest):
             raise ValueError("S1 report AI usage hash is stale")
         s1_checkpoints = [
-            row for row in manifest.get("human_checkpoints", [])
-            if isinstance(row, dict) and row.get("stage") == "s1" and row.get("decision") == "pass"
+            row for row in human_confirmed_checkpoints(manifest.get("human_checkpoints", []), "s1")
+            if row.get("decision") == "pass"
         ]
         if not s1_checkpoints:
+            if any(
+                row.get("decision") == "pass"
+                for row in confirmed_checkpoints(manifest.get("human_checkpoints", []), "s1")
+            ):
+                raise ValueError("current S1 human checkpoint was recorded by an agent; a human must confirm it")
             raise ValueError("current run manifest has no passing S1 human checkpoint")
         current_checkpoint = s1_checkpoints[-1]
         report_checkpoint = report.get("s1_checkpoint")

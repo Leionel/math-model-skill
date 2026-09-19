@@ -38,6 +38,8 @@ validation, result freeze, or submission immutability.
 - Keep failed runs and diagnostic failure evidence; never rewrite a frozen file.
 - `run_index.json` and status are projections, not digest owners.
 - Record a required human decision with `harness checkpoint approve <stage> --role <role> --decision approve|reject`: it appends one evidence artifact under `.harness/human_decisions/` (chained to the previous decision) and one `run_manifest.human_checkpoints` row. The manifest row is the control truth, the artifact is evidence, and the role is a declaration, never a verified identity.
+- The same command takes `--actor human|agent` (default `human`). A Gate that requires a human checkpoint counts only rows whose `actor_class` is human; rows written before the field existed are read as human. `actor_class` is enforced, and it is still a declaration: what it closes is an agent clearing a human Gate without saying so, not a false identity.
+- `harness mode auto|accept-edits --set-by <who>` records how much of the run an agent was allowed to drive unattended, in `run_manifest.control` with an append-only history. The mode never relaxes a Gate.
 - Recompute semantic checks independently; SHA-256 only proves bytes unchanged.
 - Changes to immutable inputs create a new version, stale dependants, and
   pending affected Gates.

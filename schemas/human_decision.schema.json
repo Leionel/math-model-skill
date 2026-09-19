@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/math-modeling-harness/human-decision.schema.json",
   "title": "Human Checkpoint Decision Record (v1)",
-  "description": "Append-only evidence artifact for one human checkpoint decision. The recorded role is a declaration, never a verified identity; the run_manifest.human_checkpoints row remains the control truth that gates read.",
+  "description": "Append-only evidence artifact for one checkpoint decision. The recorded role is a declaration, never a verified identity; actor_class is the declaration the Gates enforce. The run_manifest.human_checkpoints row remains the control truth that gates read, and rows written before actor_class existed are read as human.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "checkpoint", "decision", "role", "recorded_at"],
@@ -11,6 +11,10 @@
     "checkpoint": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
     "decision": { "enum": ["approve", "reject"] },
     "role": { "type": "string", "minLength": 1 },
+    "actor_class": {
+      "enum": ["human", "agent"],
+      "description": "Who the recorder says made this decision. A Gate that requires a human checkpoint only counts human rows; absent means human for records predating the field."
+    },
     "note": { "type": "string" },
     "recorded_at": { "type": "string", "minLength": 1 },
     "previous_decision_sha256": {

@@ -163,6 +163,28 @@ def scenario_human_checkpoint_is_unattested(demo: Demo) -> dict[str, object]:
     )
 
 
+def scenario_agent_checkpoint_cannot_clear_a_human_gate(demo: Demo) -> dict[str, object]:
+    probe = run_demo._clone(demo, "actor_class")
+    manifest = load_json(probe.root / "run_manifest.json")
+    manifest["human_checkpoints"] = [
+        row for row in manifest["human_checkpoints"] if row.get("stage") != "w1"
+    ]
+    write_json(probe.root / "run_manifest.json", manifest)
+    run_demo.add_checkpoint(probe, "w1", "unattended-agent", actor_class="agent")
+    agent_code, agent_errors = run_demo._gate_errors(probe, "W1")
+    run_demo.add_checkpoint(probe, "w1", "whoever-typed-the-role")
+    human_code, _ = run_demo._gate_errors(probe, "W1")
+    return outcome(
+        "human_attention", "agent_recorded_checkpoint",
+        "an agent may drive every recomputable step, but only a human row clears a human checkpoint",
+        "clear W1 with an actor_class=agent checkpoint, then with a human one",
+        expect="blocked",
+        actual="blocked" if agent_code != 0 and human_code == 0 else "allowed",
+        evidence=[*agent_errors[:1], f"agent exit={agent_code} human exit={human_code}",
+                  "which class is claimed is still a declaration; only a human one is accepted"],
+    )
+
+
 def scenario_bound_artifact_deleted(demo: Demo) -> dict[str, object]:
     probe = run_demo._clone(demo, "delete")
     (probe.root / "paper.txt").unlink()
@@ -229,6 +251,7 @@ LOCAL_SCENARIOS = (
     scenario_projection_copy_is_inert,
     scenario_receipt_provenance_is_not_attested,
     scenario_human_checkpoint_is_unattested,
+    scenario_agent_checkpoint_cannot_clear_a_human_gate,
     scenario_bound_artifact_deleted,
     scenario_dag_lineage_tampering,
     scenario_ai_ledger_entry_without_interaction,

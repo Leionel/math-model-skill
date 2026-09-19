@@ -136,6 +136,24 @@
               "uniqueItems": true,
               "items": { "type": "string", "enum": ["m1", "p2", "w1", "w2", "s1", "f1"] }
             },
+            "operator_mode": {
+              "enum": ["auto", "accept-edits"],
+              "description": "How much of the run the operator declared an agent may drive unattended. A declaration about agent behaviour, never a Gate relaxation: human-required checkpoints count only human rows in every mode."
+            },
+            "operator_mode_history": {
+              "type": "array",
+              "description": "Append-only record of every mode change, so a mid-run switch stays visible.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mode", "set_by", "set_at"],
+                "properties": {
+                  "mode": { "enum": ["auto", "accept-edits"] },
+                  "set_by": { "type": "string", "minLength": 1 },
+                  "set_at": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
             "historical_evidence_policy": { "const": "preserve" }
           }
         },

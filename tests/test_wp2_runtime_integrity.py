@@ -315,6 +315,39 @@ class WP2RuntimeIntegrityTest(unittest.TestCase):
         self.assertIn("check_paper_readiness", result.stdout)
         self.assertIn("paper_plan schema", result.stdout)
 
+    def _set_checkpoints(self, *rows: dict[str, object]) -> None:
+        manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
+        manifest["human_checkpoints"] = list(rows)
+        (self.project / "run_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    def test_v2_w1_agent_recorded_checkpoint_does_not_satisfy_the_human_requirement(self) -> None:
+        self._set_checkpoints({
+            "checkpoint_id": "CHK-W1-001", "stage": "w1", "decision": "pass",
+            "actor_class": "agent", "decided_by": "orchestrator",
+        })
+        blocked = self.gate("w1")
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("only agent-recorded checkpoints", blocked.stdout + blocked.stderr)
+
+        # Rows written before actor_class existed predate the distinction, so an
+        # existing run must not lose the checkpoints it already recorded.
+        self._set_checkpoints({
+            "checkpoint_id": "CHK-W1-001", "stage": "w1", "decision": "pass", "decided_by": "team lead",
+        })
+        legacy = self.gate("w1")
+        self.assertNotIn("only agent-recorded checkpoints", legacy.stdout)
+        self.assertNotIn("requires a confirmed w1 human checkpoint", legacy.stdout)
+
+        self._set_checkpoints({
+            "checkpoint_id": "CHK-W1-001", "stage": "w1", "decision": "pass",
+            "actor_class": "agent", "decided_by": "orchestrator",
+        }, {
+            "checkpoint_id": "CHK-W1-002", "stage": "w1", "decision": "pass",
+            "actor_class": "human", "decided_by": "team lead",
+        })
+        after_human = self.gate("w1")
+        self.assertNotIn("only agent-recorded checkpoints", after_human.stdout)
+
     def test_v2_w2_deterministic_qa_failure_is_not_reduced_to_dag_presence(self) -> None:
         files = {
             "evidence.json": "{}", "paper_plan.json": "{}", "frozen.json": "{}",

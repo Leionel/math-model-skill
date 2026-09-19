@@ -7,6 +7,12 @@ appends one ``run_manifest.human_checkpoints`` row.  The manifest stays the
 control truth that gates read; the artifact is only evidence.  The recorded
 role is a declaration by whoever invoked the command, never a verified
 identity, and nothing here defends against a malicious host.
+
+``actor_class`` is also a declaration, but it is the one the Gates enforce:
+a Gate that requires a human checkpoint only counts rows whose actor class is
+``human`` (or predates the field).  Claiming ``human`` is therefore still
+unattested; what is no longer possible is clearing a human Gate without ever
+having to assert a human was there.
 """
 
 from __future__ import annotations
@@ -28,13 +34,24 @@ from qa.validate_contracts import validate_value  # noqa: E402
 
 DECISION_SCHEMA = SCRIPT_DIR.parent / "schemas" / "human_decision.schema.json"
 DECISION_DIR = Path(".harness") / "human_decisions"
+ACTOR_CLASSES = ("human", "agent")
 
 
-def record_decision(root: Path, stage: str, role: str, decision: str, *, note: str = "") -> dict[str, Any]:
+def record_decision(
+    root: Path,
+    stage: str,
+    role: str,
+    decision: str,
+    *,
+    note: str = "",
+    actor_class: str = "human",
+) -> dict[str, Any]:
     if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", stage) is None:
         raise ValueError("checkpoint stage must match [a-z0-9][a-z0-9_-]* (lowercase)")
     if not role.strip():
         raise ValueError("--role must name the deciding role; it is recorded as a declaration, not a verified identity")
+    if actor_class not in ACTOR_CLASSES:
+        raise ValueError("--actor must be human or agent")
     if decision not in {"approve", "reject"}:
         raise ValueError("decision must be approve or reject")
     manifest_path = resolve_manifest_path(root)
@@ -60,6 +77,7 @@ def record_decision(root: Path, stage: str, role: str, decision: str, *, note: s
         "checkpoint": stage,
         "decision": decision,
         "role": role.strip(),
+        "actor_class": actor_class,
         "recorded_at": recorded_at,
     }
     if note:
@@ -80,6 +98,7 @@ def record_decision(root: Path, stage: str, role: str, decision: str, *, note: s
         "stage": stage,
         "decision": "pass" if decision == "approve" else "reject",
         "decided_by": role.strip(),
+        "actor_class": actor_class,
         "decided_at": recorded_at,
         "decision_artifact": rel_path(artifact_path, root),
         "decision_sha256": sha256_file(artifact_path),
@@ -88,6 +107,7 @@ def record_decision(root: Path, stage: str, role: str, decision: str, *, note: s
     return {
         "checkpoint": stage,
         "decision": decision,
+        "actor_class": actor_class,
         "artifact": rel_path(artifact_path, root),
         "previous_decision_sha256": previous_hash,
         "manifest_rows": len(rows),

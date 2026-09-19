@@ -172,6 +172,38 @@ class HumanCheckpointApproveTest(unittest.TestCase):
         )
         self.assertEqual(len(list((self.project / ".harness" / "human_decisions").glob("*.json"))), 2)
 
+    def test_approve_records_who_made_the_call(self) -> None:
+        agent = self._approve("w1", "--role", "orchestrator", "--decision", "approve", "--actor", "agent", cwd=self.project)
+        self.assertEqual(agent.returncode, 0, agent.stdout + agent.stderr)
+        self.assertIn("actor=agent", agent.stdout)
+        self.assertIn("does not clear the Gate", agent.stdout)
+
+        human = self._approve("w1", "--role", "team lead", "--decision", "approve", "--json", cwd=self.project)
+        self.assertEqual(human.returncode, 0, human.stdout + human.stderr)
+        self.assertEqual(json.loads(human.stdout)["actor_class"], "human")
+
+        artifacts = sorted((self.project / ".harness" / "human_decisions").glob("*.json"))
+        self.assertEqual(
+            [json.loads(path.read_text(encoding="utf-8"))["actor_class"] for path in artifacts],
+            ["agent", "human"],
+        )
+        manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            [(row["decided_by"], row["actor_class"]) for row in manifest["human_checkpoints"]],
+            [("orchestrator", "agent"), ("team lead", "human")],
+        )
+        for artifact in artifacts:
+            _, errors, _ = _validate_document(artifact, DECISION_SCHEMA)
+            self.assertEqual(errors, [])
+
+    def test_approve_rejects_an_unknown_actor_class(self) -> None:
+        result = self._approve("w1", "--role", "r", "--decision", "approve", "--actor", "manager", cwd=self.project)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stdout + result.stderr)
+        manifest = json.loads((self.project / "run_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["human_checkpoints"], [])
+        self.assertFalse((self.project / ".harness" / "human_decisions").exists())
+
     def test_approve_rejects_invalid_stage_and_non_v2_manifest(self) -> None:
         bad_stage = self._approve("W1", "--role", "r", "--decision", "approve", cwd=self.project)
         self.assertEqual(bad_stage.returncode, 2)

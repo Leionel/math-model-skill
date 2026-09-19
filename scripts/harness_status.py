@@ -19,15 +19,14 @@ from typing import Any, Mapping
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_structured, rel_path, resolve_path  # noqa: E402
+from _common import human_confirmed_checkpoints, load_structured, rel_path, resolve_path  # noqa: E402
+from operator_mode import declared_mode  # noqa: E402
 from project_layout import resolve_manifest_path  # noqa: E402
 from runtime_state import RuntimeStateError, load_runtime_state  # noqa: E402
 from v2_gate_runtime import _v2_gate  # noqa: E402
 from gate_order import GATE_ORDER  # noqa: E402
 from redaction import redact_text  # noqa: E402
 from ruleset import ruleset_fingerprint  # noqa: E402
-
-CONFIRMED = {"pass", "confirm"}
 
 
 def _checkpoint_view(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -36,6 +35,7 @@ def _checkpoint_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "stage": row.get("stage"),
         "scope": row.get("scope"),
         "decision": row.get("decision"),
+        "actor_class": row.get("actor_class", "human"),
         "manual_checks": row.get("manual_checks", []),
         "reviewed_by_role": row.get("reviewed_by_role"),
     }
@@ -54,16 +54,18 @@ def _pending_checkpoints(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(required, list):
         required = []
     pending: list[dict[str, Any]] = []
+    # A stage is satisfied only by a human-confirmed row, matching what the
+    # Gates enforce; an agent-recorded row leaves the stage pending.
     for stage in required:
         if not isinstance(stage, str):
             continue
         candidates = by_stage.get(stage, [])
-        if not any(row.get("decision") in CONFIRMED for row in candidates):
+        if not human_confirmed_checkpoints(candidates, stage):
             pending.append(_checkpoint_view(candidates[-1]) if candidates else {"stage": stage, "decision": None})
     # Keep explicitly requested checkpoints even when a v2 control document
     # comes from an older adapter without required_human_stages.
     for stage, candidates in by_stage.items():
-        if candidates and not any(row.get("decision") in CONFIRMED for row in candidates):
+        if candidates and not human_confirmed_checkpoints(candidates, stage):
             if not any(item.get("stage") == stage for item in pending):
                 pending.append(_checkpoint_view(candidates[-1]))
     return pending
@@ -316,6 +318,7 @@ def _v2_status(state: Any, *, ruleset: Mapping[str, Any] | None = None) -> dict[
         "status": state.manifest.get("status"),
         "stage": state.manifest.get("stage"),
         "preset": state.preset,
+        "operator_mode": declared_mode(state.manifest),
         "ruleset_id": ruleset["ruleset_id"],
         "ruleset_scope": ruleset["ruleset_scope"],
         "profile": {

@@ -79,6 +79,38 @@ def ai_usage_hash_matches(value: Any, manifest: Any) -> bool:
     return False
 
 
+CONFIRMED_CHECKPOINT_DECISIONS = {"pass", "confirm"}
+
+
+def confirmed_checkpoints(rows: Any, stage: str) -> list[Mapping[str, Any]]:
+    """Manifest rows whose decision confirms ``stage``, whoever recorded it."""
+
+    if not isinstance(rows, list):
+        return []
+    return [
+        row
+        for row in rows
+        if isinstance(row, Mapping)
+        and row.get("stage") == stage
+        and row.get("decision") in CONFIRMED_CHECKPOINT_DECISIONS
+    ]
+
+
+def human_confirmed_checkpoints(rows: Any, stage: str) -> list[Mapping[str, Any]]:
+    """Confirmed rows that a Gate may count toward a human checkpoint.
+
+    ``actor_class`` is the declaration the Gate enforces.  Rows recorded before
+    the field existed predate the distinction and are read as human, so an
+    existing run does not lose its checkpoints to the upgrade.
+    """
+
+    return [
+        row
+        for row in confirmed_checkpoints(rows, stage)
+        if row.get("actor_class", "human") == "human"
+    ]
+
+
 @contextmanager
 def exclusive_path_lock(path: Path) -> Iterator[None]:
     """Serialize small control-file mutations without adding project artifacts."""

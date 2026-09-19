@@ -495,11 +495,12 @@ def refresh_dag(demo: Demo, roles: dict[str, str], *, frozen: bool = False) -> N
     write_json(demo.root / "artifact_dag.json", dag)
 
 
-def add_checkpoint(demo: Demo, stage: str, decided_by: str) -> None:
-    """Record the operator's human decision.
+def add_checkpoint(demo: Demo, stage: str, decided_by: str, *, actor_class: str = "human") -> None:
+    """Record the operator's decision on one checkpoint stage.
 
     The Harness cannot attest who typed this; that boundary is stated in the
-    demo report and probed by the red-team evaluation.
+    demo report and probed by the red-team evaluation.  ``actor_class`` is the
+    part a Gate does enforce: only a human row clears a human checkpoint.
     """
     manifest = load_json(demo.root / "run_manifest.json")
     manifest["human_checkpoints"] = [
@@ -507,6 +508,7 @@ def add_checkpoint(demo: Demo, stage: str, decided_by: str) -> None:
     ] + [{
         "checkpoint_id": f"CHK-{stage.upper()}",
         "stage": stage, "decision": "pass", "decided_by": decided_by,
+        "actor_class": actor_class,
         "decided_at": datetime.now(timezone.utc).isoformat(),
         "note": f"operator confirmed the {stage.upper()} scope in the demo run",
     }]

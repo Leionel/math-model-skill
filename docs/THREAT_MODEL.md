@@ -72,12 +72,15 @@ verified_against: 64842a6@2026-09-18
 
 ### 5.2 human checkpoint identity is not attested
 
-丢掉 W1 checkpoint 会让 W1 失败（缺证据 → fail closed），但再以任意角色名重新加入即可通过；`decided_by` 是自由文本。
+丢掉 W1 checkpoint 会让 W1 失败（缺证据 → fail closed），但再以任意**人类**角色名重新加入即可通过；`decided_by` 是自由文本。
 证据：`evaluation/redteam.py::scenario_human_checkpoint_is_unattested`（`expect="allowed"`）。
+另一侧已经挡住：以 `actor_class: agent` 重新加入不能清掉人工 Gate，证据 `scenario_agent_checkpoint_cannot_clear_a_human_gate`（`expect="blocked"`）。
 
 已实现（P2-C）：`harness checkpoint approve <STAGE> --role <ROLE> --decision approve|reject` 生产者——写 append-only 决策 artifact（`.harness/human_decisions/`，含 checkpoint、decision、role、recorded_at、`previous_decision_sha256` 决策链），并追加 `run_manifest.human_checkpoints` 行（manifest 仍是控制真相，行内以 `decision_artifact` + `decision_sha256` 绑定证据）；manifest 侧 dashboard 不提供审批入口。
 
-仍未覆盖：`role` 是调用者的自我声明，**不是已验证身份**；决策 artifact 与 manifest 都在宿主可写盘面上，宿主可一并改写（§5.3），故只能说 "a recorded human checkpoint decision exists"，不能说 "verified human approval"（§6）。
+已实现（actor class）：决策同时记录 `actor_class`（`human`/`agent`，缺省 `human`；字段出现前的旧行按 `human` 读），需要人工确认的 Gate 只认 `human` 行。判定集中在 `_common.human_confirmed_checkpoints`，由 v2 Gate 运行时、`harness status` 的 pending 计算、S1 QA 与 freeze 共用，因此不会出现「状态说待人工、Gate 却放行」的分歧。`harness mode` 另存 `control.operator_mode` 与 append-only 变更史，只作申报，不放宽任何 Gate。
+
+仍未覆盖：`role` 与 `actor_class` 都是调用者的自我声明，**不是已验证身份**——宿主可以谎报 `--actor human`，闭合这一步需要预共享角色密钥或外部身份 token；决策 artifact 与 manifest 都在宿主可写盘面上，宿主可一并改写（§5.3），故只能说 "a recorded human checkpoint decision exists"，不能说 "verified human approval"（§6）。
 
 ### 5.3 宿主自愿作恶
 

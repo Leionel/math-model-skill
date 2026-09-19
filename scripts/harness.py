@@ -27,6 +27,7 @@ import bench_run  # noqa: E402
 import capability_composition  # noqa: E402
 import checkpoints  # noqa: E402
 import human_checkpoints  # noqa: E402
+import operator_mode  # noqa: E402
 import run_diff  # noqa: E402
 from runtime import backend as runtime_backend  # noqa: E402
 from figures.tool_router import route_figure  # noqa: E402
@@ -1114,8 +1115,21 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint_approve.add_argument("stage", help="checkpoint stage, lowercase (e.g. w1)")
     checkpoint_approve.add_argument("--role", required=True, help="deciding role; recorded as a declaration, not a verified identity")
     checkpoint_approve.add_argument("--decision", required=True, choices=("approve", "reject"))
+    checkpoint_approve.add_argument(
+        "--actor",
+        dest="actor_class",
+        default="human",
+        choices=("human", "agent"),
+        help="who actually made the call; a Gate that needs a human checkpoint only counts human rows",
+    )
     checkpoint_approve.add_argument("--note", default="")
     checkpoint_approve.set_defaults(handler=_checkpoint)
+
+    mode = sub.add_parser("mode", help="record how much of this run an agent may drive unattended")
+    _add_common(mode)
+    mode.add_argument("value", choices=("auto", "accept-edits"), help="auto: no prompts except at a human Gate; accept-edits: confirm file edits")
+    mode.add_argument("--set-by", required=True, help="who changed the mode; recorded as a declaration, not a verified identity")
+    mode.set_defaults(handler=_mode)
 
     fork = sub.add_parser("fork", help="copy a checkpointed run state into a new project root")
     _add_common(fork)
@@ -1508,20 +1522,24 @@ def _checkpoint(args: argparse.Namespace) -> int:
         _emit(result, machine=args.json, human=f"checkpoint {result['checkpoint']} recorded {result['files']} file(s)")
         return 0
     if args.checkpoint_action == "approve":
-        document = human_checkpoints.record_decision(root, args.stage, args.role, args.decision, note=args.note)
+        document = human_checkpoints.record_decision(
+            root, args.stage, args.role, args.decision, note=args.note, actor_class=args.actor_class
+        )
         result = {
             "ok": True,
             "schema_version": "1.0",
             "checkpoint": document["checkpoint"],
             "decision": document["decision"],
+            "actor_class": document["actor_class"],
             "artifact": document["artifact"],
             "previous_decision_sha256": document["previous_decision_sha256"],
             "manifest_rows": document["manifest_rows"],
         }
         chained = "chained to previous decision" if document["previous_decision_sha256"] else "first decision"
+        counted = "it does not clear the Gate" if document["actor_class"] == "agent" else "role is a declaration, not a verified identity"
         _emit(result, machine=args.json, human=(
-            f"checkpoint {document['checkpoint']}: {document['decision']} recorded as {document['artifact']} ({chained}); "
-            f"role is a declaration, not a verified identity"
+            f"checkpoint {document['checkpoint']}: {document['decision']} recorded as {document['artifact']} "
+            f"({chained}, actor={document['actor_class']}); {counted}"
         ))
         return 0
     if args.checkpoint_action == "verify":
@@ -1534,6 +1552,20 @@ def _checkpoint(args: argparse.Namespace) -> int:
     result = {"ok": True, "schema_version": "1.0", "checkpoints": rows}
     human = "\n".join(f"{row['name']}  {row['created_at']}  files={row['files']}" for row in rows)
     _emit(result, machine=args.json, human=human or "no checkpoints recorded")
+    return 0
+
+
+def _mode(args: argparse.Namespace) -> int:
+    document = operator_mode.set_operator_mode(_project(args), args.value, set_by=args.set_by)
+    previous = f"was {document['previous_mode']}" if document["previous_mode"] else "first declaration"
+    _emit(
+        {"ok": True, "schema_version": "1.0", **document},
+        machine=args.json,
+        human=(
+            f"operator mode {document['operator_mode']} set by {document['set_by']} ({previous}, "
+            f"{document['mode_changes']} change(s) recorded); no Gate requirement changes"
+        ),
+    )
     return 0
 
 
